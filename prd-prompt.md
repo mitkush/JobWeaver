@@ -164,7 +164,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
 ## 10. Open questions (unresolved - keep flagged in the PRD)
-1. **Success metrics:** not set by the founder. The PRD proposes them as recommendations for review.
+None. Last decisions after the PRD review: **success metrics** as recommended in PRD section 13; **"Not the same job" applies to everyone**; **open sign-up**, no invite list (Google testing mode still limits sign-in to named test users).
 
 **Resolved in the last round:**
 - **All sources ship in V1 (decided).** Free-tier limits are not verified up front; any limit hit is handled at run time by the source fallback (5.2). `COSTS.md` still documents each known limit.

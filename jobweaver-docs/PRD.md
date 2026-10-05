@@ -41,7 +41,7 @@ Existing tools solve parts of this. Job boards and aggregators show jobs but not
 - **Not a job board.** It does not host job adverts or serve employers.
 - **Not a match-score ranker.** Cards show Skill Gaps, not a percentage (ADR-0010: Skill Gaps, not a match score).
 - **Not a resume ghostwriter.** It never invents experience to fit a job.
-- **Not public in V1.** Users are the founder and a few invited friends; public or paid launch needs the pre-launch review in ADR-0012.
+- **Not public in V1.** Users are the founder and a few friends; public or paid launch needs the pre-launch review in ADR-0012.
 
 ## 4. Users
 
@@ -49,7 +49,7 @@ Existing tools solve parts of this. Job boards and aggregators show jobs but not
 A software professional (the founder is the reference: a senior developer with three-plus years across Ruby on Rails, Python/FastAPI, React and AI evaluation) looking in India and abroad, onsite, hybrid or remote. Has more relevant experience than fits on one resume. Wants to spend time on good applications, not on searching. Success for P1: *"I opened JobWeaver, picked three good jobs I had not seen elsewhere, and had three strong, honest applications in my Gmail drafts within 15 minutes."*
 
 ### P2 - The Friend (secondary)
-Another job seeker invited by the founder, possibly in a different field or country, with their own documents and Preferences. Must never see P1's data, and should be productive without help from the founder.
+Another job seeker the founder brings in, possibly in a different field or country, with their own documents and Preferences. Must never see P1's data, and should be productive without help from the founder.
 
 ### P3 - The Admin (the founder, wearing a different hat)
 Keeps the system running: watches Source Status and the Credit Budget, enables or disables Sources, narrows expensive queries. Success for P3: *"I check the status page once a week and nothing surprises me."*
@@ -72,7 +72,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 **FR-A1 [V1] - Sign in with Google.** Users sign up and sign in with Google only (ADR-0015: Google sign-in only in V1). Every User needs a Google account anyway for the Gmail Hand-off, and only named Google test users can use the OAuth app in testing mode.
 - AC1: A new User signs in with Google and lands on onboarding; Gmail access can be granted in the same consent or later (FR-A4).
 - AC2: Sessions are signed, HTTP-only cookies with CSRF protection.
-- AC3: In V1, sign-up is invite-only: only Google accounts on the Admin's allow-list (the same people added as Google test users) can create an account.
+- AC3: Sign-up is open: any Google account that can sign in can create an account; there is no in-app invite list. Note: while the Google OAuth app is in testing mode, Google itself only lets named test users (up to 100) sign in, so the Admin adds each new User as a test user in Google Cloud. The sign-in screen explains this when Google blocks an account.
 
 **FR-A2 [V1] - Fact Bank from uploaded documents.** The User uploads their resume and, optionally, a detailed portfolio or cover letter and a short summary (PDF; DOCX optional). The AI Gateway parses them into Facts: skills, experiences, projects, bullets, metrics and links, each linked to the document it came from. The User reviews the parsed Facts once and can edit, merge, delete or add Facts.
 - AC1: Uploading the founder's resume and portfolio produces Facts that include portfolio-only items (e.g. Prism AST, the agent-skills talk) marked as "not in Base Resume".
@@ -180,6 +180,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 **FR-C3 [V1] - Possible Duplicates.** Medium pairs appear on the Correspondence screen and on both cards as "Possible duplicate" with **Confirm** and **Not the same Job**.
 - AC1: Confirm merges the two into one Job; Not the same Job stores a Rejected Pair.
 - AC2: A Rejected Pair is never proposed again, including after re-fetches.
+- AC3: Confirm and Not the same Job apply for everyone, because Jobs are shared (ADR-0002): a split is a fact about two adverts, not a personal preference. Revisit before a public launch.
 
 **FR-C4 [V1] - Split.** Any grouped Job can be split by marking one Posting "Not the same Job", which stores a Rejected Pair and creates a separate Job.
 
@@ -282,7 +283,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 | Area | Requirement |
 |---|---|
-| Security | Google sign-in only (no stored passwords); signed HTTP-only session cookies with CSRF protection; tokens and keys encrypted at rest; HTTPS only; invite-only sign-up in V1. |
+| Security | Google sign-in only (no stored passwords); signed HTTP-only session cookies with CSRF protection; tokens and keys encrypted at rest; HTTPS only; open sign-up, limited in practice to Google test users while the OAuth app is in testing mode. |
 | Privacy | Documents, Facts and Drafts are user-owned and never shared, logged or used outside that User's requests; each User accepts the AI data notice before any document reaches an AI provider (FR-A5); account deletion removes all user-owned data. |
 | Truthfulness | Zero fabricated content in Drafts, enforced by the Fact Bank rule, the code-level skill check and the Tailoring Trace (ADR-0005). |
 | Reliability | Any single Source or AI provider failing leaves the product usable; Fetch Runs are idempotent and resume after restarts (ADR-0003, ADR-0008). |
@@ -310,7 +311,7 @@ The UI must look professional and the UX must never be confusing. "Not confusing
 
 ## 9. Key User Flows
 
-**Flow A - Onboarding (first 10 minutes).** Sign up (invite) -> upload resume and portfolio -> review parsed Facts -> set Preferences -> connect Gmail (or skip) -> Feed. If no Jobs are fetched yet, the Feed shows a Backfill progress state, not an empty page. *Success = the User sees real matching Jobs on first visit or within minutes.*
+**Flow A - Onboarding (first 10 minutes).** Sign in with Google -> upload resume and portfolio -> review parsed Facts -> set Preferences -> connect Gmail (or skip) -> Feed. If no Jobs are fetched yet, the Feed shows a Backfill progress state, not an empty page. *Success = the User sees real matching Jobs on first visit or within minutes.*
 
 **Flow B - Daily review.** Open Feed -> scan new Jobs (Skill Gaps, Available on, Already applied warnings) -> hide the irrelevant -> resolve any Possible Duplicates -> pick Jobs to apply to.
 
@@ -352,7 +353,6 @@ Dependency direction: `api -> services -> (adapters | dedup | gateway | document
 | Table | Owner | Purpose |
 |---|---|---|
 | `users` | - | Google account id, email, role (User/Admin), AI notice accepted at |
-| `invites` | Admin | Allowed sign-up emails (V1) |
 | `oauth_credentials` | user | Encrypted Google/Gmail tokens, expiry |
 | `documents` | user | Uploaded files and extracted text |
 | `facts` | user | Fact Bank entries with type, text, source document, "in Base Resume" flag |
@@ -364,7 +364,7 @@ Dependency direction: `api -> services -> (adapters | dedup | gateway | document
 | `postings` | shared | Normalised Postings, Source IDs, snapshot/windowed origin, last seen, closed flag, embedding + embedding model name |
 | `jobs` | shared | Canonical Jobs, Primary Posting, merged fields, required skills, locations, expired flag |
 | `match_pairs` | shared | Posting pairs, band, signals |
-| `rejected_pairs` | shared | Pairs marked "Not the same Job" (see open question 2) |
+| `rejected_pairs` | shared | Pairs marked "Not the same Job"; apply to everyone (FR-C3) |
 | `user_jobs` | user | Feed membership, seen, hidden |
 | `drafts`, `draft_versions` | user | Draft content per version, PDFs, trace links to `facts` |
 | `applications` | user | Status history per Job |
@@ -395,7 +395,7 @@ No dates; each phase ends with something usable. Foundation first, like a full p
 
 **Phase 0 - Foundation.** Repo structure, CI (lint, typecheck, tests), docs (this set), Docker setup, deploy skeleton with `/health` and keep-warm ping, AI Gateway skeleton with recorded mode, Source Adapter interface.
 
-**Phase 1 - Accounts and Profile.** FR-A1 to FR-A6: sign-up/in, invites, documents to Fact Bank with review, Preferences, onboarding shell. *Usable: the User's Fact Bank exists and is correct.*
+**Phase 1 - Accounts and Profile.** FR-A1 to FR-A6: Google sign-in, documents to Fact Bank with review, Preferences, onboarding shell. *Usable: the User's Fact Bank exists and is correct.*
 
 **Phase 2 - First Sources.** FR-B1 to FR-B11 with four Sources that cover both fetch modes and the main supply: LinkedIn (Bright Data), JSearch, Greenhouse and Lever (snapshot), Remotive. Registry, normalisation, Backfill and daily runs, Credit Budget, fallback and Source Status, ATS discovery, expiry. *Usable: Jobs are flowing in every day.*
 
@@ -409,7 +409,7 @@ No dates; each phase ends with something usable. Foundation first, like a full p
 
 **Later:** browser extension (FR-E14), email and password sign-in (FR-A7), reply reading (FR-F4), notifications (FR-F5), public launch gate (FR-G6), paid plans.
 
-## 13. Success Metrics *(recommendations; the founder has not set targets yet)*
+## 13. Success Metrics *(decided)*
 
 | Metric | Target for V1 |
 |---|---|
@@ -441,10 +441,7 @@ No dates; each phase ends with something usable. Foundation first, like a full p
 
 ## 15. Open Questions
 
-1. **Success metrics:** section 13 is a recommendation; the founder to confirm or change.
-2. **Scope of "Not the same Job":** Jobs are shared (ADR-0002), so a split by one User changes grouping for everyone. Recommendation: global for V1 (a small trusted group, and a split is a fact about two adverts, not a preference); revisit before public launch.
-3. **Invite-only sign-up (FR-A1 AC3):** recommended to keep V1 private; confirm.
-4. **Facts to verify before build** (ADR references in brackets): `gmail.compose` classification and the 7-day testing-mode token expiry (ADR-0006); Bright Data LinkedIn time-range options (ADR-0009); Gemini free-tier terms (ADR-0012); exact free limits listed as *(verify)* in `COSTS.md`; a free Postgres provider whose free tier does not expire (ADR-0008); whether a small local embedding model fits in the host's free memory, as a possible future fallback (ADR-0014).
+1. **Facts to verify before build** (ADR references in brackets): `gmail.compose` classification and the 7-day testing-mode token expiry (ADR-0006); Bright Data LinkedIn time-range options (ADR-0009); Gemini free-tier terms (ADR-0012); exact free limits listed as *(verify)* in `COSTS.md`; a free Postgres provider whose free tier does not expire (ADR-0008); whether a small local embedding model fits in the host's free memory, as a possible future fallback (ADR-0014).
 
 ---
 *Capitalised domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Design rationale lives in [`docs/adr/`](./docs/adr/): this PRD states the what; the ADRs defend the why.*
