@@ -14,7 +14,13 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.method not in SAFE_METHODS and request.url.path.startswith("/api/"):
+        path = request.url.path
+        # /api/internal/ is called by cron with its own secret, never by a browser.
+        if (
+            request.method not in SAFE_METHODS
+            and path.startswith("/api/")
+            and not path.startswith("/api/internal/")
+        ):
             cookie = request.cookies.get(CSRF_COOKIE, "")
             header = request.headers.get(CSRF_HEADER, "")
             if not cookie or not hmac.compare_digest(cookie, header):

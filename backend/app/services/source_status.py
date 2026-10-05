@@ -1,0 +1,225 @@
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.adapters.ats_urls import parse_ats_url
+from app.adapters.base import SnapshotSourceAdapter
+from app.adapters.registry import get_adapter_class, registered_adapters
+from app.core.config import get_settings
+from app.core.errors import NotFoundError, ValidationFailedError
+from app.models.fetch import FetchRun
+from app.models.posting import AtsBoard, Company, Posting
+from app.models.source import Source, SourceState
+from app.models.user import User
+from app.schemas.sources import (
+    AtsBoardOut,
+    BudgetOut,
+    FetchRunOut,
+    QuerySpend,
+    SourceNotice,
+    SourceStatusOut,
+)
+from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
+
+NOTICE_AFTER = timedelta(days=1)
+
+
+def next_run_at(now: datetime) -> datetime:
+    settings = get_settings()
+    run = now.replace(
+        hour=settings.fetch_hour_utc, minute=settings.fetch_minute_utc, second=0, microsecond=0
+    )
+    return run if run > now else run + timedelta(days=1)
+
+
+async def list_statuses(
+    session: AsyncSession, now: datetime | None = None
+) -> list[SourceStatusOut]:
+    now = now or datetime.now(UTC)
+    rows = {s.name: s for s in (await session.execute(select(Source))).scalars()}
+    open_counts = dict(
+        (
+            await session.execute(
+                select(Posting.source, func.count())
+                .where(Posting.closed_at.is_(None))
+                .group_by(Posting.source)
+            )
+        ).all()
+    )
+    out = []
+    for cls in registered_adapters():
+        source = rows.get(cls.name)
+        adapter = cls(get_sources_http(), get_settings())
+        budget = await budget_for(session, cls, now)
+        boards = None
+        if issubclass(cls, SnapshotSourceAdapter):
+            boards = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AtsBoard)
+                    .where(AtsBoard.ats == cls.ats, AtsBoard.enabled)
+                )
+                or 0
+            )
+        today = now.date().isoformat()
+        used = source.manual_runs_today if source and source.manual_runs_date == today else 0
+        enabled = source.enabled if source else True
+        out.append(
+            SourceStatusOut(
+                name=cls.name,
+                label=cls.label,
+                priority=cls.priority,
+                mode=cls.mode.value,
+                enabled=enabled,
+                configured=adapter.is_configured(),
+                state=SourceState.DISABLED
+                if not enabled
+                else (source.state if source else SourceState.HEALTHY),
+                last_success_at=source.last_success_at if source else None,
+                last_error=source.last_error if source else None,
+                last_error_at=source.last_error_at if source else None,
+                degraded_since=source.degraded_since if source else None,
+                next_run_at=next_run_at(now) if enabled else None,
+                open_postings=int(open_counts.get(cls.name, 0)),
+                boards=boards,
+                budget=None
+                if budget is None
+                else BudgetOut(
+                    allowance=budget.allowance,
+                    unit=budget.unit,
+                    spent=budget.spent,
+                    projected=budget.projected,
+                    period_start=budget.period_start,
+                    renews_on=budget.renews_on,
+                    runs_out_on=budget.runs_out_on,
+                    top_queries=[QuerySpend(query_key=k, spent=v) for k, v in budget.top_queries],
+                ),
+                manual_runs_left=max(MANUAL_RUNS_PER_DAY - used, 0),
+            )
+        )
+    return out
+
+
+async def set_enabled(session: AsyncSession, name: str, enabled: bool) -> None:
+    try:
+        get_adapter_class(name)
+    except KeyError as exc:
+        raise NotFoundError("Unknown source") from exc
+    source = (await session.execute(select(Source).where(Source.name == name))).scalar_one_or_none()
+    if source is None:
+        source = Source(name=name)
+        session.add(source)
+    source.enabled = enabled
+    if enabled and source.state == SourceState.DISABLED:
+        source.state = SourceState.HEALTHY
+    await session.flush()
+
+
+async def recent_runs(
+    session: AsyncSession, source: str | None, limit: int = 50
+) -> list[FetchRunOut]:
+    query = (
+        select(FetchRun, AtsBoard.slug)
+        .outerjoin(AtsBoard, AtsBoard.id == FetchRun.board_id)
+        .order_by(FetchRun.created_at.desc())
+        .limit(limit)
+    )
+    if source:
+        query = query.where(FetchRun.source == source)
+    return [
+        FetchRunOut(
+            id=run.id,
+            source=run.source,
+            status=run.status,
+            trigger=run.trigger,
+            query_key=run.query_key,
+            board=slug,
+            created_at=run.created_at,
+            finished_at=run.finished_at,
+            postings_found=run.postings_found,
+            postings_new=run.postings_new,
+            postings_closed=run.postings_closed,
+            credits_used=run.credits_used,
+            error=run.error,
+        )
+        for run, slug in (await session.execute(query)).all()
+    ]
+
+
+async def notices(session: AsyncSession, now: datetime | None = None) -> list[SourceNotice]:
+    """Short, non-alarming notices for Sources Degraded for over a day (FR-B6 AC3)."""
+    now = now or datetime.now(UTC)
+    rows = (
+        await session.execute(
+            select(Source).where(
+                Source.enabled.is_(True),
+                Source.state == SourceState.DEGRADED,
+                Source.degraded_since <= now - NOTICE_AFTER,
+            )
+        )
+    ).scalars()
+    labels = {cls.name: cls.label for cls in registered_adapters()}
+    return [
+        SourceNotice(
+            label=labels.get(s.name, s.name),
+            since=s.degraded_since,
+            message=f"{labels.get(s.name, s.name)} jobs are delayed; other sources are up to date.",
+        )
+        for s in rows
+        if s.degraded_since is not None
+    ]
+
+
+FETCHED_ATS = {"greenhouse", "lever"}
+
+
+async def list_boards(session: AsyncSession) -> list[AtsBoardOut]:
+    counts = dict(
+        (
+            await session.execute(
+                select(Posting.ats_board_id, func.count())
+                .where(Posting.closed_at.is_(None), Posting.ats_board_id.is_not(None))
+                .group_by(Posting.ats_board_id)
+            )
+        ).all()
+    )
+    rows = await session.execute(
+        select(AtsBoard, Company.name)
+        .outerjoin(Company, Company.id == AtsBoard.company_id)
+        .order_by(AtsBoard.ats, AtsBoard.slug)
+    )
+    return [
+        AtsBoardOut(
+            id=board.id,
+            ats=board.ats,
+            slug=board.slug,
+            company=company,
+            discovered_from=board.discovered_from,
+            enabled=board.enabled,
+            fetched=board.ats in FETCHED_ATS,
+            last_fetched_at=board.last_fetched_at,
+            open_postings=int(counts.get(board.id, 0)),
+        )
+        for board, company in rows.all()
+    ]
+
+
+async def add_board(session: AsyncSession, user: User, url: str) -> AtsBoard:
+    """Users add a company's board by pasting any link to it (FR-B7 AC2)."""
+    found = parse_ats_url(url.strip())
+    if found is None:
+        raise ValidationFailedError(
+            "Paste a link to a company's job board on Greenhouse, Lever, Ashby, "
+            "SmartRecruiters, Workable or Recruitee."
+        )
+    ats, slug = found
+    board = (
+        await session.execute(select(AtsBoard).where(AtsBoard.ats == ats, AtsBoard.slug == slug))
+    ).scalar_one_or_none()
+    if board is None:
+        board = AtsBoard(ats=ats, slug=slug, discovered_from="manual", added_by_user_id=user.id)
+        session.add(board)
+    board.enabled = True
+    await session.flush()
+    return board
