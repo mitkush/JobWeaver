@@ -4,4 +4,4 @@ Semantic duplicate detection (ADR-0004) compares Posting embeddings. The AI Gate
 
 **Considered and rejected:** falling back to another provider's embeddings (vectors incomparable, silently wrong groups), a local PyTorch model (does not fit in a free host's ~512 MB memory), skipping semantic matching when Gemini is down (silently weaker grouping).
 
-**Consequences:** during a Gemini outage, some duplicates appear as separate Jobs until the queue drains and regroups them; the re-embedding job must be resumable. A small ONNX-based local model (no PyTorch) might fit in free memory and could become a fallback later; this is unverified and not part of V1.
+**Consequences:** during a Gemini outage, some duplicates appear as separate Jobs until the queue drains and regroups them; the re-embedding job must be resumable. A small ONNX model without PyTorch (e.g. bge-small via FastEmbed, reported at about 45 MB during inference) might fit beside the app in 512 MB, but that is unconfirmed, and its vectors could not be compared with Gemini's, so it could only replace Gemini wholesale (with a full re-embed), never act as a per-request fallback. Not pursued in V1.

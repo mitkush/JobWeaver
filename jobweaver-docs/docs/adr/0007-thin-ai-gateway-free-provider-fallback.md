@@ -4,4 +4,6 @@ One internal module owns every AI call and is the only code that imports a provi
 
 **Considered and rejected:** LangChain-style frameworks (an abstraction with its own breaking changes for a handful of call shapes), calling SDKs from features directly (a provider change becomes a codebase-wide edit), a paid model (zero budget).
 
+Free quotas are per model and small for the strongest models (checked 5 Oct 2026: about 20 requests a day on the newest Gemini Flash, 500 to 1,000 on Flash-Lite, about 1,000 on Groq's popular models, 50 on OpenRouter free). The gateway therefore routes by task: high-volume extraction to Flash-Lite, Draft generation and chat to Flash, and it counts requests per provider and model per day so it switches before a quota is hit.
+
 **Consequences:** every task needs success, malformed and refusal fixtures; output is validated against a schema and retried on the next provider when invalid; per-user AI usage is recorded for future pricing; free-tier terms (prompt use for training, regional limits) are an accepted risk for private use (ADR-0012).

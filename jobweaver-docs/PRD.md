@@ -73,6 +73,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC1: A new User signs in with Google and lands on onboarding; Gmail access can be granted in the same consent or later (FR-A4).
 - AC2: Sessions are signed, HTTP-only cookies with CSRF protection.
 - AC3: Sign-up is open: any Google account that can sign in can create an account; there is no in-app invite list. Note: while the Google OAuth app is in testing mode, Google itself only lets named test users (up to 100) sign in, so the Admin adds each new User as a test user in Google Cloud. The sign-in screen explains this when Google blocks an account.
+- AC4: While the Gemini free tier is in use, Users must be outside the EEA, Switzerland and the UK (Gemini terms, ADR-0012); onboarding asks for the User's country and explains this.
 
 **FR-A2 [V1] - Fact Bank from uploaded documents.** The User uploads their resume and, optionally, a detailed portfolio or cover letter and a short summary (PDF; DOCX optional). The AI Gateway parses them into Facts: skills, experiences, projects, bullets, metrics and links, each linked to the document it came from. The User reviews the parsed Facts once and can edit, merge, delete or add Facts.
 - AC1: Uploading the founder's resume and portfolio produces Facts that include portfolio-only items (e.g. Prism AST, the agent-skills talk) marked as "not in Base Resume".
@@ -86,7 +87,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 
 **FR-A4 [V1] - Gmail connection.** The User connects Gmail (Google OAuth, `gmail.compose`) from Settings or at the first Open in Gmail.
 - AC1: Settings shows the connection status: Connected, Expires soon, Expired.
-- AC2: When the refresh token has expired (about every 7 days in testing mode), the app shows a re-login reminder before the next Gmail Hand-off is attempted, not after it fails.
+- AC2: When the refresh token has expired (7 days after consent in testing mode), the app shows a re-login reminder before the next Gmail Hand-off is attempted, not after it fails.
 - AC3: Gmail tokens are encrypted at rest and never logged.
 
 **FR-A5 [V1] - Onboarding.** A first-run flow walks the User through: AI data notice -> upload documents -> review Fact Bank -> set Preferences -> connect Gmail (skippable). It ends on the Feed.
@@ -128,7 +129,7 @@ Both modes normalise into Postings and report credits or requests used.
 
 **FR-B4 [V1] - LinkedIn via Bright Data.** Runs daily with the "past 24 hours" filter (catch-up per FR-B3), one query per distinct (title, location) combination across all Users' Preferences. **Every result of every query is fetched; JobWeaver never silently truncates LinkedIn results to fit the budget** (ADR-0009: LinkedIn full scope with a visible budget).
 - AC1: Two Users with the same title and location trigger one query, not two.
-- AC2: Before build, the scraper's available time-range options are confirmed; if "past 24 hours" is unavailable, the closest option is used; overlap records are stored once, and the credits they cost show in the Credit Budget.
+- AC2: The adapter uses the scraper's "Past 24 hours" time range (seen in use alongside "Past week" and "Past month"; full list confirmed in the Bright Data dashboard when building); overlap records are stored once, and the credits they cost show in the Credit Budget.
 
 **FR-B5 [V1] - Credit Budget.** The Admin sees each credit- or quota-limited Source's monthly allowance, spend to date, spend per query, and a month-end projection.
 - AC1: When the projection says the budget will run out before renewal, the Admin is warned with the date and the most expensive queries, so they can narrow Preferences themselves. JobWeaver does not cap daily spend or the Backfill on its own.
@@ -274,6 +275,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 **FR-G3 [V1] - Document privacy.** Uploaded documents and Facts are visible only to their owner; logs never contain document text, Draft content or email bodies.
 
 **FR-G4 [V1] - AI usage accounting.** Every AI Gateway call records User, task, provider, tokens and outcome, for debugging free-tier limits and for future pricing (ADR-0007: thin AI Gateway with free-provider fallback).
+- AC1: The gateway counts requests per provider and model per day against configured free quotas and routes to the next provider before a quota is hit (Gemini Flash is reserved for Draft generation and Draft Chat; high-volume extraction uses Flash-Lite, then Groq).
 
 **FR-G5 [V1] - Health and monitoring.** `GET /health` responds without touching the database (for the keep-warm ping); errors are reported to a free error-tracking tier.
 
@@ -379,7 +381,7 @@ Per ADR-0011 (Python/FastAPI + React stack).
 |---|---|---|
 | Backend | Python 3.12, FastAPI, Pydantic v2 | AI, scraping, PDF and similarity ecosystem; typed contracts and OpenAPI |
 | Frontend | React + TypeScript (Vite), Tailwind CSS, shadcn/ui, TanStack Query | Interactive Draft screen; professional, consistent UI; generated API types |
-| Database | PostgreSQL + pgvector, SQLAlchemy 2, Alembic | One store for relational data and embeddings; tenancy from the first migration |
+| Database | PostgreSQL + pgvector (Neon free plan), SQLAlchemy 2, Alembic | One store for relational data and embeddings; tenancy from the first migration |
 | Scheduling | APScheduler in-process | Single free service; no separate worker (ADR-0008) |
 | AI | AI Gateway over Gemini -> Groq -> OpenRouter; Ollama for local dev | Free tiers with fallback; recorded mode for tests (ADR-0007) |
 | Similarity | Gemini embeddings + pgvector (model name stored per vector); rapidfuzz for titles and names | Semantic duplicate detection (ADR-0004, ADR-0014) |
@@ -387,7 +389,7 @@ Per ADR-0011 (Python/FastAPI + React stack).
 | Email checks | email-validator + DNS MX lookup | FR-E10 |
 | Auth | Google OAuth only, signed session cookies | FR-A1, ADR-0015 |
 | Testing | pytest, Vitest; recorded AI fixtures; recorded Source fixtures | Zero live calls in CI |
-| Infra | Docker, GitHub Actions, Render or Railway free tier, UptimeRobot | 12-factor, $0 (ADR-0008) |
+| Infra | Docker, GitHub Actions, Render free web service, Neon free Postgres (not Render's free Postgres, deleted after 30 days), UptimeRobot | 12-factor, $0 (ADR-0008) |
 
 ## 12. Release Plan (build order)
 
@@ -441,7 +443,10 @@ No dates; each phase ends with something usable. Foundation first, like a full p
 
 ## 15. Open Questions
 
-1. **Facts to verify before build** (ADR references in brackets): `gmail.compose` classification and the 7-day testing-mode token expiry (ADR-0006); Bright Data LinkedIn time-range options (ADR-0009); Gemini free-tier terms (ADR-0012); exact free limits listed as *(verify)* in `COSTS.md`; a free Postgres provider whose free tier does not expire (ADR-0008); whether a small local embedding model fits in the host's free memory, as a possible future fallback (ADR-0014).
+None for the product. Facts were checked on 5 Oct 2026 (details and figures in `COSTS.md`):
+- **Confirmed:** `gmail.compose` is restricted; testing-mode tokens expire 7 days after consent; testing mode allows up to 100 test users (ADR-0006). Bright Data supports "Past 24 hours", "Past week" and "Past month" (ADR-0009). Gemini's free tier may use prompts to improve Google products, and serving users in the EEA, Switzerland or the UK requires paid services (ADR-0012). Render's free Postgres expires after 30 days, so the database is Neon's free plan, which never expires (ADR-0008).
+- **Changed the design:** Gemini Flash's free tier allows only about 20 requests a day, so the AI Gateway routes high-volume work to Flash-Lite and Groq (FR-G4). JSearch (200/month) and SerpApi (250/month) run out early in a month under full scope; accepted and visible.
+- **Still unconfirmed (check in each dashboard while building):** the full list of Bright Data time ranges, per-ATS rate limits, access to Instahyre, Cutshort, Hirist, Foundit and Workday, remote-board terms, exact Gemini quotas for the project, UptimeRobot and error-tracking free tiers, and whether a local embedding model fits in 512 MB (not pursued, ADR-0014).
 
 ---
 *Capitalised domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Design rationale lives in [`docs/adr/`](./docs/adr/): this PRD states the what; the ADRs defend the why.*

@@ -4,7 +4,7 @@ Agreed decisions from the discovery session (step 2 of the PRD workflow in `CLAU
 The PRD (step 3) must be generated from this file. Anything under **Open questions** is unresolved and must stay flagged in the PRD, not silently decided.
 
 Items marked *(recommendation)* were proposed during discovery and accepted, but are implementation suggestions the PRD may refine.
-Items marked *(verify)* are facts about third-party services stated with moderate confidence; the PRD must list them as things to confirm before build.
+Third-party facts were checked on 5 Oct 2026; results are in `jobweaver-docs/COSTS.md` and PRD section 15.
 
 ---
 
@@ -28,10 +28,9 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (decided in section 10).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
-- **Hosting:** free tiers only *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
+- **Hosting:** free tiers only *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render's free tier, with Neon's free Postgres (+ pgvector), which never expires (Render's free Postgres is deleted after 30 days).
   - Free backends sleep after ~15 min idle -> keep warm with an external monitor (UptimeRobot) pinging a lightweight `GET /health` (no DB touch) every 5 min.
   - Scheduled fetches run in an **in-process scheduler (APScheduler)** on the warm instance, as background work, never inside one long HTTP request. External cron calling a secret-protected endpoint is the fallback if the host still sleeps.
-  - Some free databases pause after inactivity *(verify per provider)*; daily fetches should keep them active.
 
 ## 5. Core features (V1)
 
@@ -48,7 +47,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ### 5.2 Job fetching
 - **Initial backfill:** last 14 days from all sources.
 - **Incremental:** per-source schedule.
-  - **LinkedIn (Bright Data): daily, "past 24 hours" filter** - avoids paying for the same records twice with week-granularity filters *(verify the time-range options of the Bright Data LinkedIn scraper)*.
+  - **LinkedIn (Bright Data): daily, "past 24 hours" filter** - avoids paying for the same records twice with week-granularity filters (confirmed: "Past 24 hours", "Past week" and "Past month" are available).
   - Free sources: daily (or as rate limits allow).
 - Queries are **narrow and per user** (their titles + locations) so paid credits go only to relevant jobs.
 - **Bright Data credit budget:** 5,000 free credits/month (1 credit = 1 scraped record), shared across all users:
@@ -98,8 +97,8 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Email check** in the draft: validate the recipient address (format, domain can receive mail, not a no-reply address).
 - **Separate "Save draft" and "Send / Open in Gmail" actions.** Nothing is ever sent automatically.
 - **Gmail hand-off (decided: Option A):** JobWeaver creates a real **Gmail draft with the PDF attached** via the Gmail API; the user opens it in Gmail, can change formatting there, and sends it from Gmail.
-  - Requires the `gmail.compose` scope *(verify: classified as restricted)*. Run the Google OAuth app in **testing mode** (up to 100 named test users, no Google verification needed).
-  - In testing mode refresh tokens expire about **every 7 days** *(verify)* -> the app detects expiry and shows a **re-login reminder**.
+  - Requires the `gmail.compose` scope (confirmed restricted). Run the Google OAuth app in **testing mode** (up to 100 named test users, no Google verification needed).
+  - In testing mode refresh tokens expire **7 days after consent** (confirmed) -> the app detects expiry and shows a **re-login reminder**.
   - **Fallback (Option B):** Gmail compose link with to/subject/body pre-filled; user attaches the downloaded PDF manually (compose links cannot attach files).
 - For jobs without an email: download the PDFs, open the apply link, mark as applied.
 
@@ -160,7 +159,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ## 9. Accepted risks (decided by the founder; PRD must record them, not re-open them)
 - **Scraping LinkedIn / Naukri** via Bright Data and Apify breaches those sites' terms of service. This is a civil (contract) risk, not a criminal one. Accepted because use is private (founder + friends). **Must be revisited before any public or paid launch** - that is the point where it becomes the business's risk.
-- **Free-tier AI and data privacy:** free tiers may use prompts to improve the provider's products, and some providers restrict free tiers for users in certain regions *(verify Gemini's terms)*. Accepted for private use; revisit before going public.
+- **Free-tier AI and data privacy:** free tiers may use prompts to improve the provider's products, (confirmed for Gemini). Accepted for private use; revisit before going public. Gemini also requires paid services for users in the EEA, Switzerland or the UK, so V1 users on the free tier must be outside those regions.
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
 ## 10. Open questions (unresolved - keep flagged in the PRD)
