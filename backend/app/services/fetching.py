@@ -2,7 +2,7 @@
 a failure marks that Source Degraded and the run moves on to the next one."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.ats_urls import parse_ats_url
 from app.adapters.base import (
+    FetchResult,
     FetchWindow,
     Location,
     NormalizedPosting,
@@ -21,7 +22,13 @@ from app.adapters.base import (
     WindowedSourceAdapter,
     WorkMode,
 )
-from app.adapters.errors import BoardNotFound, SourceError, SourceNotConfigured
+from app.adapters.errors import (
+    BoardNotFound,
+    SourceBadResponse,
+    SourceError,
+    SourceNotConfigured,
+    SourceUnavailable,
+)
 from app.adapters.normalize import normalize_company
 from app.adapters.registry import get_adapter_class, registered_adapters
 from app.core.config import Settings, get_settings
@@ -337,6 +344,15 @@ class Fetcher:
                 outcome.message = exc.message
                 await session.commit()
                 return outcome
+            except Exception:
+                # A bug or database error in one Source must not stop the others (ADR-0003).
+                logger.exception("Unexpected error while fetching %s", name)
+                await session.rollback()
+                source = await self._source_row(session, name)
+                error = SourceError(f"{cls.label} failed unexpectedly; see the server logs")
+                await self._mark_degraded(session, source, error, now)
+                await session.commit()
+                return SourceOutcome(name, "failed", error.message)
             source.state = SourceState.HEALTHY
             source.last_success_at = self.clock()
             source.degraded_since = None
@@ -413,7 +429,7 @@ class Fetcher:
             session.add(run)
             await session.flush()
             try:
-                result = await adapter.fetch_window(query, window)
+                result = await _guarded(adapter, adapter.fetch_window(query, window))
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 await session.commit()
@@ -461,7 +477,7 @@ class Fetcher:
             session.add(run)
             await session.flush()
             try:
-                result = await adapter.fetch_board(board.slug)
+                result = await _guarded(adapter, adapter.fetch_board(board.slug))
             except BoardNotFound as exc:
                 board.enabled = False
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
@@ -508,6 +524,22 @@ class Fetcher:
             source.manual_runs_today += 1
             await session.commit()
         return await self.run_source(name, trigger="manual")
+
+
+async def _guarded(adapter: SourceAdapter, call: Awaitable[FetchResult]) -> FetchResult:
+    """Network failures and malformed payloads become SourceErrors with a readable reason."""
+    try:
+        return await call
+    except SourceError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise SourceUnavailable(f"{adapter.label} timed out") from exc
+    except httpx.HTTPError as exc:
+        raise SourceUnavailable(
+            f"{adapter.label} could not be reached ({type(exc).__name__})"
+        ) from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        raise SourceBadResponse(f"{adapter.label} returned data JobWeaver could not read") from exc
 
 
 class SourceErrorBudget(SourceError):

@@ -337,3 +337,31 @@ async def test_budget_projection(db, clock):
 def test_windowed_query_key_is_stable():
     query = SourceQuery(keywords="Backend Engineer", location=Location(country="IN", remote=True))
     assert query.key == "backend engineer@|IN|True"
+
+
+async def test_network_errors_and_bad_data_never_stop_the_run(db, fetcher):
+    import httpx
+
+    await add_preferences(db)
+    FakeSearch.results = [httpx.ConnectError("connection refused")] * 2
+    FakeBoard.boards = {"acme": ValueError("bad json")}
+    db.add(AtsBoard(ats="greenhouse", slug="acme", discovered_from="manual"))
+    await db.commit()
+    outcomes = {o.source: o for o in await fetcher.run_all()}
+    assert outcomes["fake-search"].message == "Fake Search could not be reached (ConnectError)"
+    assert outcomes["fake-board"].message == "Fake Board returned data JobWeaver could not read"
+    runs = list((await db.execute(select(FetchRun))).scalars())
+    assert {r.status.value for r in runs} == {"failed"}
+
+
+async def test_unexpected_errors_degrade_only_that_source(db, fetcher, monkeypatch):
+    async def boom(*args, **kwargs):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr("app.services.fetching.save_postings", boom)
+    await add_preferences(db)
+    FakeSearch.results = [FetchResult(postings=[posting("1")])] * 2
+    outcomes = {o.source: o for o in await fetcher.run_all()}
+    assert outcomes["fake-search"].status == "failed"
+    assert "unexpectedly" in outcomes["fake-search"].message
+    assert outcomes["fake-board"].status == "succeeded"
