@@ -1,4 +1,4 @@
-# JobWeaver — PRD Brief
+# JobWeaver - PRD Brief
 
 Agreed decisions from the discovery session (step 2 of the PRD workflow in `CLAUDE.md`).
 The PRD (step 3) must be generated from this file. Anything under **Open questions** is unresolved and must stay flagged in the PRD, not silently decided.
@@ -9,7 +9,7 @@ Items marked *(verify)* are facts about third-party services stated with moderat
 ---
 
 ## 1. Product in one line
-An AI job-hunt assistant that fetches jobs from many sources, removes and groups duplicates, ranks them against the user's profile, and prepares a tailored resume, cover letter and application email for each job — which the user reviews, edits (directly or via an AI chat) and sends themselves.
+An AI job-hunt assistant that fetches jobs from many sources, removes and groups duplicates, ranks them against the user's profile, and prepares a tailored resume, cover letter and application email for each job - which the user reviews, edits (directly or via an AI chat) and sends themselves.
 
 ## 2. Problem & users
 - **Problem:** job hunting means checking many boards, seeing the same job reposted across sites, and rewriting the resume and cover letter for each job. Generic applications don't pass ATS screening and look vague.
@@ -19,12 +19,13 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ## 3. Goal & positioning
 - **Now:** personal tool for the founder + a few friends.
-- **Quality bar:** portfolio-grade (clean architecture, docs, tests) and **business-ready** — the data model and architecture must not need a rewrite to go multi-tenant/paid later.
-- **Market / job coverage:** global — jobs in India (city-level) and outside India, onsite / hybrid / remote. "Global" refers to job coverage; the user base is the founder + friends for now.
+- **Quality bar:** portfolio-grade (clean architecture, docs, tests) and **business-ready** - the data model and architecture must not need a rewrite to go multi-tenant/paid later.
+- **Market / job coverage:** global - jobs in India (city-level) and outside India, onsite / hybrid / remote. "Global" refers to job coverage; the user base is the founder + friends for now.
 
 ## 4. Constraints
 - **Team:** solo developer.
-- **Timeline:** as soon as possible — MVP scope must be tight and phased.
+- **Timeline:** as soon as possible.
+- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into releasable phases (see open question 9).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
 - **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
@@ -32,21 +33,21 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
   - Scheduled fetches run in an **in-process scheduler (APScheduler)** on the warm instance, as background work, never inside one long HTTP request. External cron calling a secret-protected endpoint is the fallback if the host still sleeps.
   - Some free databases pause after inactivity *(verify per provider)*; daily fetches should keep them active.
 
-## 5. Core features (MVP)
+## 5. Core features (V1)
 
 ### 5.1 Accounts & settings
 - Sign up / sign in with **Google** or **email + password**.
-- Proper multi-user model from day one (user-owned profiles, documents, preferences, drafts, credits).
+- Proper multi-user model from day one (user-owned profiles, documents, preferences, drafts, credits). **Tenancy unit is the `user`**: every table, cache key and background job carries `user_id`. No workspace/organization layer.
 - Settings page (editable any time; feed updates when changed):
   - Contact email
   - **Documents:** resume, cover letter / detailed portfolio, short summary
-  - **Preferences (multi-select):** locations — India (cities) / non-India (countries/cities); work mode — onsite / hybrid / remote; target job titles / keywords
+  - **Preferences (multi-select):** locations - India (cities) / non-India (countries/cities); work mode - onsite / hybrid / remote; target job titles / keywords
 - Gmail connection status + re-login reminder (see 5.4).
 
 ### 5.2 Job fetching
 - **Initial backfill:** last 14 days from all sources.
 - **Incremental:** per-source schedule.
-  - **LinkedIn (Bright Data): daily, "past 24 hours" filter** — avoids paying for the same records twice with week-granularity filters *(verify the time-range options of the Bright Data LinkedIn scraper)*.
+  - **LinkedIn (Bright Data): daily, "past 24 hours" filter** - avoids paying for the same records twice with week-granularity filters *(verify the time-range options of the Bright Data LinkedIn scraper)*.
   - Free sources: daily (or as rate limits allow).
 - Queries are **narrow and per user** (their titles + locations) so paid credits go only to relevant jobs.
 - **Bright Data credit budget:** 5,000 free credits/month (1 credit = 1 scraped record), shared across all users:
@@ -82,7 +83,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ### 5.4 Draft (the main feature)
 - A draft can be created for **any** job in the feed (with or without email).
 - Draft contents: tailored **resume (PDF)**, tailored **cover letter**, and an **application email** (for jobs with an email).
-- **Tailoring rule (hard requirement):** the AI optimises and focuses the resume for the specific JD (ATS keywords, relevance, ordering) by selecting and rewriting from the user's **own uploaded documents** — the detailed portfolio/cover letter is the fact bank; the resume is a condensed selection. The AI may pull portfolio-only items into the resume when the JD calls for them, but **must not add skills, projects or experience that do not exist in the user's documents**.
+- **Tailoring rule (hard requirement):** the AI optimises and focuses the resume for the specific JD (ATS keywords, relevance, ordering) by selecting and rewriting from the user's **own uploaded documents** - the detailed portfolio/cover letter is the fact bank; the resume is a condensed selection. The AI may pull portfolio-only items into the resume when the JD calls for them, but **must not add skills, projects or experience that do not exist in the user's documents**.
 - Show a **diff** of what changed versus the base resume.
 - User can edit the draft directly, or ask for changes through an **AI chat panel on the right side** of the same tab; changes apply to the draft live.
 - **Email check** in the draft: validate the recipient address (format, domain can receive mail, not a no-reply address).
@@ -95,8 +96,8 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ### 5.5 Correspondence (duplicates)
 - Groups the same job found on multiple sources into one **stack**; the user can open **every** copy on every platform, regardless of priority.
-- Matching is **semantic, not word-for-word** — an organisation may post the same opening with different wording. Based on company/organisation (normalised, e.g. "Google LLC" = "Google") + JD content/requirements + title *(recommendation: text embeddings + pgvector similarity)*.
-- The primary record follows the source priority list, but **fields are merged** — e.g. an email found only in a lower-priority copy must not be lost.
+- Matching is **semantic, not word-for-word** - an organisation may post the same opening with different wording. Based on company/organisation (normalised, e.g. "Google LLC" = "Google") + JD content/requirements + title *(recommendation: text embeddings + pgvector similarity)*.
+- The primary record follows the source priority list, but **fields are merged** - e.g. an email found only in a lower-priority copy must not be lost.
 
 ### 5.6 Application tracker
 - Status per job: Drafted → Applied/Sent → Replied → Interview → Offer / Rejected (manual updates; reading replies from Gmail is out of scope).
@@ -121,34 +122,37 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 - **Credentials at rest** encrypted (Fernet, as in OneBrain) - here: Gmail OAuth tokens, Bright Data / Apify / AI keys.
 - **Docs and repo setup**: `CONTEXT.md` glossary, ADRs, `COSTS.md`, `.claude/skills/` coding standards, CI with lint + typecheck + tests, OpenAPI-generated frontend types.
 
-## 8. Out of scope for MVP (later)
-- Auto-filling apply-link forms (browser extension)
+## 8. Out of scope for V1 (later)
+- Browser (Chrome) extension: auto-filling apply-link forms
 - Reading Gmail replies automatically (needs another restricted scope)
 - Public launch / paid plans
 - Recruiter / employer side
 
 ## 9. Accepted risks (decided by the founder; PRD must record them, not re-open them)
-- **Scraping LinkedIn / Naukri** via Bright Data and Apify breaches those sites' terms of service. This is a civil (contract) risk, not a criminal one. Accepted because use is private (founder + friends). **Must be revisited before any public or paid launch** — that is the point where it becomes the business's risk.
+- **Scraping LinkedIn / Naukri** via Bright Data and Apify breaches those sites' terms of service. This is a civil (contract) risk, not a criminal one. Accepted because use is private (founder + friends). **Must be revisited before any public or paid launch** - that is the point where it becomes the business's risk.
 - **Free-tier AI and data privacy:** free tiers may use prompts to improve the provider's products, and some providers restrict free tiers for users in certain regions *(verify Gemini's terms)*. Accepted for private use; revisit before going public.
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
-## 10. Open questions (unresolved — keep flagged in the PRD)
+## 10. Open questions (unresolved - keep flagged in the PRD)
 1. **Shared job store vs per-user fetch.** Recommendation: store every fetched job once in a shared table (needed anyway for Correspondence/dedup) while keeping fetching and feeds per user. When two users' queries overlap, a LinkedIn record is paid for once instead of twice. The founder's position: don't share, because jobs fetched for one user may be irrelevant to others. Not yet agreed. Note that a shared store does not mean a shared feed.
 2. **Credit split between users:** how the 5,000 Bright Data credits are divided (equal quota, or founder-priority?).
 3. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
 4. **ATS company discovery:** the Greenhouse/Lever/Ashby/etc. public APIs need a list of companies (board tokens). How is that list built and maintained? Workday has no public job API.
 5. **Duplicates across locations:** is the same job posted for three cities one job or three?
-6. **Match-score method:** embeddings only, LLM only, or both — and how reasons are generated within free AI limits.
+6. **Match-score method:** embeddings only, LLM only, or both - and how reasons are generated within free AI limits.
 7. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
-8. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) — to be defined in the PRD.
-9. **MVP phasing for a solo, ASAP build:** which sources and features land in phase 1 vs phase 2.
-10. **Duplicate confirmation:** adopt the OneBrain Match Pair / Rejected Pair loop for Correspondence (auto-group high confidence, ask on low confidence), or always auto-group?
-11. **Tenancy unit:** `user` (simplest) or a `workspace` above users (OneBrain's Organization, useful if a paid team plan ever exists)?
-12. **Repo conventions:** carry OneBrain's conventions over to JobWeaver (no em dash in prose, no AI co-author trailer in commits, single-line commits, `<type>/<scope>` branches, PR Walkthrough section)?
+8. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
+9. **V1 build phasing for a solo, ASAP build:** which sources and features land in which release slice.
+10. **Duplicate confirmation:** recommended: three confidence bands (exact/high = auto-group; medium = "possible duplicate" with one-click confirm; low = separate), plus a "not the same job" split on any group, stored and never re-proposed. Awaiting founder confirmation.
 
-## 11. PRD must include
+## 11. Repo conventions (decided: follow OneBrain's)
+- Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
+- Single-line commit messages, no body, no AI co-author trailer.
+- PR titles `<type>: <imperative summary>` under 70 chars, with a `## Walkthrough` section.
+
+## 12. PRD must include
 Match the structure and quality bar of OneBrain's `onebrain-docs/PRD.md`:
 - **Deliverables:** `jobweaver-docs/PRD.md` + `CONTEXT.md` (glossary: Source, Job, Posting, Correspondence, Fact Bank, Draft, Application, ...) + `docs/adr/` (one short ADR per locked decision above) + `COSTS.md` (every free tier, its limit, and what happens when it runs out).
-- **PRD sections:** summary, problem, goals and non-goals, personas, product principles, functional requirements grouped by epic with IDs (FR-A1 ...), each tagged **[MVP] / [V1] / [Later]** with acceptance criteria, non-functional requirements table (security of stored OAuth tokens and resumes, reliability under free-tier limits, cost guardrails, testability with zero live AI calls in CI), key user flows, technology stack table with reasons, release plan with phases, success metrics, risks with mitigations, open questions.
+- **PRD sections:** summary, problem, goals and non-goals, personas, product principles, functional requirements grouped by epic with IDs (FR-A1 ...), each tagged **[V1] / [Later]** with acceptance criteria, non-functional requirements table (security of stored OAuth tokens and resumes, reliability under free-tier limits, cost guardrails, testability with zero live AI calls in CI), key user flows, technology stack table with reasons, release plan with phases, success metrics, risks with mitigations, open questions.
 - Cite ADRs inline ("ADR-NNNN: what it decides"); capitalised terms defined in `CONTEXT.md`.
 - High-level architecture: FastAPI + React, scheduler, source adapters, dedup pipeline, AI Gateway, Gmail integration, data model.
