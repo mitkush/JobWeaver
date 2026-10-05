@@ -68,6 +68,7 @@ export interface paths {
         /**
          * Google Callback
          * @description One redirect URI for both sign-in and Gmail connection; the state says which.
+         *     Every failure returns to the app with a readable reason, never a raw error page.
          */
         get: operations["google_callback_api_auth_google_callback_get"];
         put?: never;
@@ -1011,7 +1012,9 @@ export interface operations {
             };
             header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                jw_oauth?: string | null;
+            };
         };
         requestBody?: never;
         responses: {

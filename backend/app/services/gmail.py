@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AuthError, JobWeaverError
+from app.core.errors import GoogleFlowError, JobWeaverError
 from app.core.security import decrypt, encrypt
 from app.models.oauth_credential import OAuthCredential
 from app.models.user import User
@@ -32,9 +32,13 @@ async def _credential(session: AsyncSession, user: User) -> OAuthCredential | No
 
 async def store_gmail_credential(session: AsyncSession, user: User, tokens: GoogleTokens) -> None:
     if GMAIL_COMPOSE_SCOPE not in tokens.scope.split():
-        raise AuthError("Gmail access was not granted. Tick the Gmail box on Google's screen.")
+        raise GoogleFlowError(
+            "gmail_scope", "Gmail access was not granted. Tick the Gmail box on Google's screen."
+        )
     if not tokens.refresh_token:
-        raise AuthError("Google did not return a Gmail token. Please connect Gmail again.")
+        raise GoogleFlowError(
+            "gmail_token", "Google did not return a Gmail token. Please connect Gmail again."
+        )
     credential = await _credential(session, user) or OAuthCredential(user_id=user.id)
     credential.provider = "gmail"
     credential.refresh_token_encrypted = encrypt(tokens.refresh_token)

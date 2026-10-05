@@ -46,7 +46,9 @@ function AddFact({ kind }: { kind: FactKind }) {
 
 /** The Fact Bank: the only content tailored resumes may use (ADR-0005). */
 export function FactBankEditor({ facts }: { facts: Fact[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  // Facts can disappear (deleted, merged, rebuilt); never keep or send a stale id.
+  const selected = useMemo(() => picked.filter((id) => facts.some((f) => f.id === id)), [picked, facts]);
   const [mergeText, setMergeText] = useState<string | null>(null);
   const merge = useMergeFacts();
   const toast = useToast();
@@ -60,7 +62,7 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
   const visibleKinds = KIND_ORDER.filter((kind) => byKind.has(kind) || ["skill", "experience", "project"].includes(kind));
 
   function toggle(id: string) {
-    setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+    setPicked((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
   }
 
   const selectedFacts = facts.filter((f) => selected.includes(f.id));
@@ -71,7 +73,7 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
         <div className="sticky top-16 z-10 flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm dark:border-brand-600/40 dark:bg-slate-900">
           <span>{selected.length} Facts selected</span>
           <div className="flex gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+            <Button size="sm" variant="ghost" onClick={() => setPicked([])}>
               Clear
             </Button>
             <Button size="sm" onClick={() => setMergeText(selectedFacts.map((f) => f.text).join("; "))}>
@@ -112,7 +114,7 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
         onConfirm={async () => {
           try {
             await merge.mutateAsync({ fact_ids: selected, text: mergeText ?? "" });
-            setSelected([]);
+            setPicked([]);
             setMergeText(null);
           } catch (error) {
             toast("error", (error as Error).message);

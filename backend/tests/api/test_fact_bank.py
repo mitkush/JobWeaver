@@ -150,3 +150,28 @@ async def test_facts_are_isolated_between_users(ready, bob):
     assert merge.status_code == 404
     assert (await bob_client.get("/api/documents")).json() == []
     assert len((await ready.get("/api/facts")).json()) == 7
+
+
+async def test_failed_ai_calls_still_count_toward_the_daily_quota(ready, db):
+    """The request rolls back on failure; usage records must survive it."""
+    from sqlalchemy import func, select
+
+    from app.core.db import get_sessionmaker
+    from app.core.errors import GatewayError
+    from app.gateway.live import LiveAIGateway
+    from app.gateway.quota import UsageLedger
+    from app.main import app
+    from app.models import AIUsage
+
+    class Down:
+        name = "gemini"
+
+        async def complete_json(self, *args):
+            raise GatewayError("gemini timed out")
+
+    app.dependency_overrides[get_gateway] = lambda: LiveAIGateway(
+        {"gemini": Down()}, UsageLedger(get_sessionmaker())
+    )
+    response = await upload_resume(ready)
+    assert response.status_code == 503
+    assert await db.scalar(select(func.count()).select_from(AIUsage)) == 2  # Flash, Flash-Lite

@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.db import get_sessionmaker
 from app.gateway.base import BaseAIGateway
 from app.gateway.live import LiveAIGateway
 from app.gateway.providers import GeminiClient, OpenAICompatibleClient, ProviderClient
@@ -13,7 +13,7 @@ from app.gateway.recorded import RecordedAIGateway
 _http = httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0))
 
 
-def build_gateway(session: AsyncSession) -> BaseAIGateway:
+def build_gateway() -> BaseAIGateway:
     settings = get_settings()
     if settings.gateway_mode == "recorded":
         return RecordedAIGateway(Path(settings.gateway_recorded_dir))
@@ -28,4 +28,4 @@ def build_gateway(session: AsyncSession) -> BaseAIGateway:
         clients["openrouter"] = OpenAICompatibleClient(
             "openrouter", "https://openrouter.ai/api/v1", settings.openrouter_api_key, _http
         )
-    return LiveAIGateway(clients, UsageLedger(session))
+    return LiveAIGateway(clients, UsageLedger(get_sessionmaker()))

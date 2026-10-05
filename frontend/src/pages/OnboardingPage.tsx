@@ -16,6 +16,7 @@ import { GmailCard } from "@/features/gmail/GmailCard";
 import { PreferencesForm } from "@/features/preferences/PreferencesForm";
 import { cn } from "@/lib/cn";
 import { COUNTRIES } from "@/lib/countries";
+import { googleErrorMessage } from "@/lib/google-errors";
 
 import { furthestStep, index, STEPS, type StepKey } from "./onboarding-steps";
 
@@ -190,6 +191,7 @@ function GmailStep({ me }: { me: Me }) {
       <CardHeader title="Connect Gmail (optional)" description="You can do this later in Settings." />
       <CardBody className="space-y-5">
         {params.get("gmail") === "connected" && <Alert tone="success">Gmail is connected.</Alert>}
+        {params.get("google_error") && <Alert tone="warning">{googleErrorMessage(params.get("google_error"))}</Alert>}
         <GmailCard me={me} next="/onboarding/gmail" />
         <a href="/feed" className={buttonClasses(me.onboarding.gmail_connected ? "primary" : "secondary")}>
           {me.onboarding.gmail_connected ? "Go to my Feed" : "Skip for now"}

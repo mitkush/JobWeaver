@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Response
 from fastapi.responses import RedirectResponse
 
-from app.api.auth import gmail_connect_url
+from app.api.auth import gmail_connect
 from app.api.deps import SESSION_COOKIE, CurrentUser, DbSession, Google
 from app.schemas.me import CountryIn, MeOut
 from app.services import accounts
@@ -40,7 +40,7 @@ async def delete_me(db: DbSession, user: CurrentUser, google: Google, response: 
 async def connect_gmail(
     user: CurrentUser, google: Google, next: str = "/settings"
 ) -> RedirectResponse:
-    return RedirectResponse(gmail_connect_url(google, str(user.id), user.email, next))
+    return gmail_connect(google, str(user.id), user.email, next)
 
 
 @router.delete("/gmail")

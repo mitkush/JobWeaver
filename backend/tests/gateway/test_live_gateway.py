@@ -4,6 +4,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.core.db import get_sessionmaker
 from app.core.errors import GatewayError
 from app.gateway.live import LiveAIGateway
 from app.gateway.providers import Completion
@@ -40,7 +41,7 @@ REQUEST = ParseDocumentsRequest(
 async def test_falls_back_on_errors_and_bad_output_then_records_usage(db):
     gemini = FakeClient("gemini", [GatewayError("gemini rate limit"), "not json"])
     groq = FakeClient("groq", [GOOD])
-    gateway = LiveAIGateway({"gemini": gemini, "groq": groq}, UsageLedger(db))
+    gateway = LiveAIGateway({"gemini": gemini, "groq": groq}, UsageLedger(get_sessionmaker()))
 
     response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
     assert response.provider == "groq"
@@ -50,7 +51,7 @@ async def test_falls_back_on_errors_and_bad_output_then_records_usage(db):
 
 
 async def test_skips_routes_over_their_daily_quota(db):
-    ledger = UsageLedger(db)
+    ledger = UsageLedger(get_sessionmaker())
     for _ in range(DAILY_QUOTAS[("gemini", GEMINI_FLASH)]):
         await ledger.record(
             user_id=None, task="t", provider="gemini", model=GEMINI_FLASH, outcome="ok"
@@ -62,6 +63,40 @@ async def test_skips_routes_over_their_daily_quota(db):
 
 
 async def test_raises_one_clear_error_when_every_route_fails(db):
-    gateway = LiveAIGateway({}, UsageLedger(db))
+    gateway = LiveAIGateway({}, UsageLedger(get_sessionmaker()))
     with pytest.raises(GatewayError, match="not configured"):
         await gateway.parse_documents(REQUEST)
+
+
+async def test_timeouts_and_non_json_replies_fall_through_to_the_next_provider(db):
+    import httpx
+
+    from app.gateway.providers import GeminiClient, OpenAICompatibleClient
+
+    def gemini(request):
+        raise httpx.ReadTimeout("slow")
+
+    def groq(request):
+        return httpx.Response(200, text="<html>bad gateway</html>")
+
+    def openrouter(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": GOOD}}]})
+
+    clients = {
+        "gemini": GeminiClient("k", httpx.AsyncClient(transport=httpx.MockTransport(gemini))),
+        "groq": OpenAICompatibleClient(
+            "groq", "https://g", "k", httpx.AsyncClient(transport=httpx.MockTransport(groq))
+        ),
+        "openrouter": OpenAICompatibleClient(
+            "openrouter",
+            "https://o",
+            "k",
+            httpx.AsyncClient(transport=httpx.MockTransport(openrouter)),
+        ),
+    }
+    response = await LiveAIGateway(clients, UsageLedger(get_sessionmaker())).parse_documents(
+        REQUEST.model_copy(update={"user_id": None})
+    )
+    assert response.provider == "openrouter"
+    errors = (await db.execute(select(AIUsage).where(AIUsage.outcome == "error"))).scalars()
+    assert {u.provider for u in errors} == {"gemini", "groq"}

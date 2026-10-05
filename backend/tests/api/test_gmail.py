@@ -55,23 +55,44 @@ async def test_status_warns_before_and_after_the_seven_day_expiry(alice, google,
     assert (await client.get("/api/me")).json()["gmail"]["state"] == "expired"
 
 
-async def test_missing_gmail_scope_is_reported(alice, google):
+async def finish(client, next_path="/settings"):
+    start = await client.get("/api/gmail/connect", params={"next": next_path})
+    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    return await client.get("/api/auth/google/callback", params={"code": "c", "state": state})
+
+
+async def test_missing_gmail_scope_returns_to_the_app_with_a_reason(alice, google):
     _, client = alice
     google.scope = "openid email profile"
-    start = await client.get("/api/gmail/connect")
-    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
-    response = await client.get("/api/auth/google/callback", params={"code": "c", "state": state})
-    assert response.status_code == 401
-    assert "Gmail" in response.json()["error"]["message"]
+    response = await finish(client)
+    assert response.headers["location"] == "http://testserver/settings?google_error=gmail_scope"
 
 
 async def test_gmail_must_match_the_signed_in_account(alice, google):
     _, client = alice
     google.profile = GoogleProfile("someone-else", "other@example.com", "Other", None)
-    start = await client.get("/api/gmail/connect")
+    response = await finish(client)
+    assert response.headers["location"] == "http://testserver/settings?google_error=gmail_account"
+
+
+async def test_redirect_keeps_the_existing_query(alice, google):
+    _, client = alice
+    response = await finish(client, "/onboarding/gmail?from=banner")
+    assert response.headers["location"] == (
+        "http://testserver/onboarding/gmail?from=banner&gmail=connected"
+    )
+
+
+async def test_cancelled_gmail_consent_is_encoded(alice, google):
+    _, client = alice
+    start = await client.get("/api/gmail/connect", params={"next": "/settings?x=1"})
     state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
-    response = await client.get("/api/auth/google/callback", params={"code": "c", "state": state})
-    assert response.status_code == 401
+    response = await client.get(
+        "/api/auth/google/callback", params={"error": "server error&x=2", "state": state}
+    )
+    assert response.headers["location"] == (
+        "http://testserver/settings?x=1&google_error=google_failed"
+    )
 
 
 async def test_disconnect_revokes_and_deletes(alice, google, db):

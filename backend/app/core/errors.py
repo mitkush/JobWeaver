@@ -20,6 +20,14 @@ class AuthError(JobWeaverError):
     code = "unauthenticated"
 
 
+class GoogleFlowError(AuthError):
+    """A Google sign-in or Gmail step failed; `reason` is shown to the user in the app."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class ForbiddenError(JobWeaverError):
     status_code = 403
     code = "forbidden"

@@ -8,10 +8,7 @@ import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
 import { Card, CardBody } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
-
-const GOOGLE_ERRORS: Record<string, string> = {
-  access_denied: "Sign-in was cancelled. You can try again whenever you are ready.",
-};
+import { googleErrorMessage } from "@/lib/google-errors";
 
 function DevLogin() {
   const [email, setEmail] = useState("dev@example.com");
@@ -42,7 +39,7 @@ function DevLogin() {
 export function SignInPage() {
   const [params] = useSearchParams();
   const next = params.get("next") ?? "/";
-  const googleError = params.get("google_error");
+  const googleError = googleErrorMessage(params.get("google_error"));
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
@@ -61,7 +58,7 @@ export function SignInPage() {
           </p>
           {googleError && (
             <Alert tone="warning" className="mt-6">
-              {GOOGLE_ERRORS[googleError] ?? "Google sign-in did not finish. Please try again."}
+              {googleError}
             </Alert>
           )}
           <a

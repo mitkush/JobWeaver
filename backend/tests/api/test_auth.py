@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
-from app.core.security import sign_payload
+from app.core.errors import GoogleFlowError
 from app.models import User, UserSession
 from app.models.user import Role
 from app.services.google_oauth import GoogleProfile, GoogleTokens, get_google_client
@@ -78,7 +78,32 @@ async def test_callback_rejects_tampered_state(anon, google):
     response = await anon.get(
         "/api/auth/google/callback", params={"code": "abc", "state": "forged.signature"}
     )
-    assert response.status_code == 401
+    assert response.headers["location"] == "http://testserver/sign-in?google_error=state"
+    assert "jw_session" not in response.cookies
+
+
+async def test_callback_link_opened_in_another_browser_does_not_sign_in(anon, google, db):
+    """Login CSRF: an attacker's callback link must not sign the victim into their account."""
+    login = await anon.get("/api/auth/google/login")
+    async with make_client() as victim:  # has no jw_oauth cookie from this sign-in
+        response = await victim.get(
+            "/api/auth/google/callback", params={"code": "abc", "state": _state(login)}
+        )
+    assert response.headers["location"] == "http://testserver/sign-in?google_error=state"
+    assert "jw_session" not in response.cookies
+    assert (await db.execute(select(User))).first() is None
+
+
+async def test_google_failures_return_to_sign_in_with_a_reason(anon, google):
+    async def fail(code):
+        raise GoogleFlowError("google_failed", "Google sign-in failed")
+
+    google.exchange_code = fail
+    login = await anon.get("/api/auth/google/login")
+    response = await anon.get(
+        "/api/auth/google/callback", params={"code": "abc", "state": _state(login)}
+    )
+    assert response.headers["location"] == "http://testserver/sign-in?google_error=google_failed"
 
 
 async def test_redirect_target_cannot_leave_the_site(anon, google):
@@ -89,12 +114,12 @@ async def test_redirect_target_cannot_leave_the_site(anon, google):
     assert response.headers["location"] == "http://testserver/"
 
 
-async def test_cancelled_consent_returns_to_app_with_error(anon, google):
-    state = sign_payload({"purpose": "sign_in", "next": "/"}, 600)
+async def test_cancelled_consent_returns_to_sign_in(anon, google):
+    login = await anon.get("/api/auth/google/login")
     response = await anon.get(
-        "/api/auth/google/callback", params={"error": "access_denied", "state": state}
+        "/api/auth/google/callback", params={"error": "access_denied", "state": _state(login)}
     )
-    assert response.headers["location"] == "http://testserver/?google_error=access_denied"
+    assert response.headers["location"] == "http://testserver/sign-in?google_error=cancelled"
 
 
 async def test_me_requires_a_session(anon):

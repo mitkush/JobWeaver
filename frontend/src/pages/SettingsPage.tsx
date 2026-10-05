@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/toast-context";
 import { GmailCard } from "@/features/gmail/GmailCard";
 import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { COUNTRIES } from "@/lib/countries";
+import { googleErrorMessage } from "@/lib/google-errors";
 
 export function SettingsPage({ me }: { me: Me }) {
   const [params] = useSearchParams();
@@ -28,9 +29,7 @@ export function SettingsPage({ me }: { me: Me }) {
       <PageHeader title="Settings" />
       <div className="space-y-6">
         {params.get("gmail") === "connected" && <Alert tone="success">Gmail is connected.</Alert>}
-        {params.get("google_error") && (
-          <Alert tone="warning">Google did not finish connecting Gmail. Please try again.</Alert>
-        )}
+        {params.get("google_error") && <Alert tone="warning">{googleErrorMessage(params.get("google_error"))}</Alert>}
         <Card>
           <CardHeader title="Gmail" description="Used only to create drafts in your Gmail. JobWeaver never sends email." />
           <CardBody>

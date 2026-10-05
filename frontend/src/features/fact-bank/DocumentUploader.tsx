@@ -73,10 +73,11 @@ function FileSlot({ kind, current }: { kind: DocumentKind; current?: DocumentInf
         </p>
       )}
       {upload.isSuccess && <Changes result={upload.data} />}
-      {upload.isError && (
+      {upload.isError && rebuild.isSuccess && <Alert tone="success">Your Fact Bank is ready now.</Alert>}
+      {upload.isError && !rebuild.isSuccess && (
         <Alert
           tone="error"
-          title="That did not work"
+          title={rebuild.isError ? "Trying again did not work" : "That did not work"}
           action={
             saved ? (
               <Button size="sm" variant="secondary" loading={rebuild.isPending} onClick={() => rebuild.mutate()}>
@@ -85,7 +86,7 @@ function FileSlot({ kind, current }: { kind: DocumentKind; current?: DocumentInf
             ) : undefined
           }
         >
-          {rebuild.isSuccess ? "Your Fact Bank is ready now." : upload.error.message}
+          {rebuild.isError ? rebuild.error.message : upload.error.message}
         </Alert>
       )}
     </div>

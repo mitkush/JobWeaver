@@ -24,8 +24,8 @@ async def current_user(db: DbSession, jw_session: Annotated[str | None, Cookie()
     return await resolve_session(db, jw_session)
 
 
-def get_gateway(db: DbSession) -> BaseAIGateway:
-    return build_gateway(db)
+def get_gateway() -> BaseAIGateway:
+    return build_gateway()
 
 
 CurrentUser = Annotated[User, Depends(current_user)]

@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import get_settings
-from app.core.errors import AuthError, ExternalServiceError
+from app.core.errors import GoogleFlowError
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -69,7 +69,7 @@ class GoogleOAuthClient:
             },
         )
         if response.status_code >= 400:
-            raise AuthError("Google sign-in failed. Please try again.")
+            raise GoogleFlowError("google_failed", "Google sign-in failed. Please try again.")
         body = response.json()
         return GoogleTokens(body["access_token"], body.get("refresh_token"), body.get("scope", ""))
 
@@ -78,10 +78,10 @@ class GoogleOAuthClient:
             USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
         )
         if response.status_code >= 400:
-            raise ExternalServiceError("Could not read your Google profile")
+            raise GoogleFlowError("google_failed", "Could not read your Google profile")
         body = response.json()
         if not body.get("email_verified", False):
-            raise AuthError("Your Google email address is not verified")
+            raise GoogleFlowError("email_unverified", "Your Google email address is not verified")
         return GoogleProfile(
             body["sub"], body["email"].lower(), body.get("name", ""), body.get("picture")
         )
