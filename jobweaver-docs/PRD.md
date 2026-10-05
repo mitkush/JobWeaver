@@ -407,7 +407,7 @@ No dates; each phase ends with something usable. Foundation first, like a full p
 
 **Phase 6 - Applications and polish.** FR-F1 to FR-F3, FR-G4 to FR-G5, accessibility and UX-rule review, performance pass. *Usable: V1 complete.*
 
-**Later:** browser extension (FR-E14), email and password sign-in (FR-A7), reply reading (FR-F4), notifications (FR-F5), per-user own API keys, public launch gate (FR-G6), paid plans.
+**Later:** browser extension (FR-E14), email and password sign-in (FR-A7), reply reading (FR-F4), notifications (FR-F5), public launch gate (FR-G6), paid plans.
 
 ## 13. Success Metrics *(recommendations; the founder has not set targets yet)*
 

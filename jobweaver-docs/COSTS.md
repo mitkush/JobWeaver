@@ -1,6 +1,6 @@
 # JobWeaver - Costs
 
-**Budget:** $0 per month, permanently for V1. **Rule:** no payment method is attached to any service, so no service can bill beyond its free tier (ADR-0008).
+**Budget:** $0 per month during a one-month trial; after the trial the founder plans to pay for services where free tiers fall short (each upgrade is a configuration change, recorded here). All Users share the founder's keys; there are no per-user keys. **Rule:** no payment method is attached to any service, so no service can bill beyond its free tier (ADR-0008).
 **What happens at a limit:** the affected Source or provider fails cleanly, is marked Degraded, and the rest of the system keeps working (ADR-0003, ADR-0007).
 
 Limits marked *(verify)* are from general knowledge and change often. Confirm each one in the provider's dashboard when creating the account and update this file. Limits without the mark were confirmed by the founder.
@@ -62,6 +62,7 @@ Claude Code usage for building JobWeaver comes from the founder's own plan and i
 ## 5. Review triggers
 
 Revisit this file when:
+- the one-month trial ends (decide which services move to paid tiers; a paid AI tier may also remove the free-tier prompt-use concern in ADR-0012 *(verify per provider)*),
 - any Source is Degraded for limit reasons more than 3 times in a month,
 - the AI Gateway falls back past Gemini on most days,
 - the User count grows beyond the founder's private group, or

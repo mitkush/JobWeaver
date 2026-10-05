@@ -4,4 +4,4 @@ JobWeaver runs entirely on free tiers with no payment method attached anywhere, 
 
 **Considered and rejected:** separate worker and queue services (a second free service doubles the sleep problem), paid tiers (zero budget).
 
-**Consequences:** jobs must be idempotent and resumable after a restart; long Fetch Runs are chunked; free-tier limits of each host are listed in `COSTS.md` and must be checked when choosing providers (some free databases expire or pause).
+**Consequences:** zero budget applies to a one-month trial; afterwards paid tiers may be adopted per service, and nothing in the design depends on staying free. All Users run on the founder's shared keys. Jobs must be idempotent and resumable after a restart; long Fetch Runs are chunked; free-tier limits of each host are listed in `COSTS.md` and must be checked when choosing providers (some free databases expire or pause).

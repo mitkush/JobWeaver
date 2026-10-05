@@ -135,7 +135,8 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ## 6. AI
 - **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) -> Groq -> OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
-- Uses the founder's own AI accounts. Per-user own API keys are an optional later addition.
+- **Shared keys (decided):** all users run on the founder's API keys (AI providers, Bright Data, Apify and the other sources). No per-user keys.
+- **Budget after the trial (decided):** zero budget during a one-month trial; after that the founder plans to move to paid tiers where needed. Paid tiers are a configuration change, not a redesign.
 - AI tasks: HN free-text extraction, JD parsing (required skills), semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
 - **Embeddings (decided after PRD review):** Gemini only (Groq and OpenRouter have no free embeddings, and vectors from different models cannot be compared). Each vector stores its model name; when Gemini is down, postings are queued for embedding instead of being compared without it; a model change means re-computing all vectors.
 
