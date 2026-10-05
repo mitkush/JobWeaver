@@ -9,7 +9,7 @@ Items marked *(verify)* are facts about third-party services stated with moderat
 ---
 
 ## 1. Product in one line
-An AI job-hunt assistant that fetches jobs from many sources, removes and groups duplicates, ranks them against the user's profile, and prepares a tailored resume, cover letter and application email for each job - which the user reviews, edits (directly or via an AI chat) and sends themselves.
+An AI job-hunt assistant that fetches jobs from many sources, removes and groups duplicates, shows each job's skill gaps against the user's profile, and prepares a tailored resume, cover letter and application email for each job - which the user reviews, edits (directly or via an AI chat) and sends themselves.
 
 ## 2. Problem & users
 - **Problem:** job hunting means checking many boards, seeing the same job reposted across sites, and rewriting the resume and cover letter for each job. Generic applications don't pass ATS screening and look vague.
@@ -96,7 +96,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Separate "Save draft" and "Send / Open in Gmail" actions.** Nothing is ever sent automatically.
 - **Gmail hand-off (decided: Option A):** JobWeaver creates a real **Gmail draft with the PDF attached** via the Gmail API; the user opens it in Gmail, can change formatting there, and sends it from Gmail.
   - Requires the `gmail.compose` scope *(verify: classified as restricted)*. Run the Google OAuth app in **testing mode** (up to 100 named test users, no Google verification needed).
-  - In testing mode refresh tokens expire about **every 7 days** *(verify)* → the app detects expiry and shows a **re-login reminder**.
+  - In testing mode refresh tokens expire about **every 7 days** *(verify)* -> the app detects expiry and shows a **re-login reminder**.
   - **Fallback (Option B):** Gmail compose link with to/subject/body pre-filled; user attaches the downloaded PDF manually (compose links cannot attach files).
 - For jobs without an email: download the PDFs, open the apply link, mark as applied.
 
@@ -113,7 +113,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - The primary record follows the source priority list, but **fields are merged** - e.g. an email found only in a lower-priority copy must not be lost.
 
 ### 5.6 Application tracker
-- Status per job: Drafted → Applied/Sent → Replied → Interview → Offer / Rejected (manual updates; reading replies from Gmail is out of scope).
+- Status per job: Drafted -> Applied/Sent -> Replied -> Interview -> Offer / Rejected (manual updates; reading replies from Gmail is out of scope).
 
 ### 5.7 Follow-up reminder
 - Reminder after N days with no update (reminder only, never auto-sent).
@@ -131,7 +131,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - Draft screen layout: draft editor in the centre, AI chat panel on the right, diff / trace viewable without leaving the screen.
 
 ## 6. AI
-- **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) → Groq → OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
+- **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) -> Groq -> OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
 - Uses the founder's own AI accounts. Per-user own API keys are an optional later addition.
 - AI tasks: HN free-text extraction, JD parsing (required skills), semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
 
