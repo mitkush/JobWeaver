@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+backend/static/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Local config
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
