@@ -27,8 +27,9 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Timeline:** as soon as possible — MVP scope must be tight and phased.
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
-- **Hosting:** free tiers only *(recommendation: frontend on a free static host; backend on a free web-service host; free Postgres with pgvector)*.
-  - Free backends sleep when idle → keep awake with an external pinger hitting `GET /health`, and trigger scheduled fetches via an external free cron (e.g. cron-job.org or a GitHub Actions schedule) calling a secret-protected endpoint. Fetches must run as background work, not inside a single long HTTP request.
+- **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
+  - Free backends sleep after ~15 min idle -> keep warm with an external monitor (UptimeRobot) pinging a lightweight `GET /health` (no DB touch) every 5 min.
+  - Scheduled fetches run in an **in-process scheduler (APScheduler)** on the warm instance, as background work, never inside one long HTTP request. External cron calling a secret-protected endpoint is the fallback if the host still sleeps.
   - Some free databases pause after inactivity *(verify per provider)*; daily fetches should keep them active.
 
 ## 5. Core features (MVP)
@@ -108,18 +109,30 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - Uses the founder's own AI accounts. Per-user own API keys are an optional later addition.
 - AI tasks: HN free-text extraction, JD parsing, match scoring, semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
 
-## 7. Out of scope for MVP (later)
+## 7. Patterns to reuse from OneBrain (`mitkush/OneBrain`)
+Same founder, same stack, already built and working. The PRD should reuse these rather than reinvent them *(recommendation)*:
+- **Source adapter registry** (OneBrain's connector plugin pattern): each job source is one module implementing a fixed interface (e.g. `fetch(query, since)`, `normalize(raw) -> Job`) and registering itself. Adding a source = one new module + one import line, never an `if source == ...` branch.
+- **Thin AI Gateway** (ADR-0009 there): the only module that imports a provider SDK; typed task methods (`extract_job`, `score_match`, `tailor_resume`, `draft_email`, `edit_draft`); per-task model routing; per-user token/credit accounting; the existing `FallbackAIGateway` pattern extended to Gemini -> Groq -> OpenRouter; **recorded-response mode so CI and tests make zero live AI calls**.
+- **Tenancy from day one** (ADR-0001 there): every table, cache key and background job carries the owner id (`user_id`), with cross-user isolation tests.
+- **"AI proposes, human disposes"**: nothing AI-generated is sent or merged without the user's review. Applies to drafts, and *(recommendation)* to low-confidence duplicate groups.
+- **"Numbers from code, words from AI"**: match score computed deterministically (skill/keyword overlap, location, work mode, seniority); the LLM only writes the reasons. Keeps scoring cheap, testable and consistent within free AI limits.
+- **Trace**: every tailored resume bullet links back to the fact in the user's documents it came from. This makes the no-fabrication rule (5.4) checkable, the same way OneBrain answers expose how they were computed.
+- **Match Pair / Rejected Pair loop** for duplicates: each pair carries a confidence score; high confidence groups automatically, low confidence is shown as "possible duplicate"; "not the same job" is stored and never re-proposed.
+- **Credentials at rest** encrypted (Fernet, as in OneBrain) - here: Gmail OAuth tokens, Bright Data / Apify / AI keys.
+- **Docs and repo setup**: `CONTEXT.md` glossary, ADRs, `COSTS.md`, `.claude/skills/` coding standards, CI with lint + typecheck + tests, OpenAPI-generated frontend types.
+
+## 8. Out of scope for MVP (later)
 - Auto-filling apply-link forms (browser extension)
 - Reading Gmail replies automatically (needs another restricted scope)
 - Public launch / paid plans
 - Recruiter / employer side
 
-## 8. Accepted risks (decided by the founder; PRD must record them, not re-open them)
+## 9. Accepted risks (decided by the founder; PRD must record them, not re-open them)
 - **Scraping LinkedIn / Naukri** via Bright Data and Apify breaches those sites' terms of service. This is a civil (contract) risk, not a criminal one. Accepted because use is private (founder + friends). **Must be revisited before any public or paid launch** — that is the point where it becomes the business's risk.
 - **Free-tier AI and data privacy:** free tiers may use prompts to improve the provider's products, and some providers restrict free tiers for users in certain regions *(verify Gemini's terms)*. Accepted for private use; revisit before going public.
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
-## 9. Open questions (unresolved — keep flagged in the PRD)
+## 10. Open questions (unresolved — keep flagged in the PRD)
 1. **Shared job store vs per-user fetch.** Recommendation: store every fetched job once in a shared table (needed anyway for Correspondence/dedup) while keeping fetching and feeds per user. When two users' queries overlap, a LinkedIn record is paid for once instead of twice. The founder's position: don't share, because jobs fetched for one user may be irrelevant to others. Not yet agreed. Note that a shared store does not mean a shared feed.
 2. **Credit split between users:** how the 5,000 Bright Data credits are divided (equal quota, or founder-priority?).
 3. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
@@ -129,6 +142,13 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 7. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
 8. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) — to be defined in the PRD.
 9. **MVP phasing for a solo, ASAP build:** which sources and features land in phase 1 vs phase 2.
+10. **Duplicate confirmation:** adopt the OneBrain Match Pair / Rejected Pair loop for Correspondence (auto-group high confidence, ask on low confidence), or always auto-group?
+11. **Tenancy unit:** `user` (simplest) or a `workspace` above users (OneBrain's Organization, useful if a paid team plan ever exists)?
+12. **Repo conventions:** carry OneBrain's conventions over to JobWeaver (no em dash in prose, no AI co-author trailer in commits, single-line commits, `<type>/<scope>` branches, PR Walkthrough section)?
 
-## 10. PRD must include
-Personas, user stories with acceptance criteria, functional and non-functional requirements (security of stored OAuth tokens and resumes, reliability under free-tier limits, cost guardrails), MVP scope and phasing, success metrics, risks, and a high-level architecture (FastAPI + React, scheduler, source adapters, dedup pipeline, AI provider layer, Gmail integration, data model).
+## 11. PRD must include
+Match the structure and quality bar of OneBrain's `onebrain-docs/PRD.md`:
+- **Deliverables:** `jobweaver-docs/PRD.md` + `CONTEXT.md` (glossary: Source, Job, Posting, Correspondence, Fact Bank, Draft, Application, ...) + `docs/adr/` (one short ADR per locked decision above) + `COSTS.md` (every free tier, its limit, and what happens when it runs out).
+- **PRD sections:** summary, problem, goals and non-goals, personas, product principles, functional requirements grouped by epic with IDs (FR-A1 ...), each tagged **[MVP] / [V1] / [Later]** with acceptance criteria, non-functional requirements table (security of stored OAuth tokens and resumes, reliability under free-tier limits, cost guardrails, testability with zero live AI calls in CI), key user flows, technology stack table with reasons, release plan with phases, success metrics, risks with mitigations, open questions.
+- Cite ADRs inline ("ADR-NNNN: what it decides"); capitalised terms defined in `CONTEXT.md`.
+- High-level architecture: FastAPI + React, scheduler, source adapters, dedup pipeline, AI Gateway, Gmail integration, data model.
