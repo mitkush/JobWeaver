@@ -17,6 +17,10 @@ export const keys = {
   facts: ["facts"] as const,
   documents: ["documents"] as const,
   preferences: ["preferences"] as const,
+  sources: ["admin", "sources"] as const,
+  runs: ["admin", "runs"] as const,
+  notices: ["notices"] as const,
+  boards: ["boards"] as const,
 };
 
 export function useMe() {
@@ -187,6 +191,55 @@ export function useSignOut() {
   return useMutation({
     mutationFn: () => unwrap(api.POST("/api/auth/logout")),
     onSuccess: () => client.clear(),
+  });
+}
+
+export function useSources() {
+  return useQuery({ queryKey: keys.sources, queryFn: () => unwrap(api.GET("/api/admin/sources")) });
+}
+
+export function useFetchRuns() {
+  return useQuery({
+    queryKey: keys.runs,
+    queryFn: () => unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } })),
+  });
+}
+
+export function useUpdateSource() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
+      unwrap(api.PATCH("/api/admin/sources/{name}", { params: { path: { name } }, body: { enabled } })),
+    onSuccess: (sources) => client.setQueryData(keys.sources, sources),
+  });
+}
+
+export function useRunSource() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      unwrap(api.POST("/api/admin/sources/{name}/run", { params: { path: { name } } })),
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: keys.sources }),
+        client.invalidateQueries({ queryKey: keys.runs }),
+      ]),
+  });
+}
+
+export function useNotices() {
+  return useQuery({ queryKey: keys.notices, queryFn: () => unwrap(api.GET("/api/sources/notices")) });
+}
+
+export function useBoards() {
+  return useQuery({ queryKey: keys.boards, queryFn: () => unwrap(api.GET("/api/ats-boards")) });
+}
+
+export function useAddBoard() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (url: string) => unwrap(api.POST("/api/ats-boards", { body: { url } })),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.boards }),
   });
 }
 

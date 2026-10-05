@@ -36,3 +36,9 @@ services:
         sync: false
       - key: GEMINI_FREE_TIER
         value: "true"
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: RAPIDAPI_KEY
+        sync: false
+      - key: INTERNAL_CRON_SECRET
+        generateValue: true

@@ -5,6 +5,7 @@ import { ApiError, type Me } from "@/api/client";
 import { useMe } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { PageSpinner } from "@/components/ui/spinner";
+import { AdminSourcesPage } from "@/pages/AdminSourcesPage";
 import { FactBankPage } from "@/pages/FactBankPage";
 import { FeedPage } from "@/pages/FeedPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -49,6 +50,10 @@ export function App() {
       <Route path="/fact-bank" element={<Authenticated>{() => <FactBankPage />}</Authenticated>} />
       <Route path="/preferences" element={<Authenticated>{() => <PreferencesPage />}</Authenticated>} />
       <Route path="/settings" element={<Authenticated>{(me) => <SettingsPage me={me} />}</Authenticated>} />
+      <Route
+        path="/admin/sources"
+        element={<Authenticated>{(me) => (me.role === "admin" ? <AdminSourcesPage /> : <NotFoundPage />)}</Authenticated>}
+      />
       <Route path="*" element={<Authenticated>{() => <NotFoundPage />}</Authenticated>} />
     </Routes>
   );

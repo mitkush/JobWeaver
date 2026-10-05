@@ -14,6 +14,7 @@ Don't skip to step 3 without a brief: a PRD built on guessed requirements is wor
 - Every user-owned table, query and job is scoped by `user_id`, with cross-user isolation tests (ADR-0001).
 - Nothing is sent to an AI provider before the user accepted the AI notice and passed the region check (FR-A5, ADR-0012).
 - Layering: `api -> services -> (adapters | gateway | documents) -> core`; lower layers never import upward.
+- A new job Source is one module in `backend/app/adapters/` that subclasses `WindowedSourceAdapter` or `SnapshotSourceAdapter`, uses `@register_adapter`, and is imported in `adapters/__init__.py`; never branch on a source name in core code (ADR-0003).
 - After any API change run `npm run gen:api` in `frontend/`; CI fails if the generated types are stale.
 
 # Working style

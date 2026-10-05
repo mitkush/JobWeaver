@@ -2,7 +2,7 @@
 
 AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates across sites, shows skill gaps, and prepares a truthful tailored resume, cover letter and email for any job, which you review and send yourself from Gmail.
 
-**Status:** Phase 0 (foundation) and Phase 1 (accounts and profile) are built: Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection and account deletion. Job sources arrive in Phase 2 (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
+**Status:** Phases 0 to 2 are built: Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection, account deletion, and daily job fetching from LinkedIn (Bright Data), JSearch, Greenhouse, Lever and Remotive with source health and budgets on the admin Sources page. Grouping duplicates and the Feed come in Phase 3 (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
 
 ## Docs
 - [PRD](jobweaver-docs/PRD.md) - what V1 does, requirements, architecture, release plan
@@ -48,3 +48,5 @@ Backend tests need a Postgres database `jobweaver_test` (user/password `jobweave
 3. **Render:** create a Blueprint from this repo (`render.yaml`) and fill in the secret values. Generate `CREDENTIALS_ENCRYPTION_KEY` with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and never change it afterwards. Production refuses to start without its secrets.
 4. **Keep warm:** add an [UptimeRobot](https://uptimerobot.com) HTTP monitor on `https://<your-app>/health` every 5 minutes. `/health` never touches the database, so Neon can still sleep.
 5. **AI keys:** add `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` and `OPENROUTER_API_KEY`. Any missing provider is skipped by the fallback chain.
+6. **Job source keys:** add `BRIGHTDATA_API_KEY` (LinkedIn) and `RAPIDAPI_KEY` (JSearch). Do not attach a payment method to either account (zero budget). The daily fetch runs at 01:17 UTC; check the admin **Sources** page after the first run.
+7. **Cron fallback (optional):** if the host ever sleeps through the daily run, add a free cron job (e.g. cron-job.org) that sends `POST https://<your-app>/api/internal/fetch` with header `X-Cron-Secret: <INTERNAL_CRON_SECRET>` once a day.

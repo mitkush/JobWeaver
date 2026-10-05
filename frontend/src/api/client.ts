@@ -10,6 +10,10 @@ export type DocumentKind = DocumentInfo["kind"];
 export type FactKind = Fact["kind"];
 export type Preferences = Schemas["PreferencesIn"];
 export type UploadResult = Schemas["UploadResult"];
+export type SourceStatus = Schemas["SourceStatusOut"];
+export type FetchRun = Schemas["FetchRunOut"];
+export type AtsBoard = Schemas["AtsBoardOut"];
+export type SourceNotice = Schemas["SourceNotice"];
 
 export class ApiError extends Error {
   constructor(

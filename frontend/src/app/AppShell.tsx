@@ -60,6 +60,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
   const signOut = useSignOut();
   const navigate = useNavigate();
   const onboarding = me.onboarding.next_step !== "done";
+  const nav = me.role === "admin" ? [...NAV, { to: "/admin/sources", label: "Sources" }] : NAV;
 
   return (
     <div className="min-h-screen">
@@ -73,7 +74,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
           </Link>
           {!onboarding && (
             <nav aria-label="Main" className="hidden gap-1 sm:flex">
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -109,7 +110,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
         </div>
         {!onboarding && (
           <nav aria-label="Main mobile" className="flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink key={item.to} to={item.to} className="rounded-md px-3 py-1 text-sm whitespace-nowrap aria-[current=page]:bg-slate-100 dark:aria-[current=page]:bg-slate-800">
                 {item.label}
               </NavLink>

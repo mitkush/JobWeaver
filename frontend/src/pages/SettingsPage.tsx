@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast-context";
 import { GmailCard } from "@/features/gmail/GmailCard";
+import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { COUNTRIES } from "@/lib/countries";
 
 export function SettingsPage({ me }: { me: Me }) {
@@ -34,6 +35,16 @@ export function SettingsPage({ me }: { me: Me }) {
           <CardHeader title="Gmail" description="Used only to create drafts in your Gmail. JobWeaver never sends email." />
           <CardBody>
             <GmailCard me={me} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Company job boards"
+            description="JobWeaver checks these company boards every day, so jobs are seen first-hand and closed jobs disappear."
+          />
+          <CardBody>
+            <CompanyBoards />
           </CardBody>
         </Card>
 
