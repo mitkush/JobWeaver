@@ -28,7 +28,7 @@ Existing tools solve parts of this. Job boards and aggregators show jobs but not
 ## 3. Goals and Non-Goals
 
 ### Goals
-1. **G1 - Coverage:** a User sees new matching Jobs from every enabled Source within a day of posting, without visiting any job site.
+1. **G1 - Coverage:** a User sees new matching Jobs from every healthy Source within a day of posting, without visiting any job site. When a Source is down or out of budget, the Feed says so (FR-B6).
 2. **G2 - One Job, one card:** duplicates across Sources are grouped, and every original Posting stays one click away.
 3. **G3 - Tailored in minutes:** from a Job card to a ready Draft in at most 2 clicks, and to a Gmail draft with the PDF attached in under 5 minutes of the User's time.
 4. **G4 - Truthful by construction:** zero fabricated skills, projects or claims in any Draft (ADR-0005: Fact Bank, no fabrication).
@@ -52,13 +52,13 @@ A software professional (the founder is the reference: a senior developer with t
 Another job seeker invited by the founder, possibly in a different field or country, with their own documents and Preferences. Must never see P1's data, and should be productive without help from the founder.
 
 ### P3 - The Admin (the founder, wearing a different hat)
-Keeps the system running: watches Source Status and the Credit Budget, enables or disables Sources, sets pacing. Success for P3: *"I check the status page once a week and nothing surprises me."*
+Keeps the system running: watches Source Status and the Credit Budget, enables or disables Sources, narrows expensive queries. Success for P3: *"I check the status page once a week and nothing surprises me."*
 
 ## 5. Product Principles
 
 1. **AI proposes, the User disposes.** Drafts, Possible Duplicates and parsed Facts are proposals until the User accepts them. Nothing outward happens without a User action.
 2. **Facts from the User, words from the AI.** The AI may phrase, select and order; it may not add facts (ADR-0005: Fact Bank, no fabrication).
-3. **Facts from code, words from AI.** Anything that must be consistent and testable (Skill Gaps, duplicate bands, credit pacing) is computed in code; the AI extracts and writes (ADR-0010: Skill Gaps, not a match score).
+3. **Facts from code, words from AI.** Anything that must be consistent and testable (Skill Gaps, duplicate bands, budget projections) is computed in code; the AI extracts and writes (ADR-0010: Skill Gaps, not a match score).
 4. **Every copy is reachable.** Grouping never hides a Posting; priority picks a display default, not a winner (ADR-0004: two-layer dedup with confidence bands).
 5. **Degrade, never die.** Any Source or AI provider can fail; the product keeps working and says what is missing (ADR-0003: Source Adapters with per-source fallback).
 6. **No confusing screens.** One clear main action per screen, visible status for everything slow, and one name per concept everywhere (section 8).
@@ -69,10 +69,10 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 
 ### Epic A - Accounts and Profile
 
-**FR-A1 [V1] - Sign up and sign in.** Users sign up and sign in with Google or with email and password. Email-and-password accounts verify their email address and can reset a forgotten password.
-- AC1: A new User can sign up with either method and land on onboarding.
-- AC2: Passwords are stored only as strong hashes; reset links are single-use and expire.
-- AC3: In V1, sign-up is invite-only: only email addresses on the Admin's allow-list can create an account. *(recommendation; keeps the product private, see ADR-0012)*
+**FR-A1 [V1] - Sign in with Google.** Users sign up and sign in with Google only (ADR-0015: Google sign-in only in V1). Every User needs a Google account anyway for the Gmail Hand-off, and only named Google test users can use the OAuth app in testing mode.
+- AC1: A new User signs in with Google and lands on onboarding; Gmail access can be granted in the same consent or later (FR-A4).
+- AC2: Sessions are signed, HTTP-only cookies with CSRF protection.
+- AC3: In V1, sign-up is invite-only: only Google accounts on the Admin's allow-list (the same people added as Google test users) can create an account.
 
 **FR-A2 [V1] - Fact Bank from uploaded documents.** The User uploads their resume and, optionally, a detailed portfolio or cover letter and a short summary (PDF; DOCX optional). The AI Gateway parses them into Facts: skills, experiences, projects, bullets, metrics and links, each linked to the document it came from. The User reviews the parsed Facts once and can edit, merge, delete or add Facts.
 - AC1: Uploading the founder's resume and portfolio produces Facts that include portfolio-only items (e.g. Prism AST, the agent-skills talk) marked as "not in Base Resume".
@@ -82,21 +82,28 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 
 **FR-A3 [V1] - Preferences.** Multi-select target titles and keywords, locations (India cities; other countries and cities) and work modes (onsite, hybrid, remote). Editable at any time.
 - AC1: Changing Preferences updates the Feed from Jobs already fetched within one minute, without waiting for the next Fetch Run.
-- AC2: New titles or locations are included in the next Fetch Run's queries; a Backfill for them runs if budget allows.
+- AC2: New titles or locations are included in the next Fetch Run's queries; a Backfill runs for them.
 
 **FR-A4 [V1] - Gmail connection.** The User connects Gmail (Google OAuth, `gmail.compose`) from Settings or at the first Open in Gmail.
 - AC1: Settings shows the connection status: Connected, Expires soon, Expired.
 - AC2: When the refresh token has expired (about every 7 days in testing mode), the app shows a re-login reminder before the next Gmail Hand-off is attempted, not after it fails.
 - AC3: Gmail tokens are encrypted at rest and never logged.
 
-**FR-A5 [V1] - Onboarding.** A first-run flow walks the User through: upload documents -> review Fact Bank -> set Preferences -> connect Gmail (skippable). It ends on the Feed.
+**FR-A5 [V1] - Onboarding.** A first-run flow walks the User through: AI data notice -> upload documents -> review Fact Bank -> set Preferences -> connect Gmail (skippable). It ends on the Feed.
 - AC1: Every step can be resumed later; skipping a step leaves a clear empty-state prompt where it is needed.
+- AC2: Before the first upload, a one-line notice the User must accept says that their documents are processed by free AI services (Gemini, Groq, OpenRouter) whose free tiers may use the content to improve their products (ADR-0012: accepted risks for private use). No document is sent to any AI provider before acceptance.
 
 **FR-A6 [V1] - Account deletion.** A User can delete their account; all user-owned data is removed (shared job data is not user data, ADR-0002: Jobs stored once, linked to Users).
 
+**FR-A7 [Later] - Email and password sign-in.** For a public product: email and password with verification and reset (needs a transactional email provider, see ADR-0015).
+
 ### Epic B - Sources and Fetching
 
-**FR-B1 [V1] - Source Adapter registry.** Each Source is one adapter module registered by name, implementing: fetch Postings for a query and time window, normalise them, and report credits or requests used (ADR-0003: Source Adapters with per-source fallback).
+**FR-B1 [V1] - Source Adapter registry with two fetch modes.** Each Source is one adapter module registered by name (ADR-0003: Source Adapters with per-source fallback). An adapter declares one of two modes:
+- **Windowed** (LinkedIn, Naukri, JSearch, SerpApi, Adzuna, Indian boards, remote boards, HN, Foundit): fetch Postings for a query and a time window; only new Postings are seen.
+- **Snapshot** (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Workday): fetch the complete list of open jobs for one ATS Board; the list is compared with stored Postings, so new, changed and closed Postings are all detected.
+
+Both modes normalise into Postings and report credits or requests used.
 - AC1: Adding a Source touches one new module and one import line; no core file changes (checked in code review).
 - AC2: Every adapter has recorded-fixture tests for success, limit-exceeded and malformed responses.
 
@@ -115,18 +122,18 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 | 9 | Hacker News "Who is hiring" | Free text, AI extraction |
 | 10 | Foundit | Board, overlaps with Naukri |
 
-**FR-B3 [V1] - Backfill and daily incremental fetch.** On first enable (and for new Preferences) a Source fetches the last 14 days. After that, every Source runs daily on a window from its last successful run, minus a small overlap (e.g. 2 hours) so nothing falls between runs; duplicates from the overlap are removed by Epic C.
-- AC1: A missed day (host asleep, Source down) is caught up on the next run from the last successful watermark, not from "24 hours ago".
+**FR-B3 [V1] - Backfill and daily fetch.** On first enable (and for new Preferences) a windowed Source fetches the last 14 days. After that, windowed Sources run daily on a window from their last successful run, minus a small overlap (e.g. 2 hours); snapshot Sources fetch their full board daily. Duplicates from overlaps are removed by Epic C.
+- AC1: A missed day (host asleep, Source down) is caught up on the next run from the last successful watermark, not from "24 hours ago". Sources that only offer fixed filters (e.g. LinkedIn: past 24 hours, past week) use the smallest filter that reaches back to the watermark for that one catch-up run; Postings already stored are skipped (and on credit Sources, are still paid for).
 - AC2: Fetch Runs are idempotent: re-running a window never creates duplicate Postings.
 
-**FR-B4 [V1] - LinkedIn via Bright Data.** Runs daily with the "past 24 hours" filter, one narrow query per distinct (title, location) combination across all Users' Preferences (ADR-0009: LinkedIn credit budget and pacing).
+**FR-B4 [V1] - LinkedIn via Bright Data.** Runs daily with the "past 24 hours" filter (catch-up per FR-B3), one query per distinct (title, location) combination across all Users' Preferences. **Every result of every query is fetched; JobWeaver never silently truncates LinkedIn results to fit the budget** (ADR-0009: LinkedIn full scope with a visible budget).
 - AC1: Two Users with the same title and location trigger one query, not two.
-- AC2: Before build, the scraper's available time-range options are confirmed; if "past 24 hours" is unavailable, the closest option is used and overlap records are not counted twice.
+- AC2: Before build, the scraper's available time-range options are confirmed; if "past 24 hours" is unavailable, the closest option is used; overlap records are stored once, and the credits they cost show in the Credit Budget.
 
-**FR-B5 [V1] - Credit Budget and pacing.** The Admin sees each credit- or quota-limited Source's monthly allowance, spend to date and month-end projection.
-- AC1: Daily spend is capped at (remaining credits / remaining days); the 14-day Backfill is capped (default 1,500 Bright Data records). Both are settings, not code.
+**FR-B5 [V1] - Credit Budget.** The Admin sees each credit- or quota-limited Source's monthly allowance, spend to date, spend per query, and a month-end projection.
+- AC1: When the projection says the budget will run out before renewal, the Admin is warned with the date and the most expensive queries, so they can narrow Preferences themselves. JobWeaver does not cap daily spend or the Backfill on its own.
 - AC2: When a Source's budget is exhausted it becomes Degraded with reason "budget exhausted until <renewal date>"; other Sources are unaffected.
-- AC3: No per-user quota (decided); spend per User's queries is still recorded for later.
+- AC3: No per-user quota (decided). Rollout: in the first month only the founder uses LinkedIn, so the full 5,000 credits serve one User's queries; friends are added after the first month's spend is known.
 
 **FR-B6 [V1] - Source fallback and Source Status.** A Fetch Run that fails for any reason marks that Source Degraded with the reason, keeps everything already fetched from other Sources, and retries on the next run.
 - AC1: Simulating "service unavailable" on one Source leaves the Feed updated from all others.
@@ -146,10 +153,17 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC1: "Bengaluru", "Bangalore" and "Bangalore Urban" normalise to one city; "Google LLC" and "Google" to one Company.
 - AC2: Emails found in the description are extracted into the contact-email field.
 
-**FR-B10 [V1] - Expired Jobs.** Postings that disappear from their Source or are marked closed are flagged; a Job with no live Postings becomes an Expired Job and leaves the Feed.
-- AC1: An Application on an Expired Job keeps working and shows "This job is no longer listed".
+**FR-B10 [V1] - Expired Jobs.** A Job becomes an Expired Job and leaves the Feed when:
+- a snapshot Source no longer lists any of its snapshot Postings (closed on the company's board), or
+- it has no snapshot Posting and its newest windowed Posting is older than the age limit (default 30 days after posting; a setting), or
+- an apply-link check (below) finds the job closed.
 
-**FR-B11 [V1] - Manual refresh (Admin).** The Admin can trigger a Fetch Run for one Source. Rate-limited so it cannot break the Credit Budget.
+Windowed Sources cannot see a job disappear, so the age limit is what keeps "ghost jobs" out of the Feed.
+- AC1: An Application on an Expired Job keeps working and shows "This job is no longer listed".
+- AC2: A Job still listed on a company board stays live past the age limit.
+- AC3: When a Draft is created, the Job's apply link is checked if it can be checked for free (not through a credit-based Source); a closed or 404 link marks the Posting closed and warns the User before generation.
+
+**FR-B11 [V1] - Manual refresh (Admin).** The Admin can trigger a Fetch Run for one Source. Rate-limited (default 4 per Source per day); its cost shows in the Credit Budget.
 
 ### Epic C - Correspondence (duplicates)
 
@@ -157,6 +171,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC1: The same advert reworded on LinkedIn and Greenhouse is placed in High or Exact on a labelled test set.
 - AC2: Two different roles at one Company (e.g. "Backend Engineer" and "Data Engineer") are Low.
 - AC3: Thresholds are settings and start strict.
+- AC4: A Posting without an embedding (Gemini unavailable) is matched only on Exact signals and queued; semantic matching runs when its embedding arrives (ADR-0014: Gemini embeddings, queued when down).
 
 **FR-C2 [V1] - Automatic grouping.** Exact and High pairs join the same Job automatically. The Primary Posting is the one from the highest-priority Source; all other fields are merged.
 - AC1: A contact email present only on a lower-priority Posting appears on the Job.
@@ -267,13 +282,13 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 
 | Area | Requirement |
 |---|---|
-| Security | Passwords hashed (argon2 or bcrypt); tokens and keys encrypted at rest; HTTPS only; CSRF and rate limiting on auth endpoints; invite-only sign-up in V1. |
-| Privacy | Documents, Facts and Drafts are user-owned and never shared, logged or used outside that User's requests; account deletion removes all user-owned data. |
+| Security | Google sign-in only (no stored passwords); signed HTTP-only session cookies with CSRF protection; tokens and keys encrypted at rest; HTTPS only; invite-only sign-up in V1. |
+| Privacy | Documents, Facts and Drafts are user-owned and never shared, logged or used outside that User's requests; each User accepts the AI data notice before any document reaches an AI provider (FR-A5); account deletion removes all user-owned data. |
 | Truthfulness | Zero fabricated content in Drafts, enforced by the Fact Bank rule, the code-level skill check and the Tailoring Trace (ADR-0005). |
 | Reliability | Any single Source or AI provider failing leaves the product usable; Fetch Runs are idempotent and resume after restarts (ADR-0003, ADR-0008). |
-| Cost | $0/month; no payment method on any service; paced budgets for credit- and quota-limited Sources; AI calls minimised by per-Job (not per-User) extraction (COSTS.md). |
+| Cost | $0/month; no payment method on any service; visible budgets and projections for credit- and quota-limited Sources; AI calls minimised by per-Job (not per-User) extraction (COSTS.md). |
 | Performance | Feed loads in under 2 s for 2,000 Jobs; Preferences changes reflect in under 1 minute; Draft generation typically under 60 s with visible progress. |
-| Freshness | New Postings appear within 24 hours of posting for healthy Sources; the Feed always shows when it was last updated. |
+| Freshness | New Postings appear within 24 hours of posting for healthy Sources; Expired Jobs leave the Feed (FR-B10); the Feed always shows when it was last updated. |
 | Testability | Recorded AI mode: CI makes zero live AI calls; every Source Adapter tested on recorded fixtures; labelled sets for dedup bands and fabrication checks. |
 | Accessibility | WCAG 2.1 AA: keyboard navigation for every action, readable contrast in light and dark mode, screen-reader labels. |
 | Portability | 12-factor config, containerised, no hard dependency on one cloud's proprietary services. |
@@ -305,7 +320,7 @@ The UI must look professional and the UX must never be confusing. "Not confusing
 
 **Flow E - Duplicate triage.** Possible duplicate marker -> Correspondence view -> compare Postings side by side -> Confirm or Not the same Job.
 
-**Flow F - Source trouble (Admin).** Notice "LinkedIn delayed" -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or adjust pacing, or disable the Source.
+**Flow F - Source trouble (Admin).** Notice "LinkedIn delayed" -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or narrow the most expensive queries, or disable the Source.
 
 **Flow G - Follow-up.** Reminder "No update from Acme for 7 days" -> Draft a follow-up -> Open in Gmail -> send.
 
@@ -330,23 +345,23 @@ Postgres + pgvector (free tier)          External: Sources, AI providers, Gmail 
 
 Dependency direction: `api -> services -> (adapters | dedup | gateway | documents | gmail) -> core`. Lower layers never import upward; siblings meet in a service.
 
-**Daily pipeline:** scheduler -> for each enabled Source (isolated) -> build queries from all Users' Preferences -> fetch window -> normalise to Postings -> store -> embed -> score Match Pairs -> group into Jobs and merge fields -> extract required skills for new Jobs -> link Jobs to matching Users' Feeds -> record Fetch Run and credit spend.
+**Daily pipeline:** scheduler -> for each enabled Source (isolated) -> windowed: build queries from all Users' Preferences and fetch the window; snapshot: fetch each ATS Board and diff against stored Postings -> normalise to Postings -> store -> embed (queued if the embedding provider is down, ADR-0014) -> score Match Pairs -> group into Jobs and merge fields -> extract required skills for new Jobs -> apply expiry rules -> link Jobs to matching Users' Feeds -> record Fetch Run and credit spend.
 
 ### Data model (main tables)
 
 | Table | Owner | Purpose |
 |---|---|---|
-| `users` | - | Account, auth method, role (User/Admin) |
+| `users` | - | Google account id, email, role (User/Admin), AI notice accepted at |
 | `invites` | Admin | Allowed sign-up emails (V1) |
 | `oauth_credentials` | user | Encrypted Google/Gmail tokens, expiry |
 | `documents` | user | Uploaded files and extracted text |
 | `facts` | user | Fact Bank entries with type, text, source document, "in Base Resume" flag |
 | `preferences` | user | Titles, keywords, locations, work modes |
 | `sources` | shared | Source config, priority, enabled, budget settings |
-| `fetch_runs` | shared | Window, status, error, counts, credits spent |
+| `fetch_runs` | shared | Mode, window or board, status, error, counts, credits spent per query |
 | `companies` | shared | Normalised Company names and aliases |
 | `ats_boards` | shared | Discovered or added ATS Boards (type, slug, last seen) |
-| `postings` | shared | Normalised Postings, Source IDs, embedding |
+| `postings` | shared | Normalised Postings, Source IDs, snapshot/windowed origin, last seen, closed flag, embedding + embedding model name |
 | `jobs` | shared | Canonical Jobs, Primary Posting, merged fields, required skills, locations, expired flag |
 | `match_pairs` | shared | Posting pairs, band, signals |
 | `rejected_pairs` | shared | Pairs marked "Not the same Job" (see open question 2) |
@@ -358,7 +373,7 @@ Dependency direction: `api -> services -> (adapters | dedup | gateway | document
 
 ## 11. Technology Stack
 
-Per ADR-0011 (Python/FastAPI + React stack), reusing what already works in OneBrain.
+Per ADR-0011 (Python/FastAPI + React stack).
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -367,30 +382,32 @@ Per ADR-0011 (Python/FastAPI + React stack), reusing what already works in OneBr
 | Database | PostgreSQL + pgvector, SQLAlchemy 2, Alembic | One store for relational data and embeddings; tenancy from the first migration |
 | Scheduling | APScheduler in-process | Single free service; no separate worker (ADR-0008) |
 | AI | AI Gateway over Gemini -> Groq -> OpenRouter; Ollama for local dev | Free tiers with fallback; recorded mode for tests (ADR-0007) |
-| Similarity | Embeddings + pgvector; rapidfuzz for titles and names | Semantic duplicate detection (ADR-0004) |
+| Similarity | Gemini embeddings + pgvector (model name stored per vector); rapidfuzz for titles and names | Semantic duplicate detection (ADR-0004, ADR-0014) |
 | Documents | A PDF text extractor (e.g. pypdf / pdfplumber); HTML-to-PDF rendering (e.g. WeasyPrint) | Parse uploads; render ATS-friendly PDFs |
 | Email checks | email-validator + DNS MX lookup | FR-E10 |
-| Auth | Google OAuth + email/password (argon2) with signed sessions | FR-A1 |
+| Auth | Google OAuth only, signed session cookies | FR-A1, ADR-0015 |
 | Testing | pytest, Vitest; recorded AI fixtures; recorded Source fixtures | Zero live calls in CI |
 | Infra | Docker, GitHub Actions, Render or Railway free tier, UptimeRobot | 12-factor, $0 (ADR-0008) |
 
 ## 12. Release Plan (build order)
 
-No dates; each phase ends with something usable. Order decided by the founder: foundation first, like a full product.
+No dates; each phase ends with something usable. Foundation first, like a full product (founder's order), with Sources split so the main feature (Draft) is reached early.
 
 **Phase 0 - Foundation.** Repo structure, CI (lint, typecheck, tests), docs (this set), Docker setup, deploy skeleton with `/health` and keep-warm ping, AI Gateway skeleton with recorded mode, Source Adapter interface.
 
 **Phase 1 - Accounts and Profile.** FR-A1 to FR-A6: sign-up/in, invites, documents to Fact Bank with review, Preferences, onboarding shell. *Usable: the User's Fact Bank exists and is correct.*
 
-**Phase 2 - Sources.** FR-B1 to FR-B11: registry, all adapters (free Sources first, then credit-limited ones), normalisation, Backfill and daily runs, Credit Budget and pacing, fallback and Source Status, ATS discovery, HN extraction, expiry. *Usable: Jobs are flowing in every day.*
+**Phase 2 - First Sources.** FR-B1 to FR-B11 with four Sources that cover both fetch modes and the main supply: LinkedIn (Bright Data), JSearch, Greenhouse and Lever (snapshot), Remotive. Registry, normalisation, Backfill and daily runs, Credit Budget, fallback and Source Status, ATS discovery, expiry. *Usable: Jobs are flowing in every day.*
 
 **Phase 3 - Correspondence and Feed UI.** FR-C1 to FR-C6, FR-D1 to FR-D7: grouping, Possible Duplicates, Correspondence view, the full Feed. *Usable: the User reviews one clean Feed daily.*
 
 **Phase 4 - Draft.** FR-E1 to FR-E13: tailoring with trace and checks, cover letter, email, diff, editing, Draft Chat, versions, PDFs, email check, Gmail Hand-off and fallback. *Usable: end-to-end applications.*
 
-**Phase 5 - Applications and polish.** FR-F1 to FR-F3, FR-G4 to FR-G5, accessibility and UX-rule review, performance pass. *Usable: V1 complete.*
+**Phase 5 - Remaining Sources.** Every other Source in FR-B2: Naukri, the other ATS types, SerpApi, Adzuna, the other remote boards, HN extraction, the Indian boards and Foundit. Site-fetch Sources (Instahyre, Cutshort, Hirist, Foundit, Workday) may be blocked from a cloud server's IP address; each is kept only if it works reliably, otherwise disabled with the reason recorded. *Usable: full coverage.*
 
-**Later:** browser extension (FR-E14), reply reading (FR-F4), notifications (FR-F5), per-user own API keys, public launch gate (FR-G6), paid plans.
+**Phase 6 - Applications and polish.** FR-F1 to FR-F3, FR-G4 to FR-G5, accessibility and UX-rule review, performance pass. *Usable: V1 complete.*
+
+**Later:** browser extension (FR-E14), email and password sign-in (FR-A7), reply reading (FR-F4), notifications (FR-F5), per-user own API keys, public launch gate (FR-G6), paid plans.
 
 ## 13. Success Metrics *(recommendations; the founder has not set targets yet)*
 
@@ -402,7 +419,7 @@ No dates; each phase ends with something usable. Order decided by the founder: f
 | Fabricated content in Drafts | 0 incidents (code check plus User reports) |
 | Duplicate accuracy | Fewer than 5% of automatic groups split by Users; Possible Duplicates under 10% of new Jobs |
 | Source health | 90%+ of daily Fetch Runs healthy per Source per month (excluding budget exhaustion) |
-| Budget discipline | No credit-limited Source exhausted before the last 3 days of a month |
+| Budget visibility | Every LinkedIn budget exhaustion was predicted by the projection at least 5 days ahead |
 | Cost | $0 every month |
 
 ## 14. Risks
@@ -410,12 +427,15 @@ No dates; each phase ends with something usable. Order decided by the founder: f
 | Risk | Mitigation |
 |---|---|
 | A Source changes its format or blocks access | Isolated adapters, Degraded state, fixture tests that catch format changes; other Sources keep the Feed alive (ADR-0003) |
-| Free tiers change or shrink | Fallback chains for Sources and AI; pacing; `COSTS.md` review triggers |
+| Free tiers change or shrink | Fallback chains for Sources and AI; budget projections; `COSTS.md` review triggers |
 | AI fabricates content | Fact Bank-only generation, code-level skill check, Tailoring Trace, User review before anything leaves (ADR-0005, ADR-0006) |
 | Wrong duplicate merge hides a Job | Strict thresholds, Medium band asks the User, split action, every Posting stays reachable (ADR-0004) |
 | Gmail token expiry interrupts applying | Expiry detected ahead of time, re-login reminder, compose-link fallback (ADR-0006) |
 | Free host sleeps and misses a daily run | Keep-warm ping, external cron fallback, watermark-based catch-up (FR-B3, ADR-0008) |
-| Credits used up early in the month | Daily pacing, Backfill cap, projection on the Admin screen (ADR-0009) |
+| Embedding provider down | Postings still appear (Exact matching by ATS ID or URL still runs); semantic grouping is queued until embeddings return (ADR-0014) |
+| Site-fetch Sources blocked from cloud IPs | Built last (Phase 5); disabled with the reason if unreliable; the other Sources cover the market |
+| Ghost jobs that are no longer open | Snapshot comparison, 30-day age limit, apply-link check before drafting (FR-B10) |
+| LinkedIn credits run out before renewal | Full-scope fetching is the founder's choice; month-end projection and per-query spend let the Admin narrow queries; other Sources keep the Feed alive; founder-only use in month 1 (ADR-0009) |
 | Terms-of-service action by LinkedIn or Naukri | Accepted for private use; pre-launch review required (ADR-0012) |
 | Scope creep for a solo builder | [V1] / [Later] tags are the scope; new ideas go to Later unless they replace something |
 
@@ -424,7 +444,7 @@ No dates; each phase ends with something usable. Order decided by the founder: f
 1. **Success metrics:** section 13 is a recommendation; the founder to confirm or change.
 2. **Scope of "Not the same Job":** Jobs are shared (ADR-0002), so a split by one User changes grouping for everyone. Recommendation: global for V1 (a small trusted group, and a split is a fact about two adverts, not a preference); revisit before public launch.
 3. **Invite-only sign-up (FR-A1 AC3):** recommended to keep V1 private; confirm.
-4. **Facts to verify before build** (ADR references in brackets): `gmail.compose` classification and the 7-day testing-mode token expiry (ADR-0006); Bright Data LinkedIn time-range options (ADR-0009); Gemini free-tier terms (ADR-0012); exact free limits listed as *(verify)* in `COSTS.md`; a free Postgres provider whose free tier does not expire (ADR-0008).
+4. **Facts to verify before build** (ADR references in brackets): `gmail.compose` classification and the 7-day testing-mode token expiry (ADR-0006); Bright Data LinkedIn time-range options (ADR-0009); Gemini free-tier terms (ADR-0012); exact free limits listed as *(verify)* in `COSTS.md`; a free Postgres provider whose free tier does not expire (ADR-0008); whether a small local embedding model fits in the host's free memory, as a possible future fallback (ADR-0014).
 
 ---
 *Capitalised domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Design rationale lives in [`docs/adr/`](./docs/adr/): this PRD states the what; the ADRs defend the why.*

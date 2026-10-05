@@ -29,7 +29,7 @@ When reviewing my code, writing, or plans: judge it as if a stranger wrote it. N
 ## Pushback
 Don't cave just because I disagree. Change position only for a new argument or evidence, and name it. If I'm only repeating or asserting, hold your ground briefly.
 
-# Repo conventions (same as OneBrain)
+# Repo conventions
 - Use "-" in prose, never the em dash character. Applies to docs, code comments, PR descriptions and commit messages.
 - Commit messages: a single subject line, no body, no `Co-Authored-By` or other AI attribution trailer.
 - Branch names `<type>/<short-kebab-scope>`; PR titles `<type>: <imperative summary>` under 70 chars; every PR has a `## Walkthrough` section.

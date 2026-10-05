@@ -4,7 +4,7 @@ Capitalised terms in the PRD, ADRs, code and UI mean exactly what this file says
 
 ## User
 
-A person with a JobWeaver account. The unit of tenancy: every user-owned record carries `user_id` (ADR-0001). There is no organization or workspace layer. One User has the **Admin** role (the founder), who can see Source Status and the Credit Budget.
+A person with a JobWeaver account, signed in with Google (ADR-0015). The unit of tenancy: every user-owned record carries `user_id` (ADR-0001). There is no organization or workspace layer. One User has the **Admin** role (the founder), who can see Source Status and the Credit Budget.
 
 ## Fact Bank
 
@@ -24,7 +24,7 @@ One external provider of job data, reached through one **Source Adapter**: Linke
 
 ## Source Adapter
 
-The module that fetches from one Source and converts its raw data into Postings. All adapters implement the same interface and register themselves; nothing else in the codebase knows which Sources exist (ADR-0003).
+The module that fetches from one Source and converts its raw data into Postings. All adapters implement the same interface and register themselves; nothing else in the codebase knows which Sources exist (ADR-0003). Each adapter has one of two modes: **Windowed** (returns new Postings for a query and time window; cannot see jobs close) or **Snapshot** (returns every open job on one ATS Board; compared with stored Postings to detect new and closed jobs).
 
 ## Fetch Run
 
@@ -32,7 +32,7 @@ One scheduled or manual execution of one Source Adapter. Records its window (sin
 
 ## Backfill
 
-The first Fetch Run for a Source or a new set of Preferences: the last 14 days. Capped on paid Sources so it cannot use up the month's Credit Budget (ADR-0009).
+The first Fetch Run of a windowed Source, or for a new set of Preferences: the last 14 days. Not capped; its cost shows in the Credit Budget (ADR-0009).
 
 ## Source Status
 
@@ -40,7 +40,7 @@ The current health of each Source: **Healthy**, **Degraded** (last run failed or
 
 ## Credit Budget
 
-The monthly allowance of a paid-by-credits Source (Bright Data: 5,000 credits, 1 credit = 1 record). Shared by all Users, paced per day, tracked with a month-end projection (ADR-0009).
+The monthly allowance of a paid-by-credits Source (Bright Data: 5,000 credits, 1 credit = 1 record). Shared by all Users, never used to silently cut results, and tracked per query with a month-end projection (ADR-0009).
 
 ## Company
 
@@ -84,7 +84,7 @@ Required skills in a Job's description that are not in the User's Fact Bank, sho
 
 ## Expired Job
 
-A Job whose Postings have all closed or disappeared from their Sources. Hidden from the Feed; kept for Applications that reference it.
+A Job that is no longer open: its company board (snapshot Source) no longer lists it, or it has no snapshot Posting and its newest Posting is older than the age limit (default 30 days), or its apply link was found closed. Hidden from the Feed; kept for Applications that reference it.
 
 ## Draft
 
@@ -116,4 +116,4 @@ An in-app reminder when an Application has had no status change for N days. A re
 
 ## AI Gateway
 
-The single module through which every AI call passes, with typed task methods, provider fallback (Gemini -> Groq -> OpenRouter), usage accounting and a recorded mode for tests (ADR-0007).
+The single module through which every AI call passes, with typed task methods, provider fallback for text tasks (Gemini -> Groq -> OpenRouter), Gemini-only versioned embeddings that queue when unavailable (ADR-0014), usage accounting and a recorded mode for tests (ADR-0007).

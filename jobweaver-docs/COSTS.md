@@ -11,7 +11,7 @@ Limits marked *(verify)* are from general knowledge and change often. Confirm ea
 
 | # | Source | Access | Free allowance | When it runs out |
 |---|---|---|---|---|
-| 1 | LinkedIn | Bright Data scraper | **5,000 credits/month, 1 credit = 1 record**; renews monthly | Paced at ~166 records/day; Backfill capped at ~1,500 (ADR-0009). At zero: Degraded until renewal |
+| 1 | LinkedIn | Bright Data scraper | **5,000 credits/month, 1 credit = 1 record**; renews monthly | Full scope: every result fetched, no caps; projection warns before it runs out (ADR-0009). At zero: Degraded until renewal; month 1 is founder-only |
 | 1b | LinkedIn (alternative) | Apify actor | Monthly free platform credit *(verify amount)* | Degraded until renewal |
 | 2 | Naukri | Apify actor | Shares the Apify monthly credit *(verify)* | Degraded until renewal |
 | 3 | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee | Public job-board APIs, per company | Free, no key *(verify per ATS)*; be polite with request rates | Per-board retry next run |
@@ -24,13 +24,13 @@ Limits marked *(verify)* are from general knowledge and change often. Confirm ea
 | 9 | Hacker News "Who is hiring" | Public HN API + AI extraction | Free; costs AI calls (see 2) | Extraction queued until AI quota returns |
 | 10 | Foundit | Site fetch *(verify)* | Free | Degraded, retry next run |
 
-Request-quota Sources (JSearch, SerpApi, Adzuna) get their own daily pacing like Bright Data, sized from the confirmed quota.
+Request-quota Sources (JSearch, SerpApi, Adzuna) follow the same rule as LinkedIn: no hidden caps; spend and a month-end projection are shown, and a Source that runs out is Degraded until renewal.
 
 ## 2. AI providers (ADR-0007)
 
 | Order | Provider | Used for | Free allowance | When it runs out |
 |---|---|---|---|---|
-| 1 | Google Gemini (Flash / Flash-Lite, embeddings) | All tasks; embeddings for duplicate detection | Per-model limits per minute and per day *(verify)*; free-tier prompts may be used by Google (ADR-0012) | Gateway falls through to Groq |
+| 1 | Google Gemini (Flash / Flash-Lite, embeddings) | All tasks; the **only** embedding provider (ADR-0014) | Per-model limits per minute and per day *(verify)*; free-tier prompts may be used by Google (ADR-0012) | Text tasks fall through to Groq; embeddings are queued until Gemini returns (ADR-0014) |
 | 2 | Groq (open models, e.g. Llama, Qwen) | All text tasks | Per-model limits *(verify)* | Falls through to OpenRouter |
 | 3 | OpenRouter `:free` models | All text tasks | 50 requests/day without a credit purchase; models can be overloaded or removed | Task queued and retried; the User sees "AI busy, retrying" |
 | dev | Ollama (local) | Local development only | Unlimited on the developer's machine | Not used in production |
@@ -49,9 +49,8 @@ Request-quota Sources (JSearch, SerpApi, Adzuna) get their own daily pacing like
 | Database | Free Postgres with pgvector (e.g. Neon or Supabase) | Small storage quota *(verify)*; some free databases pause when idle or expire after a period *(verify)* | Pick one whose free tier does not expire; daily Fetch Runs keep it active |
 | Uptime ping | UptimeRobot | Free monitors at 5-minute intervals | Also gives free uptime alerts |
 | Scheduler | APScheduler in-process | Free | Fallback: free external cron calling a protected endpoint |
-| Google OAuth (sign-in + Gmail) | Google Cloud project, testing mode | Free; up to 100 named test users | Refresh tokens expire about every 7 days *(verify)*; re-login reminder (ADR-0006) |
+| Google OAuth (the only sign-in, plus Gmail) | Google Cloud project, testing mode | Free; up to 100 named test users | Refresh tokens expire about every 7 days *(verify)*; re-login reminder (ADR-0006) |
 | Gmail API | `gmail.compose` | Free; generous per-user quota | Restricted scope; public launch needs verification (ADR-0012) |
-| Email for password reset | A free transactional email tier *(verify provider)* | Small daily quota | Only used for account emails, never for applications |
 | Error tracking | A free error-tracking tier (e.g. Sentry developer plan) *(verify)* | Limited events/month | Optional |
 | Code and CI | GitHub + GitHub Actions | Free for public repos; monthly minutes for private *(verify)* | Recorded AI mode keeps CI at $0 |
 | Domain | Host-provided subdomain | Free | A custom domain is a cost and is out of V1 |

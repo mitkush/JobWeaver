@@ -1,0 +1,7 @@
+# Embeddings come from Gemini only, are versioned, and are queued when unavailable
+
+Semantic duplicate detection (ADR-0004) compares Posting embeddings. The AI Gateway's fallback chain (ADR-0007) does not cover embeddings: Groq and OpenRouter offer no free embeddings, and vectors from different models cannot be compared with each other anyway. Gemini is therefore the only embedding provider. Every stored vector records the model name and dimension that produced it. When Gemini is unavailable or over quota, new Postings are still stored and shown, Exact matching (same ATS job ID or apply URL) still runs, and the Posting is queued for embedding; semantic grouping runs when the embedding arrives. Postings are never compared without embeddings. Changing the embedding model means re-computing every stored vector as a background job before the new model is used for matching.
+
+**Considered and rejected:** falling back to another provider's embeddings (vectors incomparable, silently wrong groups), a local PyTorch model (does not fit in a free host's ~512 MB memory), skipping semantic matching when Gemini is down (silently weaker grouping).
+
+**Consequences:** during a Gemini outage, some duplicates appear as separate Jobs until the queue drains and regroups them; the re-embedding job must be resumable. A small ONNX-based local model (no PyTorch) might fit in free memory and could become a fallback later; this is unverified and not part of V1.

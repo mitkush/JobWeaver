@@ -28,7 +28,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (decided in section 10).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
-- **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
+- **Hosting:** free tiers only *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
   - Free backends sleep after ~15 min idle -> keep warm with an external monitor (UptimeRobot) pinging a lightweight `GET /health` (no DB touch) every 5 min.
   - Scheduled fetches run in an **in-process scheduler (APScheduler)** on the warm instance, as background work, never inside one long HTTP request. External cron calling a secret-protected endpoint is the fallback if the host still sleeps.
   - Some free databases pause after inactivity *(verify per provider)*; daily fetches should keep them active.
@@ -36,7 +36,8 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ## 5. Core features (V1)
 
 ### 5.1 Accounts & settings
-- Sign up / sign in with **Google** or **email + password**.
+- Sign up / sign in with **Google only** (decided after PRD review: every user needs Google for Gmail anyway; email + password moves to Later).
+- **AI data notice (decided after PRD review):** each user accepts a one-line notice in onboarding that their documents are processed by free AI tiers, before any document is sent.
 - Proper multi-user model from day one (user-owned profiles, documents, preferences, drafts, credits). **Tenancy unit is the `user`**: every table, cache key and background job carries `user_id`. No workspace/organization layer.
 - Settings page (editable any time; feed updates when changed):
   - Contact email
@@ -52,14 +53,16 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - Queries are **narrow and per user** (their titles + locations) so paid credits go only to relevant jobs.
 - **Bright Data credit budget:** 5,000 free credits/month (1 credit = 1 scraped record), shared across all users:
   - credit usage tracker with month-end projection
-  - backfill capped *(recommendation: ~1,500 records)* so it cannot exhaust the month
+  - **full scope (decided after PRD review):** every result of every query is fetched; no daily pacing and no backfill cap, because LinkedIn postings are the most genuine. Spend per query and a month-end projection warn the admin before the budget runs out; if it runs out, LinkedIn is degraded until renewal
   - **no per-user split** (decided): all users share the pool
-  - **daily pacing** *(recommendation)*: spread the monthly budget across the days left (about 5,000 / 30 = ~166 records/day) so it does not run out mid-month
+  - **rollout:** the first month is founder-only; friends join once the real monthly spend is known
+  - **catch-up:** a missed day uses the smallest LinkedIn filter that reaches back to the last successful run (e.g. past week) for that one run
 - **Source fallback (decided):** if any source fails for any reason (service unavailable, rate limit, credits/tokens exhausted, blocked), the fetch run skips it, continues with the remaining sources, marks it as degraded in a source-status view, and retries it on the next run. One failing source never stops the run. Note: sources are not interchangeable - jobs only on LinkedIn are missed while it is down; aggregators (e.g. JSearch) only partly cover them.
 - **Zero-budget guard (decided):** no payment method is attached to any service, so nothing can bill beyond its free tier.
 - **Job storage (decided):** every job is stored **once** in a shared `jobs` table and linked to each user it matches through a `user_jobs` table (per-user status, feed membership, drafts). A user's feed shows only jobs linked to them. Duplicate grouping runs once on the shared table; a job matched by two users costs one credit.
 - **ATS company discovery (decided):** when a job from any source has an apply URL on a known ATS (e.g. `boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`), the company slug is saved and that company's ATS board is fetched directly from then on. Pure URL parsing, no AI. Users can also add companies by hand. The list starts small and grows over time. Workday has no public job API; treat it as best-effort.
-- Detect and hide **expired / closed** jobs.
+- **Two fetch modes (decided after PRD review):** windowed sources (query + time window; only see new jobs) and snapshot sources (company ATS boards; full list compared with stored jobs, so closed jobs are detected).
+- **Expired jobs (decided after PRD review):** closed on a company board -> expired; windowed-only jobs expire 30 days after posting unless a company board still lists them; the apply link is checked before drafting when that is free.
 
 **Sources, in priority order** (priority decides the primary record in a duplicate group, nothing else):
 
@@ -134,24 +137,25 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) -> Groq -> OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
 - Uses the founder's own AI accounts. Per-user own API keys are an optional later addition.
 - AI tasks: HN free-text extraction, JD parsing (required skills), semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
+- **Embeddings (decided after PRD review):** Gemini only (Groq and OpenRouter have no free embeddings, and vectors from different models cannot be compared). Each vector stores its model name; when Gemini is down, postings are queued for embedding instead of being compared without it; a model change means re-computing all vectors.
 
-## 7. Patterns to reuse from OneBrain (`mitkush/OneBrain`)
-Same founder, same stack, already built and working. The PRD should reuse these rather than reinvent them *(recommendation)*:
-- **Source adapter registry** (OneBrain's connector plugin pattern): each job source is one module implementing a fixed interface (e.g. `fetch(query, since)`, `normalize(raw) -> Job`) and registering itself. Adding a source = one new module + one import line, never an `if source == ...` branch.
-- **Thin AI Gateway** (ADR-0009 there): the only module that imports a provider SDK; typed task methods (`extract_job`, `extract_requirements`, `tailor_resume`, `draft_email`, `edit_draft`); per-task model routing; per-user token/credit accounting; the existing `FallbackAIGateway` pattern extended to Gemini -> Groq -> OpenRouter; **recorded-response mode so CI and tests make zero live AI calls**.
-- **Tenancy from day one** (ADR-0001 there): every table, cache key and background job carries the owner id (`user_id`), with cross-user isolation tests.
-- **"AI proposes, human disposes"**: nothing AI-generated is sent or merged without the user's review. Applies to drafts, and *(recommendation)* to low-confidence duplicate groups.
-- **"Facts from code, words from AI"**: AI extracts required skills from a JD once; the skill-gap comparison is deterministic code. Keeps it cheap, testable and consistent within free AI limits.
-- **Trace**: every tailored resume bullet links back to the fact in the user's documents it came from. This makes the no-fabrication rule (5.4) checkable, the same way OneBrain answers expose how they were computed.
-- **Match Pair / Rejected Pair loop** for duplicates: each pair carries a confidence score; high confidence groups automatically, low confidence is shown as "possible duplicate"; "not the same job" is stored and never re-proposed.
-- **Credentials at rest** encrypted (Fernet, as in OneBrain) - here: Gmail OAuth tokens, Bright Data / Apify / AI keys.
-- **Docs and repo setup**: `CONTEXT.md` glossary, ADRs, `COSTS.md`, `.claude/skills/` coding standards, CI with lint + typecheck + tests, OpenAPI-generated frontend types.
+## 7. Architecture patterns (decided)
+- **Source adapter registry:** each job source is one module implementing a fixed interface (windowed or snapshot mode) and registering itself. Adding a source = one new module + one import line, never an `if source == ...` branch.
+- **Thin AI Gateway:** the only module that imports a provider SDK; typed task methods (`extract_job`, `extract_requirements`, `embed`, `tailor_resume`, `draft_email`, `edit_draft`); per-task model routing; per-user usage accounting; text-task fallback Gemini -> Groq -> OpenRouter; **recorded-response mode so CI and tests make zero live AI calls**.
+- **Tenancy from day one:** every user-owned table, cache key and background job carries `user_id`, with cross-user isolation tests.
+- **"AI proposes, human disposes":** nothing AI-generated is sent or merged without the user's review. Applies to drafts, parsed facts and medium-confidence duplicate groups.
+- **"Facts from code, words from AI":** AI extracts required skills from a JD once; the skill-gap comparison is deterministic code. Keeps it cheap, testable and consistent within free AI limits.
+- **Trace:** every tailored resume line links back to the fact in the user's documents it came from, which makes the no-fabrication rule (5.4) checkable.
+- **Match Pair / Rejected Pair loop** for duplicates: each pair carries a confidence band; high confidence groups automatically, medium is shown as "possible duplicate"; "not the same job" is stored and never re-proposed.
+- **Credentials at rest** encrypted - Gmail OAuth tokens and any stored API keys.
+- **Docs and repo setup:** `CONTEXT.md` glossary, ADRs, `COSTS.md`, CI with lint + typecheck + tests, OpenAPI-generated frontend types.
 
 ## 8. Out of scope for V1 (later)
 - Browser (Chrome) extension: auto-filling apply-link forms
 - Reading Gmail replies automatically (needs another restricted scope)
 - Public launch / paid plans
 - Recruiter / employer side
+- Email + password sign-in
 
 ## 9. Accepted risks (decided by the founder; PRD must record them, not re-open them)
 - **Scraping LinkedIn / Naukri** via Bright Data and Apify breaches those sites' terms of service. This is a civil (contract) risk, not a criminal one. Accepted because use is private (founder + friends). **Must be revisited before any public or paid launch** - that is the point where it becomes the business's risk.
@@ -164,15 +168,15 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 **Resolved in the last round:**
 - **All sources ship in V1 (decided).** Free-tier limits are not verified up front; any limit hit is handled at run time by the source fallback (5.2). `COSTS.md` still documents each known limit.
 - **Resume template (decided):** default is the founder's single-column ATS-friendly layout; choosing or uploading another template is optional per user.
-- **Build order (decided):** like a full product, foundation first: auth and accounts -> source connectors (fetch, normalise, dedup) -> UI (settings, feed, Correspondence) -> Draft (tailoring, chat, Gmail) -> tracker and reminders.
+- **Build order (decided; refined after PRD review):** like a full product, foundation first: auth and accounts -> first 4 sources (LinkedIn via Bright Data, JSearch, Greenhouse/Lever, Remotive) -> UI (settings, feed, Correspondence) -> Draft (tailoring, chat, Gmail) -> remaining sources -> tracker, reminders and polish. Site-fetch sources (Instahyre, Cutshort, Hirist, Foundit, Workday) may be blocked from cloud IPs and are built last.
 
-## 11. Repo conventions (decided: follow OneBrain's)
+## 11. Repo conventions (decided)
 - Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
 - Single-line commit messages, no body, no AI co-author trailer.
 - PR titles `<type>: <imperative summary>` under 70 chars, with a `## Walkthrough` section.
 
 ## 12. PRD must include
-Match the structure and quality bar of OneBrain's `onebrain-docs/PRD.md`:
+Structure and quality bar:
 - **Deliverables:** `jobweaver-docs/PRD.md` + `CONTEXT.md` (glossary: Source, Job, Posting, Correspondence, Fact Bank, Draft, Application, ...) + `docs/adr/` (one short ADR per locked decision above) + `COSTS.md` (every free tier, its limit, and what happens when it runs out).
 - **PRD sections:** summary, problem, goals and non-goals, personas, product principles, functional requirements grouped by epic with IDs (FR-A1 ...), each tagged **[V1] / [Later]** with acceptance criteria, non-functional requirements table (security of stored OAuth tokens and resumes, reliability under free-tier limits, cost guardrails, testability with zero live AI calls in CI), key user flows, technology stack table with reasons, release plan with phases, success metrics, risks with mitigations, open questions.
 - Cite ADRs inline ("ADR-NNNN: what it decides"); capitalised terms defined in `CONTEXT.md`.
