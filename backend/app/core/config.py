@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     # While on Gemini's free tier, users in the EEA, CH and UK cannot be served (ADR-0012).
     gemini_free_tier: bool = True
 
+    # Job Sources (Phase 2). A Source without its key is reported as not configured.
+    brightdata_api_key: str = ""
+    brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"
+    rapidapi_key: str = ""
+    backfill_days: int = 14
+    window_overlap_hours: int = 2
+    # Windowed-only Postings older than this are treated as closed (FR-B10).
+    posting_max_age_days: int = 30
+    # Daily run time; 01:17 UTC is 06:47 in India. Off the hour to avoid busy minutes.
+    fetch_hour_utc: int = 1
+    fetch_minute_utc: int = 17
+    # Shared secret for the external cron fallback (ADR-0008). Empty disables the endpoint.
+    internal_cron_secret: str = ""
+
     scheduler_enabled: bool = True
     max_upload_bytes: int = 5 * 1024 * 1024
 
