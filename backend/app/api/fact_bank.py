@@ -5,7 +5,8 @@ from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbSession, Gateway
-from app.core.errors import GatewayError, NotFoundError
+from app.core.config import get_settings
+from app.core.errors import GatewayError, NotFoundError, ValidationFailedError
 from app.models.document import DocumentKind
 from app.schemas.facts import (
     DocumentOut,
@@ -61,6 +62,8 @@ async def upload_document(
     kind: Annotated[DocumentKind, Form()],
     file: Annotated[UploadFile, File()],
 ) -> UploadResult:
+    if file.size is not None and file.size > get_settings().max_upload_bytes:
+        raise ValidationFailedError("Files must be 5 MB or smaller")
     data = await file.read()
     document = await fact_bank.save_document(
         db,

@@ -1,16 +1,18 @@
 import enum
+import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AuthError
+from app.core.errors import AuthError, JobWeaverError
 from app.core.security import decrypt, encrypt
 from app.models.oauth_credential import OAuthCredential
 from app.models.user import User
 from app.services.google_oauth import GMAIL_COMPOSE_SCOPE, GoogleOAuthClient, GoogleTokens
 
+logger = logging.getLogger(__name__)
 EXPIRES_SOON = timedelta(hours=24)
 
 
@@ -63,5 +65,10 @@ async def disconnect_gmail(session: AsyncSession, user: User, google: GoogleOAut
     credential = await _credential(session, user)
     if credential is None:
         return
-    await google.revoke(decrypt(credential.refresh_token_encrypted))
+    try:
+        token = decrypt(credential.refresh_token_encrypted)
+    except JobWeaverError:
+        logger.warning("Could not decrypt Gmail token for revocation; deleting it anyway")
+    else:
+        await google.revoke(token)
     await session.execute(delete(OAuthCredential).where(OAuthCredential.id == credential.id))

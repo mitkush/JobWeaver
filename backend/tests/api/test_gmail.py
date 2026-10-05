@@ -88,3 +88,13 @@ async def test_account_deletion_revokes_gmail(alice, google):
     await connect(client)
     assert (await client.delete("/api/me")).status_code == 204
     assert google.revoked == ["refresh-token"]
+
+
+async def test_account_deletion_survives_an_unreadable_token(alice, google, db):
+    _, client = alice
+    await connect(client)
+    credential = (await db.execute(select(OAuthCredential))).scalar_one()
+    credential.refresh_token_encrypted = "not-a-fernet-token"
+    await db.commit()
+    assert (await client.delete("/api/me")).status_code == 204
+    assert google.revoked == []
