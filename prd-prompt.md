@@ -25,7 +25,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ## 4. Constraints
 - **Team:** solo developer.
 - **Timeline:** no deadlines. Quality over speed.
-- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 8).
+- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 4).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
 - **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
@@ -56,7 +56,9 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
   - **no per-user split** (decided): all users share the pool
   - **daily pacing** *(recommendation)*: spread the monthly budget across the days left (about 5,000 / 30 = ~166 records/day) so it does not run out mid-month
 - **Source fallback (decided):** if any source fails for any reason (service unavailable, rate limit, credits/tokens exhausted, blocked), the fetch run skips it, continues with the remaining sources, marks it as degraded in a source-status view, and retries it on the next run. One failing source never stops the run. Note: sources are not interchangeable - jobs only on LinkedIn are missed while it is down; aggregators (e.g. JSearch) only partly cover them.
-- **Zero-budget guard:** no paid overage on any service *(verify: no payment method attached, or a hard spend cap, on Bright Data / Apify / SerpApi / RapidAPI)*.
+- **Zero-budget guard (decided):** no payment method is attached to any service, so nothing can bill beyond its free tier.
+- **Job storage (decided):** every job is stored **once** in a shared `jobs` table and linked to each user it matches through a `user_jobs` table (per-user status, feed membership, drafts). A user's feed shows only jobs linked to them. Duplicate grouping runs once on the shared table; a job matched by two users costs one credit.
+- **ATS company discovery (decided):** when a job from any source has an apply URL on a known ATS (e.g. `boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`), the company slug is saved and that company's ATS board is fetched directly from then on. Pure URL parsing, no AI. Users can also add companies by hand. The list starts small and grows over time. Workday has no public job API; treat it as best-effort.
 - Detect and hide **expired / closed** jobs.
 
 **Sources, in priority order** (priority decides the primary record in a duplicate group, nothing else):
@@ -78,7 +80,9 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - Two sections:
   1. Jobs **with** a contact email
   2. Jobs **without** an email (apply link only)
-- Every job is ranked by a **match score with reasons** (e.g. "7/9 required skills; missing Kubernetes").
+- **No match score (decided).** Each card shows only **skill gaps**: "Missing: Kubernetes, Go" - required skills from the JD that are not in the user's documents. Required skills are extracted from the JD once at ingestion; the comparison against the user's skills is done in code.
+- Feed order: newest first *(recommendation)*.
+- **Multi-location jobs (decided):** the same job (same text / job ID) posted for several cities is **one job with location chips**; it matches the user's filter if any of its locations fits. Different text or job ID = separate jobs.
 - Each card shows **"Available on"** badges for every source where the job also appears.
 - **"Already applied to this company"** warning.
 
@@ -129,15 +133,15 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ## 6. AI
 - **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) → Groq → OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
 - Uses the founder's own AI accounts. Per-user own API keys are an optional later addition.
-- AI tasks: HN free-text extraction, JD parsing, match scoring, semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
+- AI tasks: HN free-text extraction, JD parsing (required skills), semantic dedup, resume/cover-letter/email tailoring, draft chat edits.
 
 ## 7. Patterns to reuse from OneBrain (`mitkush/OneBrain`)
 Same founder, same stack, already built and working. The PRD should reuse these rather than reinvent them *(recommendation)*:
 - **Source adapter registry** (OneBrain's connector plugin pattern): each job source is one module implementing a fixed interface (e.g. `fetch(query, since)`, `normalize(raw) -> Job`) and registering itself. Adding a source = one new module + one import line, never an `if source == ...` branch.
-- **Thin AI Gateway** (ADR-0009 there): the only module that imports a provider SDK; typed task methods (`extract_job`, `score_match`, `tailor_resume`, `draft_email`, `edit_draft`); per-task model routing; per-user token/credit accounting; the existing `FallbackAIGateway` pattern extended to Gemini -> Groq -> OpenRouter; **recorded-response mode so CI and tests make zero live AI calls**.
+- **Thin AI Gateway** (ADR-0009 there): the only module that imports a provider SDK; typed task methods (`extract_job`, `extract_requirements`, `tailor_resume`, `draft_email`, `edit_draft`); per-task model routing; per-user token/credit accounting; the existing `FallbackAIGateway` pattern extended to Gemini -> Groq -> OpenRouter; **recorded-response mode so CI and tests make zero live AI calls**.
 - **Tenancy from day one** (ADR-0001 there): every table, cache key and background job carries the owner id (`user_id`), with cross-user isolation tests.
 - **"AI proposes, human disposes"**: nothing AI-generated is sent or merged without the user's review. Applies to drafts, and *(recommendation)* to low-confidence duplicate groups.
-- **"Numbers from code, words from AI"**: match score computed deterministically (skill/keyword overlap, location, work mode, seniority); the LLM only writes the reasons. Keeps scoring cheap, testable and consistent within free AI limits.
+- **"Facts from code, words from AI"**: AI extracts required skills from a JD once; the skill-gap comparison is deterministic code. Keeps it cheap, testable and consistent within free AI limits.
 - **Trace**: every tailored resume bullet links back to the fact in the user's documents it came from. This makes the no-fabrication rule (5.4) checkable, the same way OneBrain answers expose how they were computed.
 - **Match Pair / Rejected Pair loop** for duplicates: each pair carries a confidence score; high confidence groups automatically, low confidence is shown as "possible duplicate"; "not the same job" is stored and never re-proposed.
 - **Credentials at rest** encrypted (Fernet, as in OneBrain) - here: Gmail OAuth tokens, Bright Data / Apify / AI keys.
@@ -155,14 +159,10 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
 ## 10. Open questions (unresolved - keep flagged in the PRD)
-1. **Shared job store vs per-user fetch.** Recommendation: store every fetched job once in a shared table (needed anyway for Correspondence/dedup) while keeping fetching and feeds per user. When two users' queries overlap, a LinkedIn record is paid for once instead of twice. The founder's position: don't share, because jobs fetched for one user may be irrelevant to others. Not yet agreed. Note that a shared store does not mean a shared feed.
-2. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
-3. **ATS company discovery:** the Greenhouse/Lever/Ashby/etc. public APIs need a list of companies (board tokens). How is that list built and maintained? Workday has no public job API.
-4. **Duplicates across locations:** is the same job posted for three cities one job or three?
-5. **Match-score method:** embeddings only, LLM only, or both - and how reasons are generated within free AI limits.
-6. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
-7. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
-8. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
+1. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
+2. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
+3. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
+4. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
 
 ## 11. Repo conventions (decided: follow OneBrain's)
 - Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
