@@ -25,7 +25,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ## 4. Constraints
 - **Team:** solo developer.
 - **Timeline:** no deadlines. Quality over speed.
-- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 4).
+- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (decided in section 10).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
 - **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
@@ -159,10 +159,12 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 - **Free-tier volatility:** free limits of every source and AI provider can change without notice; the fallback chain and per-source scheduling mitigate it.
 
 ## 10. Open questions (unresolved - keep flagged in the PRD)
-1. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
-2. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
-3. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
-4. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
+1. **Success metrics:** not set by the founder. The PRD proposes them as recommendations for review.
+
+**Resolved in the last round:**
+- **All sources ship in V1 (decided).** Free-tier limits are not verified up front; any limit hit is handled at run time by the source fallback (5.2). `COSTS.md` still documents each known limit.
+- **Resume template (decided):** default is the founder's single-column ATS-friendly layout; choosing or uploading another template is optional per user.
+- **Build order (decided):** like a full product, foundation first: auth and accounts -> source connectors (fetch, normalise, dedup) -> UI (settings, feed, Correspondence) -> Draft (tailoring, chat, Gmail) -> tracker and reminders.
 
 ## 11. Repo conventions (decided: follow OneBrain's)
 - Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
