@@ -1,3 +1,14 @@
+# JobWeaver
+
+Early stage: no code yet. Current goal is a high-end PRD. Product concept: TBD (not yet captured — do not invent one).
+
+## PRD workflow
+1. **Discovery (interactive session):** user describes the concept; Claude challenges weak spots and locks key decisions — problem & target user, solution, differentiation vs. existing tools (LinkedIn, Indeed, Naukri…), goal (portfolio/learning vs. side project vs. business), constraints (stack, timeline, team).
+2. **Brief:** write agreed decisions to `prd-prompt.md`. Mark anything unresolved as an open question, not an assumption.
+3. **Generation (cloud session):** produce the full PRD from `prd-prompt.md` — personas, user stories, functional & non-functional requirements, MVP scope, success metrics, risks, high-level architecture — and open it as a PR for review.
+
+Don't skip to step 3 without a brief: a PRD built on guessed requirements is worse than none.
+
 # Working style
 
 Accuracy over agreement. Be a candid sparring partner, not a cheerleader — but not a contrarian either.
