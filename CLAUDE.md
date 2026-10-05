@@ -1,6 +1,6 @@
 # JobWeaver
 
-Early stage: no code yet. Product concept is captured in `prd-prompt.md` (discovery brief) and `jobweaver-docs/` (PRD, glossary, ADRs, costs). Read `jobweaver-docs/CONTEXT.md` and use its vocabulary exactly; never contradict an ADR in `jobweaver-docs/docs/adr/` silently - if a task needs to break one, stop and say so.
+Phases 0 and 1 are built (backend in `backend/`, frontend in `frontend/`; see README for commands). Product concept is captured in `prd-prompt.md` (discovery brief) and `jobweaver-docs/` (PRD, glossary, ADRs, costs). Read `jobweaver-docs/CONTEXT.md` and use its vocabulary exactly; never contradict an ADR in `jobweaver-docs/docs/adr/` silently - if a task needs to break one, stop and say so.
 
 ## PRD workflow
 1. **Discovery (interactive session):** user describes the concept; Claude challenges weak spots and locks key decisions - problem & target user, solution, differentiation vs. existing tools (LinkedIn, Indeed, Naukri…), goal (portfolio/learning vs. side project vs. business), constraints (stack, timeline, team).
@@ -8,6 +8,13 @@ Early stage: no code yet. Product concept is captured in `prd-prompt.md` (discov
 3. **Generation (cloud session):** produce the full PRD from `prd-prompt.md` - personas, user stories, functional & non-functional requirements, MVP scope, success metrics, risks, high-level architecture - and open it as a PR for review.
 
 Don't skip to step 3 without a brief: a PRD built on guessed requirements is worse than none.
+
+## Code rules (from the ADRs)
+- Only `backend/app/gateway/` talks to AI providers; tests and CI run it in recorded mode (ADR-0007).
+- Every user-owned table, query and job is scoped by `user_id`, with cross-user isolation tests (ADR-0001).
+- Nothing is sent to an AI provider before the user accepted the AI notice and passed the region check (FR-A5, ADR-0012).
+- Layering: `api -> services -> (adapters | gateway | documents) -> core`; lower layers never import upward.
+- After any API change run `npm run gen:api` in `frontend/`; CI fails if the generated types are stale.
 
 # Working style
 

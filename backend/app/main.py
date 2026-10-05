@@ -12,7 +12,7 @@ from app.api import auth, fact_bank, health, me, preferences
 from app.api.csrf import CSRFMiddleware
 from app.core.config import get_settings
 from app.core.db import dispose_engine
-from app.core.errors import JobWeaverError
+from app.core.errors import JobWeaverError, NotFoundError
 from app.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -28,7 +28,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await dispose_engine()
 
 
-def create_app() -> FastAPI:
+def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
     app = FastAPI(title="JobWeaver", version="0.1.0", lifespan=lifespan)
     app.add_middleware(CSRFMiddleware)
 
@@ -41,20 +41,23 @@ def create_app() -> FastAPI:
     for module in (health, auth, me, fact_bank, preferences):
         app.include_router(module.router)
 
-    if FRONTEND_DIST.is_dir():
-        _mount_frontend(app)
+    if frontend_dist is not None and frontend_dist.is_dir():
+        mount_frontend(app, frontend_dist)
     return app
 
 
-def _mount_frontend(app: FastAPI) -> None:
+def mount_frontend(app: FastAPI, dist: Path) -> None:
     """One service serves the API and the built SPA: one URL, no CORS (ADR-0008)."""
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
-    index = FRONTEND_DIST / "index.html"
+    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+    root = dist.resolve()
+    index = root / "index.html"
 
     @app.get("/{path:path}", include_in_schema=False)
-    async def spa(path: str) -> FileResponse:
-        candidate = (FRONTEND_DIST / path).resolve()
-        if path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
+    def spa(path: str) -> FileResponse:  # sync: file checks run in the threadpool
+        if path == "api" or path.startswith("api/"):
+            raise NotFoundError("Not found")
+        candidate = (root / path).resolve()
+        if path and candidate.is_file() and root in candidate.parents:
             return FileResponse(candidate)
         return FileResponse(index)
 

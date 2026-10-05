@@ -3,8 +3,10 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+DEV_SESSION_SECRET = "dev-only-change-me"
 
 
 class Settings(BaseSettings):
@@ -14,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://jobweaver:jobweaver@localhost:5432/jobweaver"
     # Base URL of the app as the browser sees it; used for OAuth redirects.
     public_url: str = "http://localhost:5173"
-    session_secret: str = Field(default="dev-only-change-me", min_length=16)
+    session_secret: str = Field(default=DEV_SESSION_SECRET, min_length=16)
     session_days: int = 30
     credentials_encryption_key: str = ""
 
@@ -43,6 +45,24 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [e.strip().lower() for e in value.split(",") if e.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _production_needs_real_secrets(self) -> "Settings":
+        if self.environment != "production":
+            return self
+        missing = [
+            name
+            for name, ok in (
+                ("SESSION_SECRET", self.session_secret != DEV_SESSION_SECRET),
+                ("CREDENTIALS_ENCRYPTION_KEY", bool(self.credentials_encryption_key)),
+                ("GOOGLE_CLIENT_ID", bool(self.google_client_id)),
+                ("GOOGLE_CLIENT_SECRET", bool(self.google_client_secret)),
+            )
+            if not ok
+        ]
+        if missing:
+            raise ValueError(f"Production needs these environment variables: {', '.join(missing)}")
+        return self
 
     @property
     def secure_cookies(self) -> bool:
