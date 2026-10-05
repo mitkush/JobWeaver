@@ -24,8 +24,8 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ## 4. Constraints
 - **Team:** solo developer.
-- **Timeline:** as soon as possible.
-- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into releasable phases (see open question 9).
+- **Timeline:** no deadlines. Quality over speed.
+- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 9).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
 - **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
@@ -97,6 +97,13 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ### 5.5 Correspondence (duplicates)
 - Groups the same job found on multiple sources into one **stack**; the user can open **every** copy on every platform, regardless of priority.
 - Matching is **semantic, not word-for-word** - an organisation may post the same opening with different wording. Based on company/organisation (normalised, e.g. "Google LLC" = "Google") + JD content/requirements + title *(recommendation: text embeddings + pgvector similarity)*.
+- **Confidence bands (decided):**
+  - **Exact** (same ATS job ID or same apply URL): grouped automatically.
+  - **High** (same normalised company + very similar title + very close JD meaning): grouped automatically.
+  - **Medium** (same company and similar title, but JD or location differs noticeably): shown as **"Possible duplicate"** with one-click Confirm / "Not the same job".
+  - **Low:** kept as separate jobs.
+  - Any group can be **split** with "Not the same job"; the decision is stored and never re-proposed.
+  - Thresholds start strict (small medium band) and are tuned on real data.
 - The primary record follows the source priority list, but **fields are merged** - e.g. an email found only in a lower-priority copy must not be lost.
 
 ### 5.6 Application tracker
@@ -104,6 +111,18 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 
 ### 5.7 Follow-up reminder
 - Reminder after N days with no update (reminder only, never auto-sent).
+
+## 5.8 UI / UX
+- **UI:** attractive and professional, consistent design system *(recommendation: Tailwind CSS + a component library such as shadcn/ui, light and dark mode)*.
+- **UX must never be confusing.** The PRD must turn this into checkable rules, for example:
+  - one clear primary action per screen (Feed: open job; Draft: Open in Gmail)
+  - from a job card to a ready draft in at most 2 clicks
+  - every async step shows its state (fetching, generating, saved, sent to Gmail, failed with a clear next step)
+  - helpful empty states (no jobs yet, no documents uploaded, Gmail not connected) that say what to do next
+  - no destructive or outward action without confirmation; nothing is sent automatically
+  - consistent names: the same term from `CONTEXT.md` everywhere in the UI
+  - responsive layout, keyboard accessible, readable contrast
+- Draft screen layout: draft editor in the centre, AI chat panel on the right, diff / trace viewable without leaving the screen.
 
 ## 6. AI
 - **Provider fallback chain** behind one abstraction layer: **Google Gemini (Flash / Flash-Lite) → Groq → OpenRouter `:free`**. **Ollama** for local development only (cannot run on free hosting).
@@ -142,8 +161,7 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 6. **Match-score method:** embeddings only, LLM only, or both - and how reasons are generated within free AI limits.
 7. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
 8. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
-9. **V1 build phasing for a solo, ASAP build:** which sources and features land in which release slice.
-10. **Duplicate confirmation:** recommended: three confidence bands (exact/high = auto-group; medium = "possible duplicate" with one-click confirm; low = separate), plus a "not the same job" split on any group, stored and never re-proposed. Awaiting founder confirmation.
+9. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
 
 ## 11. Repo conventions (decided: follow OneBrain's)
 - Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
