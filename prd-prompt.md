@@ -25,7 +25,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 ## 4. Constraints
 - **Team:** solo developer.
 - **Timeline:** no deadlines. Quality over speed.
-- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 9).
+- **Scope:** a **finished V1 product**, not a throwaway MVP. Everything in section 5 ships in V1. Only the browser extension (apply-form auto-fill) is deferred. Build order inside V1 is still sliced into usable phases (see open question 8).
 - **Budget:** **zero**. Only free tiers of every service.
 - **Stack:** **FastAPI (Python) backend + React (TypeScript) frontend.** Chosen for the Python AI/automation ecosystem and portfolio value.
 - **Hosting:** free tiers only, reusing the setup already proven on OneBrain *(recommendation)*: one web service serving API + built frontend (single URL, no CORS) on Render/Railway free tier, free Postgres (+ pgvector), Redis free tier if needed.
@@ -53,8 +53,10 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
 - **Bright Data credit budget:** 5,000 free credits/month (1 credit = 1 scraped record), shared across all users:
   - credit usage tracker with month-end projection
   - backfill capped *(recommendation: ~1,500 records)* so it cannot exhaust the month
-  - per-user credit quota so one user cannot drain the pool
-  - automatic slow-down / pause before the budget runs out
+  - **no per-user split** (decided): all users share the pool
+  - **daily pacing** *(recommendation)*: spread the monthly budget across the days left (about 5,000 / 30 = ~166 records/day) so it does not run out mid-month
+- **Source fallback (decided):** if any source fails for any reason (service unavailable, rate limit, credits/tokens exhausted, blocked), the fetch run skips it, continues with the remaining sources, marks it as degraded in a source-status view, and retries it on the next run. One failing source never stops the run. Note: sources are not interchangeable - jobs only on LinkedIn are missed while it is down; aggregators (e.g. JSearch) only partly cover them.
+- **Zero-budget guard:** no paid overage on any service *(verify: no payment method attached, or a hard spend cap, on Bright Data / Apify / SerpApi / RapidAPI)*.
 - Detect and hide **expired / closed** jobs.
 
 **Sources, in priority order** (priority decides the primary record in a duplicate group, nothing else):
@@ -154,14 +156,13 @@ Same founder, same stack, already built and working. The PRD should reuse these 
 
 ## 10. Open questions (unresolved - keep flagged in the PRD)
 1. **Shared job store vs per-user fetch.** Recommendation: store every fetched job once in a shared table (needed anyway for Correspondence/dedup) while keeping fetching and feeds per user. When two users' queries overlap, a LinkedIn record is paid for once instead of twice. The founder's position: don't share, because jobs fetched for one user may be irrelevant to others. Not yet agreed. Note that a shared store does not mean a shared feed.
-2. **Credit split between users:** how the 5,000 Bright Data credits are divided (equal quota, or founder-priority?).
-3. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
-4. **ATS company discovery:** the Greenhouse/Lever/Ashby/etc. public APIs need a list of companies (board tokens). How is that list built and maintained? Workday has no public job API.
-5. **Duplicates across locations:** is the same job posted for three cities one job or three?
-6. **Match-score method:** embeddings only, LLM only, or both - and how reasons are generated within free AI limits.
-7. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
-8. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
-9. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
+2. **Free-tier limits to confirm:** Apify monthly free credit (Naukri), JSearch, SerpApi, Adzuna; whether each fits a daily schedule.
+3. **ATS company discovery:** the Greenhouse/Lever/Ashby/etc. public APIs need a list of companies (board tokens). How is that list built and maintained? Workday has no public job API.
+4. **Duplicates across locations:** is the same job posted for three cities one job or three?
+5. **Match-score method:** embeddings only, LLM only, or both - and how reasons are generated within free AI limits.
+6. **Resume PDF template:** default to the founder's current single-column ATS-friendly layout; can users upload or choose others?
+7. **Success metrics** for a personal tool (e.g. jobs reviewed per week, drafts sent, reply rate, time per application) - to be defined in the PRD.
+8. **V1 build order (solo, no deadline):** which sources and features land in which usable slice.
 
 ## 11. Repo conventions (decided: follow OneBrain's)
 - Use "-" in prose, never the em dash character (docs, code comments, PR descriptions, commit messages).
