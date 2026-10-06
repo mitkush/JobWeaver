@@ -30,7 +30,8 @@ def _clean(values: list[str]) -> list[str]:
 class PreferencesIn(BaseModel):
     titles: list[str] = Field(min_length=1, max_length=20)
     keywords: list[str] = Field(default_factory=list, max_length=30)
-    locations: list[PreferenceLocation] = Field(min_length=1, max_length=30)
+    # No places means global coverage, independently of work mode.
+    locations: list[PreferenceLocation] = Field(default_factory=list, max_length=30)
     work_modes: list[WorkMode] = Field(min_length=1)
 
     @field_validator("titles", "keywords")

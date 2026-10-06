@@ -18,6 +18,8 @@ The User's own resume as uploaded. The reference that the Tailored Resume's diff
 
 What a User wants: target titles and keywords, locations (India cities, other countries and cities), and work modes (onsite, hybrid, remote). Preferences decide which Jobs enter the User's Feed and shape the queries sent to paid Sources.
 
+Location selection is optional: Global means no country/city restriction, including India. India and other-country selections can optionally name cities. Work mode is independent of job location: remote means WFH, hybrid means some days in the office, and onsite means office. A remote advert can still have a listed location ("India (Remote)"): it is the office location, shown on the card and matched by country only, since the city does not matter to someone working from home. Onsite and hybrid Jobs must match the chosen city too.
+
 ## Source
 
 One external provider of job data, reached through one **Source Adapter**: LinkedIn via Bright Data, Naukri via Apify, Greenhouse, Lever, JSearch, Remotive, Hacker News "Who is hiring", and so on. Each Source has a priority (1 = highest) used only to choose the Primary Posting of a Job.

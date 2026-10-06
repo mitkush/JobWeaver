@@ -2,18 +2,17 @@ import type { JobLocation } from "@/api/client";
 import { countryName } from "@/lib/countries";
 
 export const WORK_MODES = [
-  { value: "onsite", label: "Onsite" },
+  { value: "onsite", label: "Onsite (office)" },
   { value: "hybrid", label: "Hybrid" },
-  { value: "remote", label: "Remote" },
+  { value: "remote", label: "Remote (WFH)" },
 ] as const;
 
 export function workModeLabel(mode: string | null | undefined): string | null {
   return WORK_MODES.find((m) => m.value === mode)?.label ?? null;
 }
 
-/** "Bengaluru, India", "Remote (India)", "Remote". */
+/** Only the listed place; Remote/WFH is displayed separately as the work mode. */
 export function formatLocation(location: JobLocation): string {
   const country = location.country ? countryName(location.country) : null;
-  if (location.remote && !location.city) return country ? `Remote (${country})` : "Remote";
-  return [location.city, country].filter(Boolean).join(", ") || "Location not given";
+  return [location.city, country].filter(Boolean).join(", ") || "Location not stated";
 }

@@ -82,6 +82,37 @@ async def test_feed_needs_sign_in(anon):
     assert (await anon.get("/api/feed")).status_code == 401
 
 
+async def test_global_wfh_feed_keeps_location_and_work_mode_separate(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("in-remote", company="IndiaCo", work_mode="remote"),
+        posting(
+            "de-remote",
+            company="GermanyCo",
+            work_mode="remote",
+            locations=[Location(city="Berlin", country="DE")],
+        ),
+        posting(
+            "de-office",
+            company="OfficeCo",
+            work_mode="onsite",
+            locations=[Location(city="Berlin", country="DE")],
+        ),
+    )
+    await process()
+    preferences = {"titles": ["Backend Engineer"], "locations": [], "work_modes": ["remote"]}
+    assert (await client.put("/api/preferences", json=preferences)).status_code == 200
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert {card["company"] for card in cards} == {"IndiaCo", "GermanyCo"}
+    preferences["locations"] = [{"country": "IN", "city": None}]
+    assert (await client.put("/api/preferences", json=preferences)).status_code == 200
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert [card["company"] for card in cards] == ["IndiaCo"]
+    assert cards[0]["work_mode"] == "remote"
+    assert cards[0]["locations"][0]["country"] == "IN"
+
+
 async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     _, client = alice
     await seed()
