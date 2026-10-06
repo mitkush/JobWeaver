@@ -14,9 +14,15 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 async def daily_fetch() -> None:
-    from app.services.fetching import Fetcher
+    from app.services.pipeline import build_fetcher
 
-    await Fetcher(get_sessionmaker()).run_all(trigger="schedule")
+    await build_fetcher().run_all(trigger="schedule")
+
+
+async def process_queues() -> None:
+    from app.services.pipeline import process_queues as run
+
+    await run()
 
 
 async def catch_up_after_restart() -> bool:
@@ -42,6 +48,16 @@ def start_scheduler() -> AsyncIOScheduler:
             id="daily_fetch",
             # A run missed while the host slept still happens once it wakes (FR-B3 AC1).
             misfire_grace_time=12 * 3600,
+            coalesce=True,
+            max_instances=1,
+        )
+        # Embeddings and skills that waited for an AI provider. Every 6 hours keeps the
+        # free database's compute hours low (COSTS.md: Neon sleeps when idle).
+        _scheduler.add_job(
+            process_queues,
+            "interval",
+            hours=6,
+            id="process_queues",
             coalesce=True,
             max_instances=1,
         )

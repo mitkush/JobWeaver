@@ -39,7 +39,8 @@
 
 **Keeping AI usage low by design:**
 - Required skills are extracted **once per Job**, not per User (ADR-0010).
-- Embeddings are computed **once per Posting** and stored.
+- Embeddings are computed **at most once per Posting**, and only for Postings that have a close-titled rival at the same Company (a Posting with no possible duplicate is never embedded). Batches of 20 are paced about 20 seconds apart; the gateway stops at 900 embedding requests a day *(Gemini's embedding limits are not in a public table; confirm in AI Studio)*.
+- Required skills are extracted only for Jobs that are in at least one User's Feed, five adverts per request.
 - Tailoring sends only the relevant Facts plus the Job description, never every document in full.
 - Tests and CI use recorded responses: **0 live AI calls** during development.
 

@@ -6,7 +6,7 @@ import { App } from "@/app/App";
 import { furthestStep } from "@/pages/onboarding-steps";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 
-import { json, makeMe, mockFetch, renderWithApp } from "./utils";
+import { json, makeFeed, makeMe, mockFetch, renderWithApp } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -70,7 +70,7 @@ describe("App routing", () => {
   });
 
   it("shows the Feed with a helpful empty state once setup is done", async () => {
-    mockFetch({ "GET /api/me": () => json(makeMe()) });
+    mockFetch({ "GET /api/me": () => json(makeMe()), "GET /api/feed": () => json(makeFeed()) });
     renderWithApp(<App />, { route: "/feed" });
     expect(await screen.findByText("No jobs yet")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review your preferences" })).toBeInTheDocument();

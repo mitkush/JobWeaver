@@ -16,6 +16,7 @@ dependencies = [
     "pypdf>=4.2",
     "python-multipart>=0.0.9",
     "apscheduler>=3.10,<4",
+    "rapidfuzz>=3.9",
 ]
 
 [project.optional-dependencies]

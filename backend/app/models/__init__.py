@@ -5,6 +5,7 @@ from app.models.base import Base
 from app.models.document import Document, DocumentKind
 from app.models.fact import Fact, FactKind, FactOrigin
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
+from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.oauth_credential import OAuthCredential
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
@@ -15,6 +16,12 @@ from app.models.user import Role, User
 __all__ = [
     "AIUsage",
     "AtsBoard",
+    "Band",
+    "Job",
+    "MatchPair",
+    "PairStatus",
+    "RejectedPair",
+    "UserJob",
     "Company",
     "FetchRun",
     "Posting",

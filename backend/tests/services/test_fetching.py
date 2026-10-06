@@ -283,6 +283,35 @@ async def test_quiet_boards_are_fetched_weekly(db, fetcher, clock):
     assert await db.scalar(select(func.count()).select_from(FetchRun)) == 1
 
 
+async def test_boards_that_never_had_jobs_go_weekly_after_30_days(db, fetcher, clock):
+    db.add(
+        AtsBoard(
+            ats="greenhouse",
+            slug="empty",
+            discovered_from="manual",
+            created_at=START - timedelta(days=40),
+            last_fetched_at=START - timedelta(days=2),
+            last_nonempty_at=None,
+        )
+    )
+    db.add(
+        AtsBoard(
+            ats="greenhouse",
+            slug="new-empty",
+            discovered_from="manual",
+            created_at=START - timedelta(days=3),
+            last_fetched_at=START - timedelta(days=2),
+            last_nonempty_at=None,
+        )
+    )
+    await db.commit()
+    FakeBoard.boards = {"empty": FetchResult(postings=[]), "new-empty": FetchResult(postings=[])}
+    await fetcher.run_source("fake-board")
+    fetched = (await db.execute(select(FetchRun.board_id))).scalars().all()
+    new_board = await db.scalar(select(AtsBoard.id).where(AtsBoard.slug == "new-empty"))
+    assert fetched == [new_board]  # the 40-day-old empty board waits for its weekly turn
+
+
 async def test_old_windowed_postings_expire_but_board_postings_do_not(db, fetcher, clock):
     await add_preferences(db)
     old = START - timedelta(days=40)
@@ -392,7 +421,7 @@ async def test_restart_catch_up_runs_only_when_the_daily_run_was_missed(db, monk
     assert await daily_run_missed(db, now + timedelta(hours=27)) is True
 
 
-def test_scheduler_registers_the_daily_job_and_a_catch_up():
+def test_scheduler_registers_daily_fetch_queue_and_catch_up_jobs():
     import asyncio
 
     from app.scheduler import start_scheduler, stop_scheduler
@@ -402,7 +431,7 @@ def test_scheduler_registers_the_daily_job_and_a_catch_up():
         stop_scheduler()
         return jobs
 
-    assert asyncio.run(check()) == {"daily_fetch", "catch_up_after_restart"}
+    assert asyncio.run(check()) == {"daily_fetch", "process_queues", "catch_up_after_restart"}
 
 
 # --- Review fixes: board isolation, credits, trigger limits, manual-run lock -----------
@@ -512,3 +541,73 @@ async def test_manual_run_waits_for_the_daily_run(db, fetcher):
         await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
     assert outcome.status == "skipped" and "already running" in outcome.message
     assert (await source_row(db, "fake-board")).manual_runs_today == 0
+
+
+# --- Phase 3: the pipeline after each fetch ------------------------------------------------
+
+
+async def test_processing_runs_after_daily_and_manual_runs_inside_the_lock(db, clock):
+    calls: list[bool] = []
+
+    async def after_fetch():
+        async with get_sessionmaker()() as other:
+            got = await other.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
+            calls.append(bool(got))
+            if got:
+                await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+
+    fetcher = Fetcher(get_sessionmaker(), settings=Settings(), clock=clock, after_fetch=after_fetch)
+    await fetcher.run_all()
+    await fetcher.manual_run("fake-board")
+    assert calls == [False, False]  # ran twice, both times while the fetch held the lock
+
+
+async def test_a_processing_failure_never_fails_the_fetch(db, clock):
+    async def broken():
+        raise RuntimeError("boom")
+
+    fetcher = Fetcher(get_sessionmaker(), settings=Settings(), clock=clock, after_fetch=broken)
+    outcomes = await fetcher.run_all()
+    assert outcomes is not None
+
+
+async def test_queue_run_is_skipped_while_a_fetch_runs(db):
+    from app.services.pipeline import process_queues
+
+    async with get_sessionmaker()() as other:
+        await other.execute(text(f"SELECT pg_advisory_lock({FETCH_LOCK_ID})"))
+        assert await process_queues() is None
+        await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+    report = await process_queues()
+    assert report is not None and report.errors == []
+
+
+async def test_started_manual_run_holds_the_lock_until_it_finishes(db, clock):
+    import asyncio
+
+    release = asyncio.Event()
+
+    async def slow_processing():
+        await release.wait()
+
+    fetcher = Fetcher(
+        get_sessionmaker(), settings=Settings(), clock=clock, after_fetch=slow_processing
+    )
+    await fetcher.sync_sources()
+    started = await fetcher.start_manual_run("fake-board")
+    assert started.status == "started"
+    # A second run (or the daily run) is refused while the first is still processing.
+    assert (await fetcher.start_manual_run("fake-board")).status == "skipped"
+    release.set()
+    await fetcher.manual_task
+    async with get_sessionmaker()() as other:
+        assert await other.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
+        await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+
+
+async def test_started_manual_runs_still_count_against_the_daily_limit(db, fetcher):
+    await fetcher.sync_sources()
+    for _ in range(4):
+        assert (await fetcher.start_manual_run("fake-board")).status == "started"
+        await fetcher.manual_task
+    assert (await fetcher.start_manual_run("fake-board")).status == "skipped"

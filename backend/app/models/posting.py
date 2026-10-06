@@ -6,6 +6,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.vector import Vector
+
+# Gemini embeddings reduced to 768 dimensions (ADR-0014, COSTS.md storage estimate).
+EMBEDDING_DIM = 768
 
 
 class Company(Base):
@@ -43,6 +47,8 @@ class Posting(Base):
         Index("idx_postings_source_job", "source", "source_job_id", unique=True),
         Index("idx_postings_company_open", "company_id", "closed_at"),
         Index("idx_postings_board_open", "ats_board_id", "closed_at"),
+        Index("idx_postings_job", "job_id"),
+        Index("idx_postings_match_state", "match_state"),
     )
 
     source: Mapped[str] = mapped_column(String(64))
@@ -63,3 +69,9 @@ class Posting(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_reason: Mapped[str | None] = mapped_column(String(32))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    # pending -> done, or awaiting_embedding while Gemini is unavailable (ADR-0014).
+    match_state: Mapped[str] = mapped_column(String(24), default="pending")
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), deferred=True)
+    # Vectors from different models are never compared (ADR-0014).
+    embedding_model: Mapped[str | None] = mapped_column(String(64))

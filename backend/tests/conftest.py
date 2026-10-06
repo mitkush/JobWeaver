@@ -41,6 +41,8 @@ CSRF = "test-csrf-token"
 async def _schema() -> AsyncIterator[None]:
     engine = get_engine()
     async with engine.begin() as conn:
+        # Needs a superuser once per database; afterwards IF NOT EXISTS is a no-op.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield

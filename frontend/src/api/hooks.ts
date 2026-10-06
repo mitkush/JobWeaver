@@ -8,6 +8,7 @@ import {
   type DocumentKind,
   type Fact,
   type FactKind,
+  type FeedQuery,
   type Me,
   type Preferences,
 } from "./client";
@@ -21,6 +22,9 @@ export const keys = {
   runs: ["admin", "runs"] as const,
   notices: ["notices"] as const,
   boards: ["boards"] as const,
+  feed: ["feed"] as const,
+  runStartedAt: ["admin", "run-started-at"] as const,
+  job: (id: string) => ["job", id] as const,
 };
 
 export function useMe() {
@@ -168,7 +172,10 @@ export function useSavePreferences() {
     mutationFn: (body: Preferences) => unwrap(api.PUT("/api/preferences", { body })),
     onSuccess: (saved) => {
       client.setQueryData(keys.preferences, saved);
-      return client.invalidateQueries({ queryKey: keys.me });
+      return Promise.all([
+        client.invalidateQueries({ queryKey: keys.me }),
+        client.invalidateQueries({ queryKey: keys.feed }),
+      ]);
     },
   });
 }
@@ -198,10 +205,27 @@ export function useSources() {
   return useQuery({ queryKey: keys.sources, queryFn: () => unwrap(api.GET("/api/admin/sources")) });
 }
 
+/** Refreshes every few seconds while a run is in progress (a manual run runs in the
+ * background), and refreshes the Sources once it ends. */
 export function useFetchRuns() {
+  const client = useQueryClient();
   return useQuery({
     queryKey: keys.runs,
-    queryFn: () => unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } })),
+    queryFn: async () => {
+      const previous = client.getQueryData<{ status: string }[]>(keys.runs);
+      const runs = await unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } }));
+      const wasRunning = previous?.some((run) => run.status === "running");
+      if (wasRunning && !runs.some((run) => run.status === "running")) {
+        void client.invalidateQueries({ queryKey: keys.sources });
+      }
+      return runs;
+    },
+    refetchInterval: (query) => {
+      if (query.state.data?.some((run) => run.status === "running")) return 5000;
+      // A run just started may not have written its first row yet.
+      const startedAt = client.getQueryData<number>(keys.runStartedAt) ?? 0;
+      return Date.now() - startedAt < 60_000 ? 3000 : false;
+    },
   });
 }
 
@@ -219,6 +243,9 @@ export function useRunSource() {
   return useMutation({
     mutationFn: (name: string) =>
       unwrap(api.POST("/api/admin/sources/{name}/run", { params: { path: { name } } })),
+    onSuccess: (outcome) => {
+      if (outcome.status === "started") client.setQueryData(keys.runStartedAt, Date.now());
+    },
     onSettled: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: keys.sources }),
@@ -240,6 +267,80 @@ export function useAddBoard() {
   return useMutation({
     mutationFn: (url: string) => unwrap(api.POST("/api/ats-boards", { body: { url } })),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.boards }),
+  });
+}
+
+export function useFeed(query: FeedQuery) {
+  return useQuery({
+    queryKey: [...keys.feed, query],
+    queryFn: () => unwrap(api.GET("/api/feed", { params: { query } })),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useJob(jobId: string) {
+  return useQuery({
+    queryKey: keys.job(jobId),
+    queryFn: () => unwrap(api.GET("/api/jobs/{job_id}", { params: { path: { job_id: jobId } } })),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  });
+}
+
+/** Grouping changes are shared: every Feed and Job view may have changed. */
+function useInvalidateJobs() {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: keys.feed }),
+      client.invalidateQueries({ queryKey: ["job"] }),
+    ]);
+}
+
+export function useSetHidden() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: ({ jobId, hidden }: { jobId: string; hidden: boolean }) => {
+      const params = { params: { path: { job_id: jobId } } };
+      return unwrap(hidden ? api.POST("/api/feed/{job_id}/hide", params) : api.DELETE("/api/feed/{job_id}/hide", params));
+    },
+    onSettled: invalidate,
+  });
+}
+
+export function useConfirmDuplicate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (pairId: string) =>
+      unwrap(api.POST("/api/possible-duplicates/{pair_id}/confirm", { params: { path: { pair_id: pairId } } })),
+    // One of the two Jobs no longer exists: mark Job views stale without refetching the
+    // open one, so the screen moves to the merged Job instead of flashing "not found".
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: keys.feed }),
+        client.invalidateQueries({ queryKey: ["job"], refetchType: "none" }),
+      ]),
+  });
+}
+
+export function useRejectDuplicate() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: (pairId: string) =>
+      unwrap(api.POST("/api/possible-duplicates/{pair_id}/reject", { params: { path: { pair_id: pairId } } })),
+    onSettled: invalidate,
+  });
+}
+
+export function useSplitPosting() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: ({ jobId, postingId }: { jobId: string; postingId: string }) =>
+      unwrap(
+        api.POST("/api/jobs/{job_id}/postings/{posting_id}/split", {
+          params: { path: { job_id: jobId, posting_id: postingId } },
+        }),
+      ),
+    onSettled: invalidate,
   });
 }
 

@@ -1,34 +1,172 @@
-import { Inbox } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Inbox, Mail, SearchX } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 
-import { useNotices } from "@/api/hooks";
+import { useFeed, useNotices } from "@/api/hooks";
 import { PageHeader } from "@/app/AppShell";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageSpinner } from "@/components/ui/spinner";
+import { FeedFilters } from "@/features/feed/FeedFilters";
+import { clearFilters, feedQuery, hasFilters, PAGE_SIZE, withParam } from "@/features/feed/feed-params";
+import { JobCard } from "@/features/feed/JobCard";
+import { cn } from "@/lib/cn";
+import { fromNow } from "@/lib/time";
+
+type Section = "email" | "link";
+
+function SectionTabs({
+  section,
+  counts,
+  onSelect,
+}: {
+  section: Section;
+  counts: { with_email: number; apply_link_only: number } | undefined;
+  onSelect: (section: Section) => void;
+}) {
+  const tabs: { id: Section; label: string; count?: number }[] = [
+    { id: "email", label: "With email", count: counts?.with_email },
+    { id: "link", label: "Apply link only", count: counts?.apply_link_only },
+  ];
+  return (
+    <div role="tablist" aria-label="Feed sections" className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-800">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          role="tab"
+          type="button"
+          aria-selected={section === tab.id}
+          onClick={() => onSelect(tab.id)}
+          className={cn(
+            "-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium",
+            section === tab.id
+              ? "border-brand-600 text-slate-900 dark:text-white"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+          )}
+        >
+          {tab.id === "email" && <Mail className="size-4" aria-hidden />}
+          {tab.label}
+          {tab.count !== undefined && (
+            <span className="rounded-full bg-slate-100 px-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {tab.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function FeedPage() {
+  const [params, setParams] = useSearchParams();
   const notices = useNotices();
+  const explicit = params.get("section");
+  const requested: Section = explicit === "link" ? "link" : "email";
+  const feed = useFeed(feedQuery(params, requested));
+  const counts = feed.data?.counts;
+  // With no choice made, open the section that has jobs.
+  const section: Section =
+    !explicit && counts && counts.with_email === 0 && counts.apply_link_only > 0 ? "link" : requested;
+  const shown = useFeed(feedQuery(params, section));
+  const data = section === requested ? feed.data : shown.data;
+  const hidden = params.get("hidden") === "1";
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const nothingAtAll = counts && counts.with_email + counts.apply_link_only === 0;
+
   return (
     <>
-      <PageHeader title="Feed" description="New jobs that match your preferences, one card per real opening." />
+      <PageHeader
+        title={hidden ? "Hidden jobs" : "Feed"}
+        description={
+          data?.last_updated_at
+            ? `Jobs that match your preferences, one card per real opening. Updated ${fromNow(data.last_updated_at)}.`
+            : "Jobs that match your preferences, one card per real opening."
+        }
+        action={
+          <Button variant="secondary" size="sm" onClick={() => setParams(withParam(params, "hidden", hidden ? null : "1"))}>
+            {hidden ? "Back to feed" : "Hidden jobs"}
+          </Button>
+        }
+      />
       {notices.data?.map((notice) => (
         <Alert key={notice.label} tone="info" className="mb-4">
           {notice.message}
         </Alert>
       ))}
-      <EmptyState
-        icon={Inbox}
-        title="No jobs yet"
-        action={
-          <Link to="/preferences" className={buttonClasses("secondary")}>
-            Review your preferences
-          </Link>
-        }
-      >
-        Your profile is ready. Jobs are collected every morning from LinkedIn, company job boards and
-        other sources; matching jobs start appearing here in the next release.
-      </EmptyState>
+      {feed.isError && (
+        <Alert tone="error" className="mb-4" title="The feed could not load">
+          {feed.error.message}
+        </Alert>
+      )}
+      <FeedFilters params={params} onChange={setParams} sources={data?.sources ?? []} />
+      <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
+
+      {feed.isPending ? (
+        <PageSpinner label="Loading your feed" />
+      ) : nothingAtAll && hasFilters(params) ? (
+        <EmptyState
+          icon={SearchX}
+          title="No jobs match these filters"
+          action={
+            <Button variant="secondary" onClick={() => setParams(clearFilters(params))}>
+              Clear filters
+            </Button>
+          }
+        >
+          Try a wider date range or another location.
+        </EmptyState>
+      ) : nothingAtAll ? (
+        hidden ? (
+          <EmptyState
+            icon={Inbox}
+            title="No hidden jobs"
+            action={
+              <Button variant="secondary" onClick={() => setParams(withParam(params, "hidden", null))}>
+                Back to feed
+              </Button>
+            }
+          >
+            Jobs you hide from your feed are kept here, so you can bring them back.
+          </EmptyState>
+        ) : (
+          <EmptyState
+            icon={Inbox}
+            title="No jobs yet"
+            action={
+              <Link to="/preferences" className={buttonClasses("secondary")}>
+                Review your preferences
+              </Link>
+            }
+          >
+            Jobs are collected every morning from LinkedIn, company job boards and other sources. Matching jobs appear
+            here after the next collection.
+          </EmptyState>
+        )
+      ) : data && data.items.length === 0 ? (
+        <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+          {section === "email" ? "No jobs with a contact email here." : "No apply-link-only jobs here."}
+        </p>
+      ) : (
+        <div className="space-y-3" aria-busy={shown.isFetching || undefined}>
+          {data?.items.map((job) => <JobCard key={job.job_id} job={job} />)}
+        </div>
+      )}
+
+      {data && pages > 1 && (
+        <nav aria-label="Pages" className="mt-6 flex items-center justify-between text-sm">
+          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setParams(withParam(params, "page", String(page - 1)))}>
+            Previous
+          </Button>
+          <span className="text-slate-600 dark:text-slate-400">
+            Page {page} of {pages}
+          </span>
+          <Button variant="secondary" size="sm" disabled={page >= pages} onClick={() => setParams(withParam(params, "page", String(page + 1)))}>
+            Next
+          </Button>
+        </nav>
+      )}
     </>
   );
 }

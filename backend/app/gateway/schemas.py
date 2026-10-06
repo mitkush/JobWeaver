@@ -39,3 +39,34 @@ class ParsedFact(BaseModel):
 
 class ParseDocumentsResult(BaseModel):
     facts: list[ParsedFact]
+
+
+class EmbedRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=100)
+
+
+class EmbedResult(BaseModel):
+    vectors: list[list[float]]
+
+
+class JobAdvert(BaseModel):
+    ref: str
+    title: str
+    description: str
+
+
+class ExtractSkillsRequest(BaseModel):
+    """Public job-advert text only; never User data (ADR-0002, ADR-0010)."""
+
+    jobs: list[JobAdvert] = Field(min_length=1, max_length=10)
+
+
+class JobSkills(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ref: str
+    skills: list[str] = Field(default_factory=list, max_length=40)
+
+
+class ExtractSkillsResult(BaseModel):
+    jobs: list[JobSkills]

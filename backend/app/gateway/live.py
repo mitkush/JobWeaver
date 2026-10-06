@@ -1,4 +1,5 @@
 import logging
+import math
 import uuid
 from typing import TypeVar
 
@@ -8,10 +9,23 @@ from app.core.errors import GatewayError
 from app.gateway import prompts
 from app.gateway.base import BaseAIGateway
 from app.gateway.parsing import parse_output
-from app.gateway.providers import ProviderClient
+from app.gateway.providers import GeminiClient, ProviderClient
 from app.gateway.quota import UsageLedger
-from app.gateway.routing import DAILY_QUOTAS, ROUTING_TABLE
-from app.gateway.schemas import GatewayResponse, ParseDocumentsRequest, ParseDocumentsResult
+from app.gateway.routing import (
+    DAILY_QUOTAS,
+    EMBEDDING_DIMENSIONS,
+    GEMINI_EMBEDDING,
+    ROUTING_TABLE,
+)
+from app.gateway.schemas import (
+    EmbedRequest,
+    EmbedResult,
+    ExtractSkillsRequest,
+    ExtractSkillsResult,
+    GatewayResponse,
+    ParseDocumentsRequest,
+    ParseDocumentsResult,
+)
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
@@ -19,6 +33,8 @@ T = TypeVar("T", bound=BaseModel)
 
 class LiveAIGateway(BaseAIGateway):
     """Tries each route of a task in order; skips routes without a key or over quota."""
+
+    embedding_model = GEMINI_EMBEDDING
 
     def __init__(self, clients: dict[str, ProviderClient], ledger: UsageLedger) -> None:
         self.clients = clients
@@ -33,6 +49,48 @@ class LiveAIGateway(BaseAIGateway):
             prompts.PARSE_DOCUMENTS_SYSTEM,
             prompts.parse_documents_user(request),
             ParseDocumentsResult,
+        )
+
+    async def extract_skills(
+        self, request: ExtractSkillsRequest
+    ) -> GatewayResponse[ExtractSkillsResult]:
+        return await self._run(
+            "extract_skills",
+            None,
+            prompts.EXTRACT_SKILLS_SYSTEM,
+            prompts.extract_skills_user(request),
+            ExtractSkillsResult,
+        )
+
+    async def embed_texts(self, request: EmbedRequest) -> GatewayResponse[EmbedResult]:
+        client = self.clients.get("gemini")
+        if not isinstance(client, GeminiClient):
+            raise GatewayError("Embeddings need a Gemini key; postings stay queued")
+        quota = DAILY_QUOTAS[("gemini", GEMINI_EMBEDDING)]
+        if await self.ledger.used_today("gemini", GEMINI_EMBEDDING) >= quota:
+            raise GatewayError("Gemini embedding quota reached for today; postings stay queued")
+        try:
+            vectors = await client.embed(GEMINI_EMBEDDING, request.texts, EMBEDDING_DIMENSIONS)
+        except GatewayError:
+            await self.ledger.record(
+                user_id=None,
+                task="embed_texts",
+                provider="gemini",
+                model=GEMINI_EMBEDDING,
+                outcome="error",
+            )
+            raise
+        await self.ledger.record(
+            user_id=None,
+            task="embed_texts",
+            provider="gemini",
+            model=GEMINI_EMBEDDING,
+            outcome="ok",
+        )
+        return GatewayResponse[EmbedResult](
+            result=EmbedResult(vectors=[unit(v) for v in vectors]),
+            provider="gemini",
+            model=GEMINI_EMBEDDING,
         )
 
     async def _run(
@@ -84,3 +142,9 @@ class LiveAIGateway(BaseAIGateway):
                 output_tokens=completion.output_tokens,
             )
         raise GatewayError("All AI providers are unavailable right now: " + "; ".join(failures))
+
+
+def unit(vector: list[float]) -> list[float]:
+    """Reduced-size Gemini embeddings are not normalised; cosine needs comparable lengths."""
+    norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+    return [v / norm for v in vector]

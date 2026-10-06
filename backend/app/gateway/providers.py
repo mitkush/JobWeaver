@@ -59,6 +59,34 @@ class GeminiClient:
             text, usage.get("promptTokenCount", 0), usage.get("candidatesTokenCount", 0)
         )
 
+    async def embed(self, model: str, texts: list[str], dimensions: int) -> list[list[float]]:
+        """One batchEmbedContents call; one vector per text, in order."""
+        response = await _post(
+            self.name,
+            self.http,
+            f"{self.base_url}/models/{model}:batchEmbedContents",
+            headers={"x-goog-api-key": self.api_key},
+            json={
+                "requests": [
+                    {
+                        "model": f"models/{model}",
+                        "content": {"parts": [{"text": text}]},
+                        "taskType": "SEMANTIC_SIMILARITY",
+                        "outputDimensionality": dimensions,
+                    }
+                    for text in texts
+                ]
+            },
+        )
+        body = _json(self.name, response)
+        try:
+            vectors = [[float(v) for v in item["values"]] for item in body["embeddings"]]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GatewayError("gemini returned embeddings JobWeaver could not read") from exc
+        if len(vectors) != len(texts) or any(len(v) != dimensions for v in vectors):
+            raise GatewayError("gemini returned the wrong number or size of embeddings")
+        return vectors
+
 
 class OpenAICompatibleClient:
     """Groq and OpenRouter both speak the OpenAI chat completions format."""

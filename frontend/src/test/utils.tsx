@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 
-import type { Me } from "@/api/client";
+import type { FeedCard, FeedPage, Me } from "@/api/client";
 import { ToastProvider } from "@/components/ui/toast";
 
 type Handler = (request: Request) => Response | Promise<Response>;
@@ -59,5 +59,41 @@ export function makeMe(overrides: Partial<Me["onboarding"]> = {}): Me {
       next_step: "done",
       ...overrides,
     },
+  };
+}
+
+export function makeCard(overrides: Partial<FeedCard> = {}): FeedCard {
+  return {
+    job_id: "job-1",
+    title: "Backend Engineer",
+    company: "Acme",
+    locations: [{ city: "Bengaluru", country: "IN", remote: false }],
+    work_mode: "hybrid",
+    posted_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    sources: [
+      { name: "linkedin", label: "LinkedIn (Bright Data)" },
+      { name: "greenhouse", label: "Greenhouse" },
+    ],
+    contact_email: "jobs@acme.com",
+    apply_url: "https://boards.greenhouse.io/acme/jobs/1",
+    skill_gaps: ["Kubernetes", "Go"],
+    possible_duplicate: false,
+    hidden: false,
+    ...overrides,
+  };
+}
+
+export function makeFeed(items: FeedCard[] = [], overrides: Partial<FeedPage> = {}): FeedPage {
+  const withEmail = items.filter((c) => c.contact_email).length;
+  return {
+    items,
+    total: items.length,
+    counts: { with_email: withEmail, apply_link_only: items.length - withEmail },
+    last_updated_at: null,
+    sources: [
+      { name: "linkedin", label: "LinkedIn (Bright Data)" },
+      { name: "greenhouse", label: "Greenhouse" },
+    ],
+    ...overrides,
   };
 }

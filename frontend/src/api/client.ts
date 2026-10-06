@@ -14,6 +14,13 @@ export type SourceStatus = Schemas["SourceStatusOut"];
 export type FetchRun = Schemas["FetchRunOut"];
 export type AtsBoard = Schemas["AtsBoardOut"];
 export type SourceNotice = Schemas["SourceNotice"];
+export type FeedPage = Schemas["FeedOut"];
+export type FeedCard = Schemas["FeedCard"];
+export type JobDetail = Schemas["JobDetailOut"];
+export type PostingInfo = Schemas["PostingOut"];
+export type PossibleDuplicate = Schemas["PossibleDuplicateOut"];
+export type JobLocation = Schemas["LocationOut"];
+export type FeedQuery = NonNullable<paths["/api/feed"]["get"]["parameters"]["query"]>;
 
 export class ApiError extends Error {
   constructor(
