@@ -14,5 +14,5 @@ export function workModeLabel(mode: string | null | undefined): string | null {
 /** Only the listed place; Remote/WFH is displayed separately as the work mode. */
 export function formatLocation(location: JobLocation): string {
   const country = location.country ? countryName(location.country) : null;
-  return [location.city, country].filter(Boolean).join(", ") || "Location not given";
+  return [location.city, country].filter(Boolean).join(", ") || "Location not stated";
 }

@@ -115,7 +115,7 @@ it("keeps the feed state in the URL", () => {
 it("formats locations", () => {
   expect(formatLocation({ city: "Bengaluru", country: "IN", remote: false })).toBe("Bengaluru, India");
   expect(formatLocation({ city: null, country: "IN", remote: true })).toBe("India");
-  expect(formatLocation({ city: null, country: null, remote: true })).toBe("Location not given");
+  expect(formatLocation({ city: null, country: null, remote: true })).toBe("Location not stated");
 });
 
 const posting = (id: string, source: string, label: string, primary = false) => ({

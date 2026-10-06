@@ -90,3 +90,34 @@ it("adds a specific overseas country alongside an Indian city", async () => {
   await user.click(screen.getByRole("button", { name: "Save preferences" }));
   expect(await calls.find((c) => c.method === "PUT")?.json()).toMatchObject({ locations: [{ country: "IN", city: "Indore" }, { country: "DE", city: null }] });
 });
+
+it("adds a city under India to India even when another country was saved first", async () => {
+  document.cookie = "jw_csrf=t";
+  const calls = mockFetch({
+    "PUT /api/preferences": async (r) => json(await r.json()),
+    "GET /api/me": () => json({}),
+  });
+  const user = userEvent.setup();
+  renderWithApp(
+    <PreferencesForm
+      initial={{ titles: ["Engineer"], keywords: [], locations: [{ country: "DE", city: null }, { country: "IN", city: "Pune" }], work_modes: ["onsite"] }}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "India" })).toHaveAttribute("aria-pressed", "true");
+  await user.type(screen.getByLabelText("City"), "Mumbai{Enter}");
+  await user.click(screen.getByRole("button", { name: "Save preferences" }));
+  expect(await calls.find((c) => c.method === "PUT")?.json()).toMatchObject({
+    locations: [{ country: "DE", city: null }, { country: "IN", city: "Pune" }, { country: "IN", city: "Mumbai" }],
+  });
+});
+
+it("keeps the places when switching to Global and back", async () => {
+  const user = userEvent.setup();
+  renderWithApp(
+    <PreferencesForm initial={{ titles: ["Engineer"], keywords: [], locations: [{ country: "IN", city: "Indore" }], work_modes: ["remote"] }} />,
+  );
+  await user.click(screen.getByRole("button", { name: "Global (any country)" }));
+  expect(screen.getByText(/kept if you switch back/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "India" }));
+  expect(screen.getByRole("button", { name: "Remove Indore, India" })).toBeInTheDocument();
+});

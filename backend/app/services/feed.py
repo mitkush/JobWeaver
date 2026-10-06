@@ -88,7 +88,11 @@ def location_matches(
     wanted: Sequence[dict[str, str | None]],
     work_modes: Sequence[str],
 ) -> bool:
-    """Match listed places independently of work mode; no preference means global."""
+    """Any of the Job's places matches any wanted place; no wanted place means Global.
+
+    The listed place is the office location; work mode is checked separately. For a
+    remote (WFH) Job only the country has to match: its office city does not matter to
+    someone working from home. For onsite and hybrid Jobs the city must match too."""
     if not wanted:
         return True
     if not job_locations:
@@ -96,6 +100,7 @@ def location_matches(
     for location in job_locations:
         city = str(location.get("city") or "").lower()
         country = str(location.get("country") or "").upper()
+        remote = job_work_mode == "remote" or bool(location.get("remote"))
         if not country and not city:
             return True
         for place in wanted:
@@ -103,7 +108,7 @@ def location_matches(
             want_city = str(place.get("city") or "").lower()
             if country and country != want_country:
                 continue
-            if want_city and city and city != want_city:
+            if want_city and city and city != want_city and not remote:
                 continue
             return True
     return False

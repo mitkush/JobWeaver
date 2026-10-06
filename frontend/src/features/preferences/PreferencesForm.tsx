@@ -34,10 +34,14 @@ export function PreferencesForm({
   const [value, setValue] = useState<FormValue>(
     initial ? { ...initial, keywords: initial.keywords ?? [], locations: initial.locations ?? [] } : EMPTY,
   );
-  const [country, setCountry] = useState(initial?.locations?.[0]?.country ?? "IN");
   const [locationScope, setLocationScope] = useState<"india" | "other" | "global">(
     initial?.locations?.length ? (initial.locations.some((l) => l.country === "IN") ? "india" : "other") : "global",
   );
+  // The country picked under "Other country"; India always means IN.
+  const [otherCountry, setOtherCountry] = useState(
+    initial?.locations?.find((l) => l.country !== "IN")?.country ?? "US",
+  );
+  const country = locationScope === "india" ? "IN" : otherCountry;
   const [city, setCity] = useState("");
   const [error, setError] = useState<string | null>(null);
   const save = useSavePreferences();
@@ -53,15 +57,19 @@ export function PreferencesForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const nextValue = !value.locations.length && locationScope !== "global"
-      ? { ...value, locations: [{ country, city: city.trim() || null }] }
-      : value;
+    // Global saves no places; the list stays in the form in case the User switches back.
+    const nextValue =
+      locationScope === "global"
+        ? { ...value, locations: [] }
+        : !value.locations.length
+          ? { ...value, locations: [{ country, city: city.trim() || null }] }
+          : value;
     const problem = validatePreferences(nextValue);
     setError(problem);
     if (problem) return;
     try {
       await save.mutateAsync(nextValue);
-      setValue(nextValue);
+      if (locationScope !== "global") setValue(nextValue);
       onSaved?.();
     } catch (err) {
       setError((err as Error).message);
@@ -105,9 +113,6 @@ export function PreferencesForm({
               onClick={() => {
                 setLocationScope(scope.value);
                 setCity("");
-                if (scope.value === "global") setValue({ ...value, locations: [] });
-                if (scope.value === "india") setCountry("IN");
-                if (scope.value === "other") setCountry("US");
                 setError(null);
               }}
             >
@@ -115,9 +120,14 @@ export function PreferencesForm({
             </Button>
           ))}
         </div>
-        {locationScope === "global" && <p className="text-xs text-slate-500 dark:text-slate-400">No country or city selection needed.</p>}
+        {locationScope === "global" && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            No country or city selection needed.
+            {value.locations.length > 0 && " Your places below are kept if you switch back to India or Other country."}
+          </p>
+        )}
         {value.locations.length > 0 && (
-          <ul className="flex flex-wrap gap-2">
+          <ul className={cn("flex flex-wrap gap-2", locationScope === "global" && "opacity-50")} aria-label="Places">
             {value.locations.map((location) => {
               const label = `${location.city ? `${location.city}, ` : ""}${countryName(location.country)}`;
               return (
@@ -130,7 +140,6 @@ export function PreferencesForm({
                     onClick={() => {
                       const locations = value.locations.filter((l) => l !== location);
                       setValue({ ...value, locations });
-                      if (!locations.length) setLocationScope("global");
                     }}
                   >
                     <X className="size-3.5" aria-hidden />
@@ -145,7 +154,7 @@ export function PreferencesForm({
             <p className="text-xs text-slate-500 dark:text-slate-400">Leave the city empty for the whole country. Use Add location for multiple places, or save your first selection directly.</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               {locationScope === "other" && (
-                <Select value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country" className="sm:w-56">
+                <Select value={otherCountry} onChange={(e) => setOtherCountry(e.target.value)} aria-label="Country" className="sm:w-56">
                   {COUNTRIES.filter((c) => c.code !== "IN").map((c) => (
                     <option key={c.code} value={c.code}>
                       {c.name}
