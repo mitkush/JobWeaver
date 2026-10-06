@@ -45,6 +45,13 @@ class PreconditionError(JobWeaverError):
     code = "precondition_failed"
 
 
+class ConflictError(JobWeaverError):
+    """The action no longer applies (e.g. a Possible Duplicate someone already decided)."""
+
+    status_code = 409
+    code = "conflict"
+
+
 class GatewayError(JobWeaverError):
     status_code = 503
     code = "ai_unavailable"

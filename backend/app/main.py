@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import adapters  # noqa: F401  (registers Source Adapters)
-from app.api import auth, fact_bank, health, me, preferences, sources
+from app.api import auth, fact_bank, feed, health, me, preferences, sources
 from app.api.csrf import CSRFMiddleware
 from app.core.config import get_settings
 from app.core.db import dispose_engine
@@ -38,7 +38,7 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
             {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status_code
         )
 
-    for module in (health, auth, me, fact_bank, preferences, sources):
+    for module in (health, auth, me, fact_bank, preferences, sources, feed):
         app.include_router(module.router)
 
     if frontend_dist is not None and frontend_dist.is_dir():

@@ -3,7 +3,7 @@ a failure marks that Source Degraded and the run moves on to the next one."""
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -282,6 +282,20 @@ async def daily_run_missed(session: AsyncSession, now: datetime) -> bool:
 # --- Runner -----------------------------------------------------------------------------
 
 
+@asynccontextmanager
+async def fetch_lock(sessionmaker: async_sessionmaker[AsyncSession]) -> AsyncIterator[bool]:
+    """One fetch or Correspondence run at a time across daily, cron, manual and queue runs
+    (and across processes). Yields False when another run holds it."""
+    async with sessionmaker() as lock_session:
+        got = bool(await lock_session.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})")))
+        try:
+            yield got
+        finally:
+            if got:
+                await lock_session.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+                await lock_session.commit()
+
+
 @dataclass
 class SourceOutcome:
     source: str
@@ -300,12 +314,15 @@ class Fetcher:
         clock: Clock = utcnow,
         adapter_factory: Callable[[type[SourceAdapter], httpx.AsyncClient, Settings], SourceAdapter]
         | None = None,
+        after_fetch: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         self.sessionmaker = sessionmaker
         self.http = http or get_sources_http()
         self.settings = settings or get_settings()
         self.clock = clock
         self.adapter_factory = adapter_factory or (lambda cls, http, settings: cls(http, settings))
+        # Grouping, Feeds and skills (services.correspondence), run while the lock is held.
+        self.after_fetch = after_fetch
 
     async def sync_sources(self) -> None:
         async with self.sessionmaker() as session:
@@ -315,19 +332,8 @@ class Fetcher:
                     session.add(Source(name=cls.name))
             await session.commit()
 
-    @asynccontextmanager
-    async def _exclusive(self) -> AsyncIterator[bool]:
-        """One fetch at a time across daily, cron and manual runs (and across processes)."""
-        async with self.sessionmaker() as lock_session:
-            got = bool(
-                await lock_session.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
-            )
-            try:
-                yield got
-            finally:
-                if got:
-                    await lock_session.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
-                    await lock_session.commit()
+    def _exclusive(self) -> AbstractAsyncContextManager[bool]:
+        return fetch_lock(self.sessionmaker)
 
     async def run_all(self, trigger: str = "schedule") -> list[SourceOutcome] | None:
         """Runs every enabled Source once. Returns None if another run holds the lock."""
@@ -341,7 +347,17 @@ class Fetcher:
                 closed = await expire_postings(session, self.clock(), self.settings)
                 await session.commit()
             logger.info("Fetch run finished: %s; %s postings expired", outcomes, closed)
+            await self._after_fetch()
             return outcomes
+
+    async def _after_fetch(self) -> None:
+        if self.after_fetch is None:
+            return
+        try:
+            await self.after_fetch()
+        except Exception:
+            # Postings are saved; grouping retries on the next run or queue tick.
+            logger.exception("Processing fetched postings failed")
 
     async def run_source(self, name: str, trigger: str = "schedule") -> SourceOutcome:
         cls = get_adapter_class(name)
@@ -588,7 +604,9 @@ class Fetcher:
                     )
                 source.manual_runs_today += 1
                 await session.commit()
-            return await self.run_source(name, trigger=MANUAL)
+            outcome = await self.run_source(name, trigger=MANUAL)
+            await self._after_fetch()
+            return outcome
 
 
 async def _guarded(adapter: SourceAdapter, call: Awaitable[FetchResult]) -> FetchResult:

@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, Header, Query
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
-from app.core.db import get_sessionmaker
 from app.core.errors import AuthError, ForbiddenError, NotFoundError
 from app.models.user import Role, User
 from app.schemas.sources import (
@@ -21,6 +20,7 @@ from app.schemas.sources import (
 )
 from app.services import source_status
 from app.services.fetching import Fetcher
+from app.services.pipeline import build_fetcher
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sources"])
@@ -37,7 +37,7 @@ AdminUser = Annotated[User, Depends(admin_user)]
 
 
 def get_fetcher() -> Fetcher:
-    return Fetcher(get_sessionmaker())
+    return build_fetcher()
 
 
 FetcherDep = Annotated[Fetcher, Depends(get_fetcher)]

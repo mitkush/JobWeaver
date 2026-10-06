@@ -392,7 +392,7 @@ async def test_restart_catch_up_runs_only_when_the_daily_run_was_missed(db, monk
     assert await daily_run_missed(db, now + timedelta(hours=27)) is True
 
 
-def test_scheduler_registers_the_daily_job_and_a_catch_up():
+def test_scheduler_registers_daily_fetch_queue_and_catch_up_jobs():
     import asyncio
 
     from app.scheduler import start_scheduler, stop_scheduler
@@ -402,7 +402,7 @@ def test_scheduler_registers_the_daily_job_and_a_catch_up():
         stop_scheduler()
         return jobs
 
-    assert asyncio.run(check()) == {"daily_fetch", "catch_up_after_restart"}
+    assert asyncio.run(check()) == {"daily_fetch", "process_queues", "catch_up_after_restart"}
 
 
 # --- Review fixes: board isolation, credits, trigger limits, manual-run lock -----------
@@ -512,3 +512,42 @@ async def test_manual_run_waits_for_the_daily_run(db, fetcher):
         await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
     assert outcome.status == "skipped" and "already running" in outcome.message
     assert (await source_row(db, "fake-board")).manual_runs_today == 0
+
+
+# --- Phase 3: the pipeline after each fetch ------------------------------------------------
+
+
+async def test_processing_runs_after_daily_and_manual_runs_inside_the_lock(db, clock):
+    calls: list[bool] = []
+
+    async def after_fetch():
+        async with get_sessionmaker()() as other:
+            got = await other.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
+            calls.append(bool(got))
+            if got:
+                await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+
+    fetcher = Fetcher(get_sessionmaker(), settings=Settings(), clock=clock, after_fetch=after_fetch)
+    await fetcher.run_all()
+    await fetcher.manual_run("fake-board")
+    assert calls == [False, False]  # ran twice, both times while the fetch held the lock
+
+
+async def test_a_processing_failure_never_fails_the_fetch(db, clock):
+    async def broken():
+        raise RuntimeError("boom")
+
+    fetcher = Fetcher(get_sessionmaker(), settings=Settings(), clock=clock, after_fetch=broken)
+    outcomes = await fetcher.run_all()
+    assert outcomes is not None
+
+
+async def test_queue_run_is_skipped_while_a_fetch_runs(db):
+    from app.services.pipeline import process_queues
+
+    async with get_sessionmaker()() as other:
+        await other.execute(text(f"SELECT pg_advisory_lock({FETCH_LOCK_ID})"))
+        assert await process_queues() is None
+        await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+    report = await process_queues()
+    assert report is not None and report.errors == []

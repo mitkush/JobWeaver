@@ -18,6 +18,9 @@ GEMINI_FLASH = "gemini-flash-latest"
 GEMINI_FLASH_LITE = "gemini-flash-lite-latest"
 GROQ_LARGE = "openai/gpt-oss-120b"
 OPENROUTER_FREE = "openai/gpt-oss-20b:free"
+# The only embedding model (ADR-0014). Changing it means re-embedding every Posting.
+GEMINI_EMBEDDING = "gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768
 
 # Requests per day on the free tiers, kept slightly under the published limits.
 DAILY_QUOTAS: dict[tuple[str, str], int] = {
@@ -25,6 +28,8 @@ DAILY_QUOTAS: dict[tuple[str, str], int] = {
     ("gemini", GEMINI_FLASH_LITE): 450,
     ("groq", GROQ_LARGE): 900,
     ("openrouter", OPENROUTER_FREE): 45,
+    # Embedding limits are not published in a table; confirm in AI Studio (COSTS.md).
+    ("gemini", GEMINI_EMBEDDING): 900,
 }
 
 ROUTING_TABLE: dict[str, list[Route]] = {
@@ -34,5 +39,11 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("gemini", GEMINI_FLASH_LITE),
         Route("groq", GROQ_LARGE),
         Route("openrouter", OPENROUTER_FREE),
+    ],
+    # High volume and simple: Flash-Lite first, Groq as the bulk fallback (COSTS.md).
+    "extract_skills": [
+        Route("gemini", GEMINI_FLASH_LITE, 4096),
+        Route("groq", GROQ_LARGE, 4096),
+        Route("openrouter", OPENROUTER_FREE, 4096),
     ],
 }

@@ -1,0 +1,3 @@
+{
+  "output": "{\"jobs\": [{\"ref\": \"1\", \"skills\": [\"Python\", \"PostgreSQL\", \"Kubernetes\", \"Go\"]}, {\"ref\": \"2\", \"skills\": [\"React\", \"TypeScript\", \"JS\"]}, {\"ref\": \"3\", \"skills\": [\"AWS\", \"Docker\"]}]}"
+}

@@ -55,14 +55,33 @@ def clean_space(text: str) -> str:
     return " ".join(text.split())
 
 
+# Generic words after the brand ("Google India", "Razorpay Software") that do not change
+# which employer it is. Only stripped while at least _MIN_BRAND characters remain, so
+# "Air India" stays itself.
+_COMPANY_DESCRIPTORS = re.compile(
+    r"\s+(india|technologies|technology|software|solutions|services|systems)$", re.IGNORECASE
+)
+_MIN_BRAND = 4
+
+
 def normalize_company(name: str) -> str:
-    """Key used to treat "Google LLC" and "Google" as one Company."""
+    """Key used to treat "Google India Pvt Ltd" and "Google" as one Company (CONTEXT.md)."""
     value = clean_space(html.unescape(name)).strip(" .,")
     while True:
         stripped = _COMPANY_SUFFIXES.sub("", value).strip(" .,")
         if stripped == value or not stripped:
             break
         value = stripped
+    while True:
+        stripped = _COMPANY_DESCRIPTORS.sub("", value).strip(" .,")
+        if stripped == value or len(stripped) < _MIN_BRAND:
+            break
+        value = stripped
+        while True:
+            again = _COMPANY_SUFFIXES.sub("", value).strip(" .,")
+            if again == value or not again:
+                break
+            value = again
     return value.lower()
 
 

@@ -50,6 +50,20 @@ class Settings(BaseSettings):
     # Shared secret for the external cron fallback (ADR-0008). Empty disables the endpoint.
     internal_cron_secret: str = ""
 
+    # Duplicate bands (FR-C1 AC3): strict to start, tuned on real data.
+    dedup_window_days: int = 30
+    dedup_high_title: float = 90
+    dedup_high_description: float = 0.92
+    dedup_medium_title: float = 75
+    dedup_medium_description: float = 0.85
+    # Gemini embedding pacing; free-tier per-minute token limits are low (COSTS.md).
+    embedding_batch_size: int = 20
+    embedding_batch_pause_seconds: float = 20
+    embedding_max_batches_per_run: int = 60
+    # AI skill extraction: adverts per request and requests per run (ADR-0010).
+    skills_batch_size: int = 5
+    skills_max_batches_per_run: int = 40
+
     scheduler_enabled: bool = True
     max_upload_bytes: int = 5 * 1024 * 1024
 
