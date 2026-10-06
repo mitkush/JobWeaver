@@ -56,7 +56,10 @@ class TestLinkedIn:
                 return httpx.Response(200, json={"snapshot_id": "s_1"})
             if "/progress/" in path:
                 return httpx.Response(200, json=next(polls))
-            return httpx.Response(200, json=[self.RECORD, {"error": "blocked", "input": {}}])
+            unusable = {"job_posting_id": "x"}  # delivered, so paid for, but has no title
+            return httpx.Response(
+                200, json=[self.RECORD, unusable, {"error": "blocked", "input": {}}]
+            )
 
         async with http(handler) as client:
             adapter = LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep)
@@ -68,7 +71,7 @@ class TestLinkedIn:
         body = json.loads(trigger.read())[0]
         assert body["time_range"] == "Past 24 hours"
         assert body["location"] == "Bengaluru, India"
-        assert result.credits_used == 1
+        assert result.credits_used == 2 and len(result.postings) == 1
         posting = result.postings[0]
         assert posting.source_job_id == "4012345678"
         assert posting.locations[0].city == "Bengaluru"

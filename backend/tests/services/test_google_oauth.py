@@ -54,3 +54,17 @@ async def test_revoke_is_best_effort():
         raise httpx.ConnectError("offline")
 
     await google_with(handler).revoke("token")
+
+
+async def test_network_errors_become_readable_sign_in_errors():
+    from app.core.errors import GoogleFlowError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("slow")
+
+    with pytest.raises(GoogleFlowError) as error:
+        await google_with(handler).exchange_code("code")
+    assert error.value.reason == "google_failed"
+
+    with pytest.raises(GoogleFlowError):
+        await google_with(lambda r: httpx.Response(200, text="<html>")).fetch_profile("at")

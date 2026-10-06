@@ -86,8 +86,8 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         snapshot_id = await self._trigger(query, window)
         records = await self._wait_and_download(snapshot_id)
         postings = [p for r in records if (p := self._to_posting(r)) is not None]
-        # Bright Data charges one credit per record delivered.
-        return FetchResult(postings=postings, credits_used=len(postings))
+        # Bright Data charges one credit per record delivered, even ones JobWeaver cannot use.
+        return FetchResult(postings=postings, credits_used=len(records))
 
     async def _trigger(self, query: SourceQuery, window: FetchWindow) -> str:
         loc = query.location

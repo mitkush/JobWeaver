@@ -1,6 +1,7 @@
 """In-process scheduler (ADR-0008): the daily Fetch Run on the kept-warm instance."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -18,6 +19,18 @@ async def daily_fetch() -> None:
     await Fetcher(get_sessionmaker()).run_all(trigger="schedule")
 
 
+async def catch_up_after_restart() -> bool:
+    """Runs the daily fetch now if a restart made the scheduler miss it (FR-B3 AC1)."""
+    from app.services.fetching import daily_run_missed, utcnow
+
+    async with get_sessionmaker()() as session:
+        missed = await daily_run_missed(session, utcnow())
+    if missed:
+        logger.info("Daily fetch was missed (restart or first start); running it now")
+        await daily_fetch()
+    return missed
+
+
 def start_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is None:
@@ -31,6 +44,13 @@ def start_scheduler() -> AsyncIOScheduler:
             misfire_grace_time=12 * 3600,
             coalesce=True,
             max_instances=1,
+        )
+        # Give the app a couple of minutes to settle after a deploy before catching up.
+        _scheduler.add_job(
+            catch_up_after_restart,
+            "date",
+            run_date=datetime.now(UTC) + timedelta(minutes=2),
+            id="catch_up_after_restart",
         )
         _scheduler.start()
         logger.info(

@@ -6,6 +6,8 @@ const MESSAGES: Record<string, string> = {
   email_unverified: "Your Google email address is not verified yet. Verify it with Google, then try again.",
   gmail_scope: "Gmail access was not granted. On Google's screen, tick the box that allows JobWeaver to manage drafts.",
   gmail_account: "Connect Gmail with the same Google account you signed in with.",
+  account_conflict:
+    "This email already belongs to a different JobWeaver account. Ask the JobWeaver admin to sort it out.",
   gmail_token: "Google did not return Gmail access. Please connect Gmail again.",
 };
 

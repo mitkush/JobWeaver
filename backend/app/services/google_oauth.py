@@ -2,6 +2,7 @@
 
 import contextlib
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -58,7 +59,8 @@ class GoogleOAuthClient:
 
     async def exchange_code(self, code: str) -> GoogleTokens:
         settings = get_settings()
-        response = await self.http.post(
+        response = await self._call(
+            "post",
             TOKEN_URL,
             data={
                 "code": code,
@@ -70,26 +72,47 @@ class GoogleOAuthClient:
         )
         if response.status_code >= 400:
             raise GoogleFlowError("google_failed", "Google sign-in failed. Please try again.")
-        body = response.json()
+        body = _json(response)
+        if "access_token" not in body:
+            raise GoogleFlowError("google_failed", "Google sign-in failed. Please try again.")
         return GoogleTokens(body["access_token"], body.get("refresh_token"), body.get("scope", ""))
 
     async def fetch_profile(self, access_token: str) -> GoogleProfile:
-        response = await self.http.get(
-            USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
+        response = await self._call(
+            "get", USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
         )
         if response.status_code >= 400:
             raise GoogleFlowError("google_failed", "Could not read your Google profile")
-        body = response.json()
+        body = _json(response)
+        if not body.get("sub") or not body.get("email"):
+            raise GoogleFlowError("google_failed", "Could not read your Google profile")
         if not body.get("email_verified", False):
             raise GoogleFlowError("email_unverified", "Your Google email address is not verified")
         return GoogleProfile(
             body["sub"], body["email"].lower(), body.get("name", ""), body.get("picture")
         )
 
+    async def _call(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Network failures become a readable sign-in error instead of a server error."""
+        try:
+            return await self.http.request(method, url, **kwargs)
+        except httpx.HTTPError as exc:
+            raise GoogleFlowError("google_failed", "Google could not be reached") from exc
+
     async def revoke(self, token: str) -> None:
         # Best effort: the credential is deleted locally either way.
         with contextlib.suppress(httpx.HTTPError):
             await self.http.post(REVOKE_URL, data={"token": token})
+
+
+def _json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise GoogleFlowError("google_failed", "Google sent an unexpected response") from exc
+    if not isinstance(body, dict):
+        raise GoogleFlowError("google_failed", "Google sent an unexpected response")
+    return body
 
 
 _http = httpx.AsyncClient(timeout=httpx.Timeout(20.0))

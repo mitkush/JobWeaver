@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AuthError
+from app.core.errors import AuthError, GoogleFlowError
 from app.core.security import hash_token, new_token
 from app.models.session import UserSession
 from app.models.user import Role, User
@@ -16,6 +16,17 @@ async def upsert_google_user(session: AsyncSession, profile: GoogleProfile) -> U
     user = (
         await session.execute(select(User).where(User.google_sub == profile.sub))
     ).scalar_one_or_none()
+    taken = (
+        await session.execute(
+            select(User.id).where(User.email == profile.email, User.google_sub != profile.sub)
+        )
+    ).scalar_one_or_none()
+    if taken is not None:
+        # Another Google account (e.g. a deleted and recreated one) already uses this email.
+        # Never merge accounts silently; the admin resolves it.
+        raise GoogleFlowError(
+            "account_conflict", "This email already belongs to a different JobWeaver account"
+        )
     if user is None:
         user = User(google_sub=profile.sub, email=profile.email)
         session.add(user)

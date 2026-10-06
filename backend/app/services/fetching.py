@@ -262,6 +262,17 @@ async def expire_postings(session: AsyncSession, now: datetime, settings: Settin
     return result.rowcount or 0
 
 
+async def daily_run_missed(session: AsyncSession, now: datetime) -> bool:
+    """True when no scheduled or cron run started in the last 26 hours.
+
+    The scheduler keeps jobs in memory, so a restart after the daily time would otherwise
+    skip that day entirely; the watermark only fixes the window once a run happens."""
+    last = await session.scalar(
+        select(func.max(FetchRun.created_at)).where(FetchRun.trigger.in_(("schedule", "cron")))
+    )
+    return last is None or now - last > timedelta(hours=26)
+
+
 # --- Runner -----------------------------------------------------------------------------
 
 

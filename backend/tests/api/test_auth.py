@@ -159,3 +159,16 @@ async def test_dev_login_never_works_in_production(anon, monkeypatch):
     get_settings.cache_clear()
     response = await anon.post("/api/auth/dev-login", json={"email": "dev@example.com"})
     assert response.status_code == 404
+
+
+async def test_email_used_by_another_google_account_is_not_merged(anon, google, db):
+    db.add(User(google_sub="old-sub", email="new@example.com"))
+    await db.commit()
+    login = await anon.get("/api/auth/google/login")
+    response = await anon.get(
+        "/api/auth/google/callback", params={"code": "abc", "state": _state(login)}
+    )
+    assert response.headers["location"] == (
+        "http://testserver/sign-in?google_error=account_conflict"
+    )
+    assert "jw_session" not in response.cookies

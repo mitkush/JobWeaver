@@ -365,3 +365,38 @@ async def test_unexpected_errors_degrade_only_that_source(db, fetcher, monkeypat
     assert outcomes["fake-search"].status == "failed"
     assert "unexpectedly" in outcomes["fake-search"].message
     assert outcomes["fake-board"].status == "succeeded"
+
+
+async def test_restart_catch_up_runs_only_when_the_daily_run_was_missed(db, monkeypatch):
+    from app import scheduler
+    from app.services.fetching import daily_run_missed
+
+    now = datetime.now(UTC)
+    assert await daily_run_missed(db, now) is True  # first start: nothing has run yet
+    calls = []
+
+    async def fake_daily():
+        calls.append("run")
+
+    monkeypatch.setattr(scheduler, "daily_fetch", fake_daily)
+    assert await scheduler.catch_up_after_restart() is True and calls == ["run"]
+
+    db.add(FetchRun(source="x", status="succeeded", trigger="schedule"))
+    await db.commit()
+    assert await scheduler.catch_up_after_restart() is False and calls == ["run"]
+
+    # Manual runs do not count as the daily run.
+    assert await daily_run_missed(db, now + timedelta(hours=27)) is True
+
+
+def test_scheduler_registers_the_daily_job_and_a_catch_up():
+    import asyncio
+
+    from app.scheduler import start_scheduler, stop_scheduler
+
+    async def check():
+        jobs = {job.id for job in start_scheduler().get_jobs()}
+        stop_scheduler()
+        return jobs
+
+    assert asyncio.run(check()) == {"daily_fetch", "catch_up_after_restart"}

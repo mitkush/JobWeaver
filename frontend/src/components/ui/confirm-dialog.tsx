@@ -25,16 +25,16 @@ export function ConfirmDialog({
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal?.();
-    if (!open && dialog.open) dialog.close?.();
+    if (!open || !dialog || dialog.open) return;
+    // A real modal: focus is trapped, Escape cancels and the page behind is inert.
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
   }, [open]);
 
   if (!open) return null;
   return (
     <dialog
       ref={ref}
-      open
       onCancel={(e) => {
         e.preventDefault();
         onCancel();
