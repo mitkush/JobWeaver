@@ -52,7 +52,8 @@ class ApifyAdapter(WindowedSourceAdapter):
         super().__init__(http, settings)
         self.sleep = sleep
         self._last_run: dict[str, Any] | None = None
-        self._settled_cost: int | None = None
+        # Settled cost per run id: the fetcher reuses one adapter for every query.
+        self._settled: dict[str, int] = {}
         self.monotonic: Callable[[], float] = time.monotonic
 
     def actor(self) -> str:
@@ -78,6 +79,7 @@ class ApifyAdapter(WindowedSourceAdapter):
         payload = self.actor_input(query, window)
         if payload is None:
             return FetchResult(postings=[])
+        self._last_run = None  # never charge one search for another's run
         run = await self._wait(await self._start(payload))
         try:
             records = await self._items(str(run.get("defaultDatasetId") or ""))
@@ -107,9 +109,10 @@ class ApifyAdapter(WindowedSourceAdapter):
     async def _final_cost(self, run: dict[str, Any]) -> int:
         """Apify may report a just-finished run's cost as preliminary and asks callers to
         read it again about 10 seconds later. The larger of the two is kept, so the shared
-        allowance never reads low. Read once per run."""
-        if self._settled_cost is not None:
-            return self._settled_cost
+        allowance never reads low. Read once per run id."""
+        run_id = str(run["id"])
+        if run_id in self._settled:
+            return self._settled[run_id]
         preliminary = cents(run)
         final = preliminary
         await self.sleep(self.settle_seconds)
@@ -119,8 +122,8 @@ class ApifyAdapter(WindowedSourceAdapter):
             final = cents(response.json().get("data") or {})
         except Exception:  # noqa: BLE001 - the preliminary cost still stands
             logger.warning("Could not read the final cost of %s run %s", self.label, run["id"])
-        self._settled_cost = max(preliminary, final)
-        return self._settled_cost
+        self._settled[run_id] = max(preliminary, final)
+        return self._settled[run_id]
 
     async def _start(self, payload: dict[str, Any]) -> dict[str, Any]:
         params: dict[str, Any] = {"timeout": int(self.run_timeout.total_seconds())}

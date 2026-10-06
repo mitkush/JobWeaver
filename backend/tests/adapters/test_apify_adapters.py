@@ -253,3 +253,33 @@ def test_naukri_uses_the_actors_own_filters():
     pune = SourceQuery(keywords="SRE", location=Location(city="Pune", country="IN"))
     unmapped = adapter.actor_input(pune, DAY)
     assert "cities" not in unmapped and unmapped["keyword"] == "SRE Pune"
+
+
+async def test_each_search_records_its_own_runs_cost():
+    """The fetcher reuses one adapter for every query: costs must not carry over."""
+
+    class TwoRuns(FakeApify):
+        def __init__(self):
+            super().__init__([NAUKRI_RECORD])
+            self.started = 0
+
+        def __call__(self, request):
+            self.requests.append(request)
+            path = request.url.path
+            run_id = f"run{self.started}"
+            if path.endswith("/runs"):
+                self.started += 1
+                return httpx.Response(201, json={"data": {"id": f"run{self.started}",
+                                                          "status": "READY"}})  # fmt: skip
+            if "/actor-runs/" in path:
+                usage = {"run1": 0.05, "run2": 0.12}[path.rsplit("/", 1)[1]]
+                return httpx.Response(200, json={"data": {"id": run_id, "status": "SUCCEEDED",
+                                                          "defaultDatasetId": "ds1",
+                                                          "usageTotalUsd": usage}})  # fmt: skip
+            return httpx.Response(200, json=self.records)
+
+    async with client(TwoRuns()) as http:
+        adapter = NaukriApifyAdapter(http, SETTINGS, sleep=no_sleep)
+        first = await adapter.fetch_window(QUERY, DAY)
+        second = await adapter.fetch_window(QUERY, DAY)
+    assert (first.credits_used, second.credits_used) == (5, 12)
