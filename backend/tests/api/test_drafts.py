@@ -25,6 +25,7 @@ from app.schemas.drafts import EmailCheck
 from app.services import drafting
 from app.services.correspondence import merge_jobs, source_priorities
 from app.services.google_oauth import get_google_client
+from app.tailoring.content import DraftLine
 from tests.api.test_feed import BACKEND_BLR, seed
 from tests.conftest import onboard
 
@@ -564,3 +565,24 @@ async def test_feed_application_state_is_private_and_applied_wins(prepared, db, 
     )
     assert card["draft_id"] == draft["id"]
     assert card["application_status"] == "applied" and not card["company_applied"]
+
+
+async def test_ai_cannot_mark_its_own_lines_as_manual_edits(prepared, monkeypatch):
+    # Codex review: generation used to keep a fabricated line the model labelled manual.
+    _, client, job_id, gateway = prepared
+    original = gateway.tailor_draft
+
+    async def tailor(request):
+        response = await original(request)
+        response.result.content.resume.append(
+            DraftLine(text="Ran Kubernetes at Google", fact_refs=["F1"], manual=True)
+        )
+        return response
+
+    monkeypatch.setattr(gateway, "tailor_draft", tailor)
+    created = await client.post("/api/drafts", json={"job_id": job_id})
+    draft = (await client.get(f"/api/drafts/{created.json()['id']}")).json()
+    texts = [line["text"] for line in draft["version"]["content"]["resume"]]
+    assert "Ran Kubernetes at Google" not in texts
+    assert not any(line["manual"] for line in draft["version"]["content"]["resume"])
+    assert any(w.startswith("Removed a resume line") for w in draft["version"]["warnings"])

@@ -77,36 +77,82 @@ def _pattern(extra: frozenset[str]) -> re.Pattern[str]:
     return re.compile(rf"(?<![\w+#.])({alternation})(?![\w+#])", re.IGNORECASE)
 
 
+# Words around a lowercase ambiguous name that show it is a technology ("with go",
+# "react and rust"), as opposed to English ("go to market", "at rest").
+_TECH_BEFORE = {"in", "with", "using", "via", "on", "and", "or", "plus", ","}
+_TECH_AFTER = {"and", "or", ","}
+
+
+def _neighbours(text: str, start: int, end: int) -> tuple[str, str]:
+    before = re.findall(r"[\w+#.]+|,", text[:start])
+    after = re.findall(r"[\w+#.]+|,", text[end:])
+    return (before[-1].casefold() if before else ""), (after[0].casefold() if after else "")
+
+
 def technologies_in(text: str, extra_terms: Iterable[str] = ()) -> dict[str, str]:
-    """Technologies named in the text: canonical name -> the words as written."""
+    """Technologies named in the text: canonical name -> the words as written.
+
+    A name that is also an English word (Go, Rust, React, Spring...) counts when written
+    with a capital letter anywhere, or in lower case next to a list or tool word.
+    Unclear cases count: an AI line is removed and reported rather than kept unchecked."""
     extra = frozenset(term.casefold().strip() for term in extra_terms if term.strip())
     found: dict[str, str] = {}
     for match in _pattern(extra).finditer(text):
         written = match.group(1)
         canonical = canonical_skill(written)
         ambiguous = canonical in _AMBIGUOUS or written.casefold() in _AMBIGUOUS
-        if ambiguous and (not written[0].isupper() or match.start() == 0):
-            continue
+        if ambiguous and not written[0].isupper():
+            before, after = _neighbours(text, match.start(), match.end())
+            if before not in _TECH_BEFORE and after not in _TECH_AFTER:
+                continue
         found.setdefault(canonical, written)
     return found
 
 
-def _numbers_missing(text: str, evidence: str, terms: frozenset[str]) -> list[str]:
-    """Numbers absent from the evidence, except versions after a technology ("Python 3")."""
+def _numbers_missing(text: str, evidence: str, bank: str) -> list[str]:
+    """Numbers absent from the cited Facts. A version ("Python 3") is accepted only when
+    the Fact Bank states that same version; otherwise it is a number like any other."""
     known = {n.replace(",", "") for n in _NUMBER.findall(evidence)}
     missing = []
     for match in _NUMBER.finditer(text):
         if match.group(0).replace(",", "") in known:
             continue
-        before = text[: match.start()].rstrip().rsplit(" ", 1)[-1].casefold()
-        if before not in terms:
-            missing.append(match.group(0))
+        before = text[: match.start()].rstrip().rsplit(" ", 1)[-1]
+        stated = f"{before} {match.group(0)}".casefold()
+        if before and re.search(rf"(?<![\w]){re.escape(stated)}(?![\w])", bank):
+            continue
+        missing.append(match.group(0))
     return missing
 
 
 def _says_more_than_skills(text: str, extra_terms: Iterable[str]) -> bool:
     rest = _pattern(frozenset(t.casefold() for t in extra_terms)).sub(" ", text)
     return bool(re.search(r"[A-Za-z]{2,}", re.sub(r"\b(and|or)\b", " ", rest)))
+
+
+# Words that open a resume bullet or a letter sentence. A capitalised word at the start of
+# a sentence is checked as a possible name unless it is one of these or looks like a verb
+# or adverb (-ed, -ing, -ly), so "Google employed me" is caught but "Built..." is not.
+_OPENINGS = {
+    "a", "an", "the", "i", "my", "we", "our", "you", "your", "it", "its", "this", "that",
+    "these", "those", "there", "here", "at", "in", "on", "as", "with", "for", "from", "to",
+    "by", "of", "over", "after", "before", "during", "while", "when", "since", "through",
+    "outside", "beyond", "across", "within", "today", "currently", "previously", "recently",
+    "most", "some", "each", "every", "both", "all", "please", "having", "also", "and", "but",
+    "so", "if", "built", "led", "ran", "wrote", "cut", "set", "grew", "drove", "made", "won",
+    "took", "sold", "kept", "met", "hired", "own", "owned", "build", "design", "develop",
+    "create", "lead", "manage", "run", "write", "ship", "deliver", "improve", "reduce",
+    "increase", "migrate", "launch", "automate", "maintain", "support", "drive", "scale",
+    "experienced", "skilled", "passionate", "results", "hands-on", "backend", "frontend",
+    "full-stack", "fullstack", "software", "data", "platform", "product", "engineer",
+    "developer", "team", "teams", "worked", "work", "contributed", "responsible", "key",
+    "strong", "proven", "focused", "detail-oriented", "self-motivated", "eager", "excited",
+    "keen", "glad", "happy", "thank", "thanks", "looking", "best", "kind", "warm",
+}  # fmt: skip
+
+
+def _ordinary_opening(word: str) -> bool:
+    return word in _OPENINGS or word.endswith(("ed", "ing", "ly"))
 
 
 def _sentence_starts(text: str) -> set[int]:
@@ -133,8 +179,12 @@ class Checker:
         self._company = " ".join(self.company.split()).casefold()
 
     def _in_bank(self, word: str) -> bool:
-        pattern = rf"(?<![\w]){re.escape(word.casefold())}(?![\w])"
-        return re.search(pattern, self._bank) is not None
+        """The word or its singular ("APIs" for "API") appears in the Fact Bank."""
+        folded = word.casefold()
+        forms = {folded, folded.removesuffix("s"), folded.removesuffix("es")} - {""}
+        return any(
+            re.search(rf"(?<![\w]){re.escape(form)}(?![\w])", self._bank) for form in forms
+        )
 
     def problems(self, line: DraftLine, part: Part) -> list[str]:
         if len(set(line.fact_refs)) != len(line.fact_refs):
@@ -165,13 +215,15 @@ class Checker:
         for canonical, written in technologies_in(text, self.job_skills).items():
             if not covers(self._skills, canonical):
                 reasons.append(f"{written} is not in your Fact Bank")
-        for number in _numbers_missing(text, evidence, self._terms):
+        for number in _numbers_missing(text, evidence, self._bank):
             reasons.append(f"The number {number} is not in the Facts it cites")
         starts = _sentence_starts(text)
         for match in _CAPITALISED.finditer(text):
             word = match.group(0).rstrip(".'")
             folded = word.casefold()
-            if match.start() in starts or len(word) < 2 or folded in _LETTER_WORDS:
+            if len(word) < 2 or folded in _LETTER_WORDS:
+                continue
+            if match.start() in starts and _ordinary_opening(folded):
                 continue
             if folded in self._role_words or folded in self._terms or self._in_bank(word):
                 continue

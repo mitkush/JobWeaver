@@ -261,7 +261,11 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             ensure_ai_allowed(user)
             draft = await owned_draft(session, user, draft_id, lock=True)
             draft.progress = "Checking Facts and Tailoring Trace"
-            checked = _check(draft, result.result.content, facts)
+            generated = result.result.content
+            for part in ("resume", "cover_letter", "email_body"):
+                for line in getattr(generated, part):
+                    line.manual = False  # only the User's own edits are protected
+            checked = _check(draft, generated, facts)
             content, warnings = checked.content, checked.warnings
             if not content.resume or not content.cover_letter:
                 raise _Unverified()

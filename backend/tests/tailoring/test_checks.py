@@ -99,7 +99,6 @@ def test_diff_covers_portfolio_and_removed_base_facts():
     [
         ("Built a billing API serving 40 merchant teams", ["F2"]),
         ("Designed and built a scalable billing API in Python for 40 merchant teams", ["F2", "F1"]),
-        ("Python 3 developer", ["F1"]),
     ],
 )
 def test_rewording_is_allowed(text, refs):
@@ -145,3 +144,40 @@ def test_manual_lines_are_flagged_not_removed():
     assert result.removed == []
     assert result.flagged[0].startswith("Your edit in the resume:")
     assert "Kubernetes is not in your Fact Bank" in result.flagged[0]
+
+
+@pytest.mark.parametrize(
+    ("text", "refs", "reason"),
+    [
+        # Ambiguous names count at the start of a line and in lowercase lists (Codex review).
+        ("Go services for 40 merchant teams", ["F2"], "Go is not in your Fact Bank"),
+        ("React dashboards for 40 merchant teams", ["F2"], "React is not in your Fact Bank"),
+        ("Built the billing API with react and rust", ["F2"], "react is not in your Fact Bank"),
+        # A version after a technology is only accepted when the Fact Bank states it.
+        ("Built Python 999 services", ["F1"], "The number 999 is not in the Facts it cites"),
+        # Names at the start of a sentence are checked too.
+        ("Google employed me", ["F2"], "Google is not in your Fact Bank"),
+    ],
+)
+def test_review_bypasses_are_closed(text, refs, reason):
+    line = DraftLine(text=text, fact_refs=refs, section="Summary")
+    assert line_problem(line, FACTS) == reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Helped the team go to market faster with the billing API",
+        "Backend engineer who built billing APIs for 40 merchant teams",
+        "Designed and built a scalable billing API for 40 merchant teams",
+    ],
+)
+def test_ordinary_english_is_not_mistaken_for_claims(text):
+    line = DraftLine(text=text, fact_refs=["F2"], section="Summary")
+    assert line_problem(line, FACTS) is None
+
+
+def test_a_version_stated_in_the_fact_bank_is_accepted():
+    facts = [*FACTS[1:], FACTS[0].model_copy(update={"text": "Python 3.12"})]
+    line = DraftLine(text="Python 3.12 developer", fact_refs=["F1"], section="Summary")
+    assert line_problem(line, facts) is None
