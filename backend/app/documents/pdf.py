@@ -8,7 +8,26 @@ from fontTools.ttLib import TTFont
 from fpdf import FPDF
 
 from app.core.errors import ValidationFailedError
-from app.tailoring.content import DraftContent
+from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
+
+# Sections whose lines sit under the employer, project or school they come from.
+_GROUPED = {"Experience", "Projects", "Education"}
+
+
+def _layout(
+    lines: list[DraftLine], facts: list[FactSnapshot]
+) -> list[tuple[str, list[tuple[str, list[DraftLine]]]]]:
+    """Sections in order of first use; inside each, lines grouped by the employer,
+    project or school of their cited Facts (a Fact group, so never invented)."""
+    group_of = {fact.ref: fact.group.strip() for fact in facts if fact.kind != "skill"}
+    sections: dict[str, dict[str, list[DraftLine]]] = {}
+    for line in lines:
+        heading = ""
+        if line.section in _GROUPED:
+            heading = next((group_of[r] for r in line.fact_refs if group_of.get(r)), "")
+        sections.setdefault(line.section, {}).setdefault(heading, []).append(line)
+    return [(section, list(groups.items())) for section, groups in sections.items()]
+
 
 FONTS = Path(__file__).with_name("fonts")
 
@@ -28,6 +47,7 @@ def render_pdf(
     email: str,
     kind: Literal["resume", "cover_letter"] = "resume",
     template: Literal["standard", "compact"] = "standard",
+    facts: list[FactSnapshot] | None = None,
 ) -> bytes:
     font_path = FONTS / "LiberationSans-Regular.ttf"
     text = "\n".join([name, email, *(line.text for line in getattr(content, kind))])
@@ -46,17 +66,25 @@ def render_pdf(
     pdf.set_font("Liberation", size=10)
     pdf.multi_cell(0, 5, email, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
-    previous = None
-    for line in getattr(content, kind):
-        if kind == "resume" and line.section != previous:
+    size, height = (10, 5) if template == "compact" else (11, 5.5)
+    if kind == "cover_letter":
+        for line in content.cover_letter:
+            pdf.set_font("Liberation", size=size)
+            pdf.multi_cell(0, height, line.text, new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(3)
+    else:
+        for section, groups in _layout(content.resume, facts or []):
             pdf.set_font("Liberation", "B", 11)
-            pdf.multi_cell(0, 7, line.section, new_x="LMARGIN", new_y="NEXT")
-            previous = line.section
-        pdf.set_font("Liberation", size=10 if template == "compact" else 11)
-        pdf.multi_cell(
-            0, 5 if template == "compact" else 5.5, line.text, new_x="LMARGIN", new_y="NEXT"
-        )
-        pdf.ln(1 if kind == "resume" else 3)
+            pdf.multi_cell(0, 7, section, new_x="LMARGIN", new_y="NEXT")
+            for heading, lines in groups:
+                if heading:
+                    pdf.set_font("Liberation", "B", size)
+                    pdf.multi_cell(0, height, heading, new_x="LMARGIN", new_y="NEXT")
+                for line in lines:
+                    pdf.set_font("Liberation", size=size)
+                    pdf.multi_cell(0, height, line.text, new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(1)
+            pdf.ln(1)
     if kind == "resume" and pdf.pages_count > 2:
         raise ValidationFailedError("The resume exceeds two pages. Shorten it or use Compact.")
     return bytes(pdf.output())

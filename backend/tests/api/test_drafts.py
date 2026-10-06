@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.adapters.gmail import get_gmail_client
 from app.api.deps import get_gateway
 from app.core.config import get_settings
-from app.core.errors import ExternalServiceError
+from app.core.errors import ExternalServiceError, GatewayError
 from app.core.security import encrypt
 from app.gateway.recorded import RecordedAIGateway
 from app.main import app
@@ -181,7 +181,8 @@ async def test_manual_save_and_conflict(prepared):
     ).status_code == 409
 
 
-async def test_manual_fabrication_is_rejected(prepared):
+async def test_manual_edits_naming_missing_skills_are_kept_and_flagged(prepared):
+    # FR-E6: the User's own words are never refused or deleted; ADR-0005: they are flagged.
     draft = await generated(prepared)
     _, client, _, _ = prepared
     content = copy.deepcopy(draft["version"]["content"])
@@ -193,8 +194,27 @@ async def test_manual_fabrication_is_rejected(prepared):
             "content": content,
         },
     )
-    assert result.status_code == 422
-    assert (await client.get(f"/api/drafts/{draft['id']}")).json()["current_version"] == 1
+    assert result.status_code == 200
+    version = result.json()["version"]
+    assert version["number"] == 2
+    assert version["content"]["resume"][0]["text"] == "Python and Kubernetes"
+    assert version["content"]["resume"][0]["manual"] is True
+    assert any(
+        w.startswith("Your edit in the resume") and "Kubernetes" in w for w in version["warnings"]
+    )
+
+
+async def test_manual_rewording_is_saved_without_warnings(prepared):
+    draft = await generated(prepared)
+    _, client, _, _ = prepared
+    content = copy.deepcopy(draft["version"]["content"])
+    line = next(entry for entry in content["resume"] if "merchant" in entry["text"])
+    line["text"] = "Designed a billing API serving 40 merchant teams"
+    result = await client.put(
+        f"/api/drafts/{draft['id']}", json={"expected_version": 1, "content": content}
+    )
+    assert result.status_code == 200
+    assert result.json()["version"]["warnings"] == []
 
 
 async def test_chat_keeps_manual_line_at_original_position_and_can_restore(prepared):
@@ -401,6 +421,64 @@ async def test_gmail_failure_returns_compose_fallback_and_records_drafted(
     ] == "drafted"
 
 
+async def test_after_a_gmail_failure_the_next_hand_off_tries_gmail_again(
+    prepared, db, recipient_check
+):
+    draft = await generated(prepared)
+    user, client, _, _ = prepared
+    await connect(db, user)
+    app.dependency_overrides[get_google_client] = lambda: GoodGoogle()
+    body = {"expected_version": 1, "recipient": "jobs@acme.com", "confirm": True}
+    app.dependency_overrides[get_gmail_client] = lambda: FakeGmail(fail=True)
+    first = await client.post(f"/api/drafts/{draft['id']}/handoff", json=body)
+    assert first.json()["mode"] == "fallback"
+    gmail = FakeGmail()
+    app.dependency_overrides[get_gmail_client] = lambda: gmail
+    second = await client.post(f"/api/drafts/{draft['id']}/handoff", json=body)
+    assert second.json()["mode"] == "gmail"
+    assert len(gmail.calls) == 1
+    rows = (await db.execute(select(Application).where(Application.user_id == user.id))).scalars()
+    assert [row.gmail_draft_id for row in rows] == ["gmail-draft-123"]  # one row, updated
+
+
+class _Raises:
+    def __init__(self, error):
+        self.error = error
+
+    async def tailor_draft(self, request):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (RuntimeError("bug"), "Something went wrong while writing"),
+        (GatewayError("all providers down"), "AI services are busy"),
+    ],
+)
+async def test_generation_failures_never_leave_a_draft_spinning(prepared, error, message):
+    _, client, job_id, gateway = prepared
+    app.dependency_overrides[get_gateway] = lambda: _Raises(error)
+    created = await client.post("/api/drafts", json={"job_id": job_id})
+    draft = (await client.get(f"/api/drafts/{created.json()['id']}")).json()
+    assert draft["state"] == "failed"
+    assert message in draft["error"]
+
+
+async def test_nothing_traceable_says_so(prepared, monkeypatch):
+    _, client, job_id, _ = prepared
+
+    def nothing_kept(draft, content, facts):
+        result = drafting.check(content, [])
+        return result
+
+    monkeypatch.setattr(drafting, "_check", nothing_kept)
+    created = await client.post("/api/drafts", json={"job_id": job_id})
+    draft = (await client.get(f"/api/drafts/{created.json()['id']}")).json()
+    assert draft["state"] == "failed"
+    assert draft["error"] == drafting.NOTHING_VERIFIED
+
+
 async def test_email_warnings_need_separate_confirmation(prepared, monkeypatch):
     draft = await generated(prepared)
     _, client, _, _ = prepared
@@ -469,14 +547,20 @@ async def test_feed_application_state_is_private_and_applied_wins(prepared, db, 
     db.add(Application(user_id=user.id, job_id=uuid.UUID(job_id), status="drafted", version=1))
     await db.commit()
     job = await db.get(Job, uuid.UUID(job_id))
-    drafts, states, companies = await package_states(db, user, [job])
+    sibling = Job(company_id=job.company_id, title="Platform Engineer", company_name="Acme")
+    db.add(sibling)
+    await db.commit()
+    drafts, states, warned = await package_states(db, user, [job, sibling])
     assert drafts[job.id] == uuid.UUID(draft["id"])
     assert states[job.id] == "applied"
-    assert job.company_id in companies
+    # FR-D5: the warning is for *another* Job at the Company, not the one applied to.
+    assert warned == {sibling.id}
+    later = datetime.now(UTC) + timedelta(days=91)
+    assert (await package_states(db, user, [job, sibling], later))[2] == set()
     other_user, _ = bob
     assert await package_states(db, other_user, [job]) == ({}, {}, set())
     card = next(
         item for item in (await client.get("/api/feed")).json()["items"] if item["job_id"] == job_id
     )
     assert card["draft_id"] == draft["id"]
-    assert card["application_status"] == "applied" and card["company_applied"]
+    assert card["application_status"] == "applied" and not card["company_applied"]

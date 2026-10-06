@@ -146,6 +146,17 @@ def _mentioned(canonical: str, text: str) -> bool:
     return False
 
 
+def covers(skills: UserSkills, name: str) -> bool:
+    """True when the User has this skill as a Fact or names it anywhere in their Facts."""
+    canonical = canonical_skill(name)
+    return bool(canonical) and (canonical in skills.canonical or _mentioned(canonical, skills.text))
+
+
+def all_spellings() -> dict[str, str]:
+    """Every alias spelling mapped to its canonical name."""
+    return {**{name: name for name in _ALIASES}, **_CANONICAL}
+
+
 def skill_gaps(required: Iterable[str], skills: UserSkills) -> list[str]:
     """Required skills the User does not show, in the Job's order, each named once."""
     gaps: list[str] = []

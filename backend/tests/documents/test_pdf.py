@@ -6,7 +6,7 @@ from pypdf import PdfReader
 
 from app.core.errors import ValidationFailedError
 from app.documents.pdf import filename, render_pdf
-from app.tailoring.content import DraftContent, DraftLine
+from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
 
 
 def package(text):
@@ -48,3 +48,47 @@ def test_resume_overflow_is_rejected():
 def test_unrenderable_characters_are_not_silently_lost():
     with pytest.raises(ValidationFailedError, match="character"):
         render_pdf(package("Python 🚀"), "Asha", "asha@example.com")
+
+
+def test_resume_lines_sit_under_their_employer_headings():
+    facts = [
+        FactSnapshot(
+            ref="F1",
+            id=uuid.uuid4(),
+            kind="experience",
+            group="Acme Corp",
+            text="a",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F2",
+            id=uuid.uuid4(),
+            kind="experience",
+            group="Globex",
+            text="b",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F3", id=uuid.uuid4(), kind="skill", group="", text="Python", in_base_resume=True
+        ),
+    ]
+    content = DraftContent(
+        resume=[
+            DraftLine(text="Python", fact_refs=["F3"], section="Skills"),
+            DraftLine(text="Built the billing API", fact_refs=["F1"]),
+            DraftLine(text="Ran the data platform", fact_refs=["F2"]),
+            DraftLine(text="Cut report time", fact_refs=["F1"]),
+        ],
+        cover_letter=[DraftLine(text="Hello", fact_refs=["F1"])],
+    )
+    data = render_pdf(content, "Asha", "asha@example.com", facts=facts)
+    text = " ".join(PdfReader(io.BytesIO(data)).pages[0].extract_text().split())
+    assert (
+        text.index("Acme Corp")
+        < text.index("Built the billing API")
+        < text.index("Cut report time")
+    )
+    assert (
+        text.index("Cut report time") < text.index("Globex") < text.index("Ran the data platform")
+    )
+    assert text.count("Experience") == 1

@@ -148,7 +148,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       </div>
       {error && <Alert tone="error">{error}</Alert>}
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
-      {current.warnings.length > 0 && <Alert tone="warning" title="Some generated lines were removed"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></Alert>}
+      {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></Alert>}
       {resumePrompt && <Alert tone="info">Gmail connection returned. Review the recipient and confirm to resume the hand-off.<Button variant="ghost" onClick={() => { setRecipient(sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? recipient); }}>Restore recipient</Button></Alert>}
       {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <a className="underline" href={pdfHref(draft.id, "resume", current.number, template)} download>Download resume PDF</a></>}</Alert>}
 

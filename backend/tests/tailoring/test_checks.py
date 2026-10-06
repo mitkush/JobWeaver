@@ -92,3 +92,56 @@ def test_diff_covers_portfolio_and_removed_base_facts():
     assert changes[0].kind == "unchanged"
     assert changes[1].kind == "added_from_portfolio"
     assert {c.fact_refs[0] for c in changes if c.kind == "removed"} == {"F2", "F4"}
+
+
+@pytest.mark.parametrize(
+    ("text", "refs"),
+    [
+        ("Built a billing API serving 40 merchant teams", ["F2"]),
+        ("Designed and built a scalable billing API in Python for 40 merchant teams", ["F2", "F1"]),
+        ("Python 3 developer", ["F1"]),
+    ],
+)
+def test_rewording_is_allowed(text, refs):
+    # FR-E2: Facts may be reworded in the Job's language; only inventions are rejected.
+    line = DraftLine(text=text, fact_refs=refs, section="Summary")
+    assert line_problem(line, FACTS) is None
+
+
+def test_cover_letter_may_name_the_company_and_role_but_not_new_skills():
+    from app.tailoring.checks import check
+
+    package = DraftContent(
+        resume=[DraftLine(id="r", text="Python", fact_refs=["F1"], section="Skills")],
+        cover_letter=[
+            DraftLine(id="a", text="Dear Hiring Manager,", fact_refs=["F2"]),
+            DraftLine(
+                id="b",
+                text="I am excited to apply for the Go Developer role at Initech.",
+                fact_refs=["F2"],
+            ),
+            DraftLine(id="c", text="I have years of Go experience.", fact_refs=["F1"]),
+        ],
+    )
+    result = check(package, FACTS, job_title="Go Developer", company="Initech")
+    assert [line.id for line in result.content.cover_letter] == ["a", "b"]
+    assert "Go is not in your Fact Bank" in result.removed[0]
+
+
+def test_a_resume_line_cannot_mix_two_employers():
+    line = DraftLine(text="Used PostgreSQL for the billing API", fact_refs=["F2", "F3"])
+    assert line_problem(line, FACTS) == "It mixes Facts from different employers or projects"
+
+
+def test_manual_lines_are_flagged_not_removed():
+    from app.tailoring.checks import check
+
+    package = content()
+    package.resume.append(
+        DraftLine(id="m", text="Ran Kubernetes clusters", fact_refs=["F1"], manual=True)
+    )
+    result = check(package, FACTS)
+    assert [line.id for line in result.content.resume][-1] == "m"
+    assert result.removed == []
+    assert result.flagged[0].startswith("Your edit in the resume:")
+    assert "Kubernetes is not in your Fact Bank" in result.flagged[0]

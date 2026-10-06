@@ -272,14 +272,21 @@ def _locations(job: Job) -> list[LocationOut]:
     return [LocationOut.model_validate(loc) for loc in job.locations or []]
 
 
+APPLIED_RECENTLY = timedelta(days=90)
+
+
 async def package_states(
     session: AsyncSession,
     user: User,
     jobs: list[Job],
+    now: datetime | None = None,
 ) -> tuple[dict[uuid.UUID, uuid.UUID], dict[uuid.UUID, str], set[uuid.UUID]]:
-    """Package summaries and Company history are always scoped to this User."""
+    """Each Job's Draft and Application status, and the Jobs that get the "Already applied
+    to this Company" warning: the User applied to another Job at the same Company in the
+    last 90 days (FR-D5). Always scoped to this User."""
     if not jobs:
         return {}, {}, set()
+    now = now or datetime.now(UTC)
     job_ids = [job.id for job in jobs]
     company_ids = {job.company_id for job in jobs}
     drafts = await session.scalars(
@@ -297,13 +304,15 @@ async def package_states(
         .order_by(Application.created_at.desc(), Application.id.desc())
     )
     states: dict[uuid.UUID, str] = {}
-    applied_companies = set()
+    applied_jobs: dict[uuid.UUID, set[uuid.UUID]] = {}
     for application, company_id in applications:
         states.setdefault(application.job_id, application.status)
         if application.status == "applied":
             states[application.job_id] = "applied"
-            applied_companies.add(company_id)
-    return draft_ids, states, applied_companies
+            if application.applied_at and application.applied_at >= now - APPLIED_RECENTLY:
+                applied_jobs.setdefault(company_id, set()).add(application.job_id)
+    warned = {job.id for job in jobs if applied_jobs.get(job.company_id, set()) - {job.id}}
+    return draft_ids, states, warned
 
 
 async def last_updated(session: AsyncSession) -> datetime | None:
@@ -352,7 +361,7 @@ async def list_feed(
             hidden=link.hidden_at is not None,
             draft_id=draft_ids.get(job.id),
             application_status=application_states.get(job.id),
-            company_applied=job.company_id in applied_companies,
+            company_applied=job.id in applied_companies,
         )
         for job, link in rows
     ]
@@ -485,7 +494,7 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         possible_duplicates=duplicates,
         draft_id=draft_ids.get(job.id),
         application_status=application_states.get(job.id),
-        company_applied=job.company_id in applied_companies,
+        company_applied=job.id in applied_companies,
     )
 
 

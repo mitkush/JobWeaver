@@ -1,6 +1,7 @@
 """Draft orchestration: progress, immutable versions, editing and outward hand-off."""
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
@@ -39,9 +40,16 @@ from app.services.accounts import ensure_ai_allowed
 from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
-from app.tailoring.checks import check_content
+from app.tailoring.checks import CheckResult, check
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.skills import requested_missing_skills, user_skills
+
+logger = logging.getLogger(__name__)
+AI_BUSY = "The AI services are busy right now. Retry in a few minutes."
+NOTHING_VERIFIED = (
+    "No generated line could be traced to your Fact Bank, so nothing was kept. "
+    "Check that your Fact Bank covers your experience, then retry."
+)
 
 # Tasks remain referenced, and are recovered from their durable queue after a restart.
 _TASKS: set[asyncio.Task[None]] = set()
@@ -134,6 +142,17 @@ def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
     )
 
 
+def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> CheckResult:
+    job = draft.job_snapshot
+    return check(
+        content,
+        facts,
+        job_title=str(job.get("title") or ""),
+        company=str(job.get("company") or ""),
+        job_skills=[str(s) for s in job.get("required_skills") or []],
+    )
+
+
 async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
     ensure_ai_allowed(user)
     if user.fact_bank_reviewed_at is None:
@@ -182,6 +201,7 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
             "description": primary.description if primary else "",
             "contact_email": job.contact_email,
             "apply_url": job.apply_url,
+            "required_skills": list(job.required_skills or []),
             "name": user.name or "Applicant",
             "email": user.email,
         },
@@ -241,12 +261,13 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             ensure_ai_allowed(user)
             draft = await owned_draft(session, user, draft_id, lock=True)
             draft.progress = "Checking Facts and Tailoring Trace"
-            content, warnings = check_content(result.result.content, facts)
+            checked = _check(draft, result.result.content, facts)
+            content, warnings = checked.content, checked.warnings
             if not content.resume or not content.cover_letter:
-                raise GatewayError("The generated package has no verified content")
+                raise _Unverified()
             content.email_subject = "Application for " + str(draft.job_snapshot["title"])
             if draft.job_snapshot.get("contact_email") and not content.email_body:
-                raise GatewayError("The Application Email has no verified content")
+                raise _Unverified()
             await asyncio.to_thread(
                 render_pdf,
                 content,
@@ -254,21 +275,42 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
                 str(draft.job_snapshot["email"]),
                 "resume",
                 "compact",
+                facts,
             )
             await _save_version(
                 session, draft, content, facts, "generation", warnings, result.result.message
             )
             draft.state, draft.progress, draft.error = "ready", "Ready to review", None
             await session.commit()
-        except (JobWeaverError, TimeoutError):
-            await session.rollback()
-            draft = await session.scalar(
-                select(Draft).where(Draft.id == draft_id, Draft.user_id == user_id)
+        except _Unverified:
+            await _fail(session, draft_id, user_id, NOTHING_VERIFIED)
+        except (GatewayError, TimeoutError):
+            await _fail(session, draft_id, user_id, AI_BUSY)
+        except JobWeaverError as exc:
+            # Notice, region or Fact Bank preconditions: their message says what to do.
+            await _fail(session, draft_id, user_id, exc.message)
+        except Exception:
+            # Never leave a Draft spinning on "generating" after an unexpected error.
+            logger.exception("Draft %s generation failed", draft_id)
+            await _fail(
+                session, draft_id, user_id, "Something went wrong while writing. Retry the draft."
             )
-            if draft is not None:
-                draft.state, draft.progress = "failed", "Generation stopped"
-                draft.error = "Draft generation could not finish. Check your Fact Bank and retry."
-                await session.commit()
+
+
+class _Unverified(Exception):
+    """Every generated line failed the truthfulness checks."""
+
+
+async def _fail(
+    session: AsyncSession, draft_id: uuid.UUID, user_id: uuid.UUID, message: str
+) -> None:
+    await session.rollback()
+    draft = await session.scalar(
+        select(Draft).where(Draft.id == draft_id, Draft.user_id == user_id)
+    )
+    if draft is not None:
+        draft.state, draft.progress, draft.error = "failed", "Generation stopped", message
+        await session.commit()
 
 
 async def recover_queued(gateway: BaseAIGateway) -> None:
@@ -337,16 +379,14 @@ async def save(
     ready(draft, expected)
     previous = await version(session, draft)
     facts = [FactSnapshot.model_validate(fact) for fact in previous.facts]
-    checked, warnings = check_content(content, facts)
-    if warnings:
-        raise ValidationFailedError("Edit needs a Fact Bank update first. " + "; ".join(warnings))
     old = {
         line.id: line
         for part in ("resume", "cover_letter", "email_body")
         for line in getattr(DraftContent.model_validate(previous.content), part)
     }
+    edited = content.model_copy(deep=True)
     for part in ("resume", "cover_letter", "email_body"):
-        for line in getattr(checked, part):
+        for line in getattr(edited, part):
             if (
                 line.id not in old
                 or line.text != old[line.id].text
@@ -355,7 +395,9 @@ async def save(
                 line.manual = True
             else:
                 line.manual = old[line.id].manual
-    await _save_version(session, draft, checked, facts, "manual")
+    # The User's own words are flagged, never refused or deleted (FR-E6, ADR-0005).
+    checked = _check(draft, edited, facts)
+    await _save_version(session, draft, checked.content, facts, "manual", checked.warnings)
 
 
 async def chat(
@@ -400,7 +442,11 @@ async def chat(
             response = await gateway.revise_draft(request)
     except TimeoutError as exc:
         raise GatewayError("Draft Chat timed out. Please retry.") from exc
-    proposal, warnings = check_content(response.result.content, facts)
+    for part in ("resume", "cover_letter", "email_body"):
+        for line in getattr(response.result.content, part):
+            line.manual = False  # whatever the model claims, these lines are AI text
+    proposed = _check(draft, response.result.content, facts)
+    proposal = proposed.content
     if not proposal.resume or not proposal.cover_letter:
         raise ValidationFailedError("This change needs Facts that are not in your Fact Bank.")
     if not overwrite_manual:
@@ -418,18 +464,15 @@ async def chat(
             for line in getattr(proposal, part):
                 line.manual = False
     proposal.email_subject = content.email_subject
-    _, protected_warnings = check_content(proposal, facts)
-    if protected_warnings:
-        raise ValidationFailedError(
-            "A referenced Fact changed. Review it before editing this Draft."
-        )
+    # Your kept lines are checked again (a Fact may have changed) and flagged, not removed.
+    final = _check(draft, proposal, facts)
     await _save_version(
         session,
         draft,
-        proposal,
+        final.content,
         facts,
         "chat",
-        warnings,
+        proposed.removed + final.flagged,
         f"You: {message}\n\nDraft Chat: {response.result.message}",
     )
 
@@ -468,7 +511,13 @@ async def pdf(
     job = draft.job_snapshot
     content = DraftContent.model_validate(row.content)
     data = await asyncio.to_thread(
-        render_pdf, content, str(job["name"]), str(job["email"]), kind, template
+        render_pdf,
+        content,
+        str(job["name"]),
+        str(job["email"]),
+        kind,
+        template,
+        [FactSnapshot.model_validate(fact) for fact in row.facts],
     )
     return data, filename(str(job["name"]), str(job["company"]), str(job["title"]), kind)
 
@@ -529,7 +578,8 @@ async def handoff(
     )
     url = compose_url(user.email, recipient, subject, message_body)
     mode = "fallback"
-    if existing is None:
+    # Reuse only a hand-off that reached Gmail; after a Gmail failure, try Gmail again.
+    if existing is None or not existing.gmail_draft_id:
         data, _ = await pdf(session, user, draft.id, "resume", body.template)
         try:
             token = await access_token(session, user, google)
@@ -548,16 +598,17 @@ async def handoff(
             return reconnect(draft)
         except JobWeaverError:
             gmail_id = None
-        existing = Application(
-            user_id=user.id,
-            job_id=draft.job_id,
-            draft_id=draft.id,
-            version=draft.current_version,
-            recipient=recipient,
-            gmail_draft_id=gmail_id,
-            status="drafted",
-        )
-        session.add(existing)
+        if existing is None:
+            existing = Application(
+                user_id=user.id,
+                job_id=draft.job_id,
+                draft_id=draft.id,
+                version=draft.current_version,
+                recipient=recipient,
+                status="drafted",
+            )
+            session.add(existing)
+        existing.gmail_draft_id = gmail_id
         await session.flush()
     if existing.gmail_draft_id:
         mode = "gmail"
