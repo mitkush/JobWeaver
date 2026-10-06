@@ -622,3 +622,139 @@ async def test_started_manual_runs_still_count_against_the_daily_limit(db, fetch
         assert (await fetcher.start_manual_run("fake-board")).status == "started"
         await fetcher.manual_task
     assert (await fetcher.start_manual_run("fake-board")).status == "skipped"
+
+
+class FakeStandby(FakeSearch):
+    name = "fake-standby"
+    label = "Fake Standby"
+    standby_for = "fake-search"
+    budget_pool = "fake-pool"
+    windows: list[tuple[str, FetchWindow]] = []
+    results: list[FetchResult | Exception] = []
+
+
+class FakePoolMate(FakeSearch):
+    name = "fake-pool-mate"
+    label = "Fake Pool Mate"
+    priority = 2
+    budget_pool = "fake-pool"
+    windows: list[tuple[str, FetchWindow]] = []
+    results: list[FetchResult | Exception] = []
+
+
+@pytest.fixture
+def standby():
+    registry.register_adapter(FakeStandby)
+    FakeStandby.windows, FakeStandby.results = [], []
+    return FakeStandby
+
+
+async def test_standby_stands_by_while_its_main_source_is_healthy(db, fetcher, standby):
+    await add_preferences(db)
+    outcomes = {o.source: o for o in await fetcher.run_all()}
+    assert outcomes["fake-search"].status == "succeeded"
+    assert (outcomes["fake-standby"].status, outcomes["fake-standby"].message) == (
+        "skipped",
+        "standing by",
+    )
+    assert standby.windows == []
+
+
+async def test_standby_runs_after_its_main_degrades_in_the_same_run(db, fetcher, standby):
+    await add_preferences(db)
+    FakeSearch.results = [SourceUnavailable("down")]
+    outcomes = [o.source for o in await fetcher.run_all()]
+    # Standbys run last, after their main has had its chance.
+    assert outcomes.index("fake-standby") > outcomes.index("fake-search")
+    assert len(standby.windows) == 2
+    assert (await source_row(db, "fake-standby")).state == SourceState.HEALTHY
+
+
+async def test_standby_runs_while_its_main_is_disabled(db, fetcher, standby):
+    await add_preferences(db)
+    await fetcher.sync_sources()
+    (await source_row(db, "fake-search")).enabled = False
+    await db.commit()
+    await fetcher.run_all()
+    assert FakeSearch.windows == [] and len(standby.windows) == 2
+
+
+async def test_main_and_standby_never_pay_twice_for_the_same_window(db, fetcher, clock, standby):
+    await add_preferences(db)
+    FakeSearch.results = [SourceUnavailable("down")]
+    await fetcher.run_all()
+    assert len(standby.windows) == 2
+
+    # The main recovers a few hours later: today's searches were already done by the standby.
+    clock.now += timedelta(hours=6)
+    FakeSearch.windows.clear()
+    await fetcher.run_source("fake-search")
+    assert FakeSearch.windows == []
+
+    # Next day it continues from where the standby stopped, not from its own backfill.
+    clock.now = START + timedelta(days=1)
+    await fetcher.run_source("fake-search")
+    assert all(w.since == START - timedelta(hours=2) for _, w in FakeSearch.windows)
+
+
+async def test_manual_run_of_a_standby_is_allowed_while_its_main_is_healthy(db, fetcher, standby):
+    await add_preferences(db)
+    outcome = await fetcher.manual_run("fake-standby")
+    assert outcome.status == "succeeded" and len(standby.windows) == 2
+
+
+async def test_budget_pool_shares_one_allowance(db, fetcher, standby, clock):
+    registry.register_adapter(FakePoolMate)
+    from app.services.fetching import budget_for
+
+    db.add(FetchRun(source="fake-pool-mate", status="succeeded", query_key="x", credits_used=10))
+    await db.commit()
+    budget = await budget_for(db, FakeStandby, clock())
+    assert budget.spent == 10 and budget.exhausted
+    # The main Source is not in the pool, so its own allowance is untouched.
+    assert (await budget_for(db, FakeSearch, clock())).spent == 0
+
+
+async def test_sources_off_by_default_start_disabled(db, fetcher, monkeypatch):
+    monkeypatch.setattr(Unconfigured, "default_enabled", False)
+    await fetcher.sync_sources()
+    assert (await source_row(db, "fake-keyless")).enabled is False
+
+
+async def test_a_partial_snapshot_closes_nothing(db, fetcher, clock):
+    db.add(AtsBoard(ats="greenhouse", slug="acme", discovered_from="manual"))
+    await db.commit()
+    FakeBoard.boards = {"acme": FetchResult(postings=[posting("1"), posting("2")])}
+    await fetcher.run_source("fake-board")
+    clock.now += timedelta(days=1)
+    FakeBoard.boards = {"acme": FetchResult(postings=[posting("1")], complete=False)}
+    await fetcher.run_source("fake-board")
+    db.expire_all()
+    still = (await db.execute(select(Posting).where(Posting.source_job_id == "2"))).scalar_one()
+    assert still.closed_at is None
+
+
+async def test_pending_adverts_are_stored_once_and_reopened_when_edited(db, fetcher, clock):
+    from app.adapters.base import PendingAdvert
+    from app.models import RawAdvert
+
+    advert = PendingAdvert(ref="9001", text="Acme | SRE", url="https://news.ycombinator.com/x")
+    FakeSearch.per_query = False
+    try:
+        FakeSearch.results = [FetchResult(postings=[], pending=[advert, advert])]
+        await fetcher.run_source("fake-search")
+        row = (await db.execute(select(RawAdvert))).scalar_one()
+        row.extracted_at = clock()
+        await db.commit()
+        run = (await db.execute(select(FetchRun))).scalar_one()
+        assert (run.postings_found, run.postings_new) == (1, 1)
+
+        clock.now += timedelta(days=1)
+        edited = advert.model_copy(update={"text": "Acme | SRE, now remote"})
+        FakeSearch.results = [FetchResult(postings=[], pending=[edited])]
+        await fetcher.run_source("fake-search")
+        db.expire_all()
+        row = (await db.execute(select(RawAdvert))).scalar_one()
+        assert row.extracted_at is None and row.text.endswith("now remote")
+    finally:
+        FakeSearch.per_query = True

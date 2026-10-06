@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     brightdata_api_key: str = ""
     brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"
     rapidapi_key: str = ""
+    # Phase 5 Sources. Apify's free $5 a month is shared by Naukri and LinkedIn (Apify).
+    # Actor inputs are written for these actors; another actor needs its own mapping.
+    apify_token: str = ""
+    apify_naukri_actor: str = "muhammetakkurtt~naukri-job-scraper"
+    apify_naukri_max_jobs: int = 200
+    # Full descriptions, needed for skills and contact emails (the actor's detail mode).
+    apify_naukri_fetch_details: bool = True
+    # The actor filters by Naukri's numeric city ids, which are not published. Map the
+    # cities you search ({"Bengaluru": "<id>"}) after checking them on naukri.com; an
+    # unmapped city is added to the keywords instead.
+    apify_naukri_city_ids: dict[str, str] = {}
+    apify_linkedin_actor: str = "curious_coder~linkedin-jobs-scraper"
+    # Upper bound per search, not a budget cut: LinkedIn shows at most about 1,000.
+    apify_linkedin_max_items: int = 1000
+    serpapi_key: str = ""
+    # Each page is one of the 250 monthly searches and holds up to 10 jobs.
+    serpapi_pages_per_query: int = 1
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    adzuna_pages_per_query: int = 2
     backfill_days: int = 14
     window_overlap_hours: int = 2
     # Windowed-only Postings older than this are treated as closed (FR-B10).
@@ -61,6 +81,9 @@ class Settings(BaseSettings):
     embedding_batch_pause_seconds: float = 20
     embedding_max_batches_per_run: int = 60
     # AI skill extraction: adverts per request and requests per run (ADR-0010).
+    # Hacker News comments per extraction call, and calls per run (Flash-Lite quota).
+    adverts_batch_size: int = 8
+    adverts_max_batches_per_run: int = 30
     skills_batch_size: int = 5
     skills_max_batches_per_run: int = 40
 

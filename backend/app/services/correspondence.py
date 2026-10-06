@@ -18,6 +18,8 @@ from sqlalchemy import and_, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.adapters.base import Location, NormalizedPosting, WorkMode
+from app.adapters.normalize import extract_contact_email, parse_location
 from app.adapters.registry import registered_adapters
 from app.core.config import Settings, get_settings
 from app.core.db import among
@@ -37,12 +39,21 @@ from app.dedup.scoring import (
     title_similarity,
 )
 from app.gateway.base import BaseAIGateway
-from app.gateway.schemas import EmbedRequest, ExtractSkillsRequest, JobAdvert
+from app.gateway.schemas import (
+    AdvertJobs,
+    AdvertText,
+    EmbedRequest,
+    ExtractAdvertsRequest,
+    ExtractSkillsRequest,
+    JobAdvert,
+)
 from app.models.draft import Application, Draft
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.posting import Company, Posting
+from app.models.raw_advert import RawAdvert
 from app.models.user import User
 from app.services import feed
+from app.services.fetching import save_postings
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +283,7 @@ class Report:
     embedded: int = 0
     awaiting_embedding: int = 0
     skills_extracted: int = 0
+    adverts_extracted: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -304,7 +316,8 @@ class Correspondence:
         """Runs after every fetch and on a timer. Each step is isolated: a failure is
         logged and the next step still runs, so the Feed never stalls on one problem."""
         report = Report()
-        for step in (self._group, self._sync_jobs, self._feeds, self._skills):
+        steps = (self._adverts, self._group, self._sync_jobs, self._feeds, self._skills)
+        for step in steps:
             try:
                 await step(report)
             except Exception as exc:  # noqa: BLE001 - one broken step must not stop the rest
@@ -573,6 +586,58 @@ class Correspondence:
             await feed.sync_all_feeds(session)
             await session.commit()
 
+    # Free-text adverts --------------------------------------------------------------------
+
+    async def _adverts(self, report: Report) -> None:
+        """Hacker News comments into Postings (FR-B8). The AI proposes title, company and
+        places; links and emails are kept only if they appear in the comment itself.
+        While AI is unavailable the adverts stay queued; ones older than the Posting age
+        limit are no longer worth extracting and drop out of the queue."""
+        size = self.settings.adverts_batch_size
+        now = self.clock()
+        cutoff = now - timedelta(days=self.settings.posting_max_age_days)
+        async with self.sessionmaker() as session:
+            pending = list(
+                (
+                    await session.execute(
+                        select(RawAdvert)
+                        .where(
+                            RawAdvert.extracted_at.is_(None),
+                            func.coalesce(RawAdvert.posted_at, RawAdvert.created_at) >= cutoff,
+                        )
+                        # Fresh adverts go before ones that already failed, so one advert
+                        # the AI cannot read never blocks the queue.
+                        .order_by(RawAdvert.attempts, RawAdvert.posted_at.desc().nulls_last())
+                        .limit(size * self.settings.adverts_max_batches_per_run)
+                    )
+                ).scalars()
+            )
+            for start in range(0, len(pending), size):
+                batch = pending[start : start + size]
+                request = ExtractAdvertsRequest(
+                    adverts=[AdvertText(ref=str(i + 1), text=a.text) for i, a in enumerate(batch)]
+                )
+                try:
+                    response = await self.gateway.extract_adverts(request)
+                except GatewayError as exc:
+                    for advert in batch:
+                        advert.attempts += 1
+                        advert.error = exc.message[:500]
+                    await session.commit()
+                    logger.warning("Advert extraction queued: %s", exc.message)
+                    break
+                found = {item.ref: item for item in response.result.adverts}
+                for i, advert in enumerate(batch):
+                    item = found.get(str(i + 1))
+                    if item is None:
+                        advert.attempts += 1  # left out by the model: tried again next run
+                        continue
+                    postings = advert_postings(advert, item)
+                    await save_postings(session, advert.source, postings, self.clock())
+                    advert.extracted_at, advert.postings, advert.error = now, len(postings), None
+                    report.adverts_extracted += 1
+                await session.commit()
+
     # Skills ------------------------------------------------------------------------------
 
     async def _skills(self, report: Report) -> None:
@@ -630,6 +695,46 @@ class Correspondence:
                     job.skills_extracted_at = now
                     report.skills_extracted += 1
                 await session.commit()
+
+
+_MODES = {"remote": WorkMode.REMOTE, "hybrid": WorkMode.HYBRID, "onsite": WorkMode.ONSITE}
+
+
+def advert_postings(advert: RawAdvert, item: AdvertJobs) -> list[NormalizedPosting]:
+    """The AI's reading of one comment, checked against the comment's own text."""
+    if not item.is_job_advert:
+        return []
+    text = advert.text
+    lowered = text.lower()
+    postings = []
+    for index, job in enumerate(item.jobs):
+        url = job.apply_url if job.apply_url and job.apply_url.startswith("http") else None
+        if url and url not in text:
+            url = None  # never a link the comment does not contain
+        email = (job.contact_email or "").strip().lower()
+        if not email or email not in lowered:
+            email = extract_contact_email(text) or ""
+        mode = _MODES.get(job.work_mode or "")
+        remote = mode == WorkMode.REMOTE
+        locations = [parse_location(place) for place in job.locations if place.strip()]
+        if remote:
+            locations = [loc.model_copy(update={"remote": True}) for loc in locations] or [
+                Location(remote=True)
+            ]
+        postings.append(
+            NormalizedPosting(
+                source_job_id=f"{advert.ref}:{index}",
+                title=" ".join(job.title.split())[:500],
+                company=" ".join(job.company.split()),
+                description=text,
+                locations=locations,
+                work_mode=mode,
+                apply_url=url or advert.url,
+                contact_email=email or None,
+                posted_at=advert.posted_at,
+            )
+        )
+    return postings
 
 
 def clean_skills(skills: Iterable[str]) -> list[str]:

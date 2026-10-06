@@ -18,6 +18,7 @@ from app.adapters.base import (
     FetchWindow,
     Location,
     NormalizedPosting,
+    PendingAdvert,
     SnapshotSourceAdapter,
     SourceAdapter,
     SourceQuery,
@@ -34,12 +35,19 @@ from app.adapters.errors import (
     SourceUnavailable,
 )
 from app.adapters.normalize import normalize_company
-from app.adapters.registry import get_adapter_class, registered_adapters
+from app.adapters.registry import (
+    family_of,
+    get_adapter_class,
+    pool_of,
+    registered_adapters,
+    run_order,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import among
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
+from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
 
 logger = logging.getLogger(__name__)
@@ -142,7 +150,7 @@ async def budget_for(
         return None
     start = period_start(now, adapter.renewal_day)
     renews = next_renewal(now, adapter.renewal_day)
-    in_period = (FetchRun.source == adapter.name, FetchRun.created_at >= start)
+    in_period = (among(FetchRun.source, pool_of(adapter), String()), FetchRun.created_at >= start)
     spent = int(
         await session.scalar(
             select(func.coalesce(func.sum(FetchRun.credits_used), 0)).where(*in_period)
@@ -271,6 +279,34 @@ async def save_postings(
     return new, seen
 
 
+async def save_pending(
+    session: AsyncSession, source: str, adverts: list[PendingAdvert]
+) -> tuple[int, int]:
+    """Stores free-text adverts for AI extraction; an edited advert is extracted again.
+    Returns how many were new and how many were seen."""
+    new = 0
+    refs: set[str] = set()
+    for advert in adverts:
+        if advert.ref in refs:
+            continue
+        refs.add(advert.ref)
+        row = (
+            await session.execute(
+                select(RawAdvert).where(RawAdvert.source == source, RawAdvert.ref == advert.ref)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = RawAdvert(source=source, ref=advert.ref[:255], text=advert.text, attempts=0)
+            session.add(row)
+            new += 1
+        elif row.text != advert.text:
+            row.text, row.extracted_at, row.attempts, row.error = advert.text, None, 0, None
+        row.url = advert.url[:2048] if advert.url else None
+        row.posted_at = advert.posted_at
+    await session.flush()
+    return new, len(refs)
+
+
 async def expire_postings(session: AsyncSession, now: datetime, settings: Settings) -> int:
     """Windowed Sources cannot see jobs close, so their Postings expire by age (FR-B10)."""
     cutoff = now - timedelta(days=settings.posting_max_age_days)
@@ -348,7 +384,7 @@ class Fetcher:
             existing = set((await session.execute(select(Source.name))).scalars())
             for cls in registered_adapters():
                 if cls.name not in existing:
-                    session.add(Source(name=cls.name))
+                    session.add(Source(name=cls.name, enabled=cls.default_enabled))
             await session.commit()
 
     def _exclusive(self) -> AbstractAsyncContextManager[bool]:
@@ -361,7 +397,7 @@ class Fetcher:
             if not got:
                 logger.info("Fetch run skipped: another run is in progress")
                 return None
-            outcomes = [await self.run_source(cls.name, trigger) for cls in registered_adapters()]
+            outcomes = [await self.run_source(cls.name, trigger) for cls in run_order()]
             async with self.sessionmaker() as session:
                 closed = await expire_postings(session, self.clock(), self.settings)
                 await session.commit()
@@ -384,6 +420,11 @@ class Fetcher:
             source = await self._source_row(session, name)
             if not source.enabled:
                 return SourceOutcome(name, "skipped", "disabled")
+            if cls.standby_for and trigger != MANUAL:
+                main = await self._source_row(session, cls.standby_for)
+                if main.enabled and main.state != SourceState.DEGRADED:
+                    await session.commit()
+                    return SourceOutcome(name, "skipped", "standing by")
             now = self.clock()
             # A provider's own call limit (e.g. Remotive: 4 a day) applies to every trigger.
             if cls.min_interval_hours:
@@ -426,7 +467,7 @@ class Fetcher:
             await session.execute(select(Source).where(Source.name == name))
         ).scalar_one_or_none()
         if source is None:
-            source = Source(name=name)
+            source = Source(name=name, enabled=get_adapter_class(name).default_enabled)
             session.add(source)
             await session.flush()
         return source
@@ -444,6 +485,7 @@ class Fetcher:
 
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
         budget = await budget_for(session, type(adapter), self.clock())
+        adapter.allowance_left = budget.allowance - budget.spent if budget else None
         if budget and budget.exhausted:
             raise SourceErrorBudget(
                 f"Free allowance used up ({budget.spent}/{budget.allowance} {budget.unit}); "
@@ -462,25 +504,32 @@ class Fetcher:
             queries: list[SourceQuery | None] = list(queries_from_preferences(preferences))
         else:
             queries = [None]
+        family = family_of(type(adapter))
         for query in queries:
             await self._check_budget(session, adapter)
             key = query.key if query else "all"
             now = self.clock()
-            watermark = (
-                await session.execute(
-                    select(QueryWatermark).where(
-                        QueryWatermark.source == adapter.name, QueryWatermark.query_key == key
+            marks = list(
+                (
+                    await session.execute(
+                        select(QueryWatermark).where(
+                            among(QueryWatermark.source, family, String()),
+                            QueryWatermark.query_key == key,
+                        )
                     )
-                )
-            ).scalar_one_or_none()
-            if watermark is None:
+                ).scalars()
+            )
+            watermark = next((m for m in marks if m.source == adapter.name), None)
+            # A main Source and its standby continue from whichever searched last.
+            last_until = max((m.last_until for m in marks), default=None)
+            if last_until is None:
                 since = now - timedelta(days=self.settings.backfill_days)
             else:
                 # Cron and catch-up runs never repeat a search already done today; only
                 # the admin's manual run deliberately does.
-                if trigger != MANUAL and now - watermark.last_until < ALREADY_FETCHED:
+                if trigger != MANUAL and now - last_until < ALREADY_FETCHED:
                     continue
-                since = watermark.last_until - timedelta(hours=self.settings.window_overlap_hours)
+                since = last_until - timedelta(hours=self.settings.window_overlap_hours)
             window = FetchWindow(since=since, until=now)
             run = FetchRun(
                 source=adapter.name,
@@ -504,6 +553,9 @@ class Fetcher:
             await session.commit()
             try:
                 new, seen = await save_postings(session, adapter.name, result.postings, now)
+                pending_new, pending_seen = await save_pending(
+                    session, adapter.name, result.pending
+                )
             except Exception:
                 await session.rollback()
                 await session.execute(
@@ -518,9 +570,10 @@ class Fetcher:
                 await session.commit()
                 raise
             run.status, run.finished_at = RunStatus.SUCCEEDED, self.clock()
+            # Pending adverts count here; their Postings appear once extracted.
             run.postings_found, run.postings_new, run.credits_used = (
-                len(seen),
-                new,
+                len(seen) + pending_seen,
+                new + pending_new,
                 result.credits_used,
             )
             if watermark is None:
@@ -583,21 +636,24 @@ class Fetcher:
             new, seen = await save_postings(
                 session, adapter.name, result.postings, now, board=board
             )
-            closed = await session.execute(
-                update(Posting)
-                .where(
-                    Posting.ats_board_id == board.id,
-                    Posting.closed_at.is_(None),
-                    ~among(Posting.source_job_id, seen, String()),
+            closed_count = 0
+            if result.complete:
+                closed = await session.execute(
+                    update(Posting)
+                    .where(
+                        Posting.ats_board_id == board.id,
+                        Posting.closed_at.is_(None),
+                        ~among(Posting.source_job_id, seen, String()),
+                    )
+                    .values(closed_at=now, closed_reason="board")
                 )
-                .values(closed_at=now, closed_reason="board")
-            )
+                closed_count = closed.rowcount or 0
             board.last_fetched_at = now
             if seen:
                 board.last_nonempty_at = now
             run.status, run.finished_at = RunStatus.SUCCEEDED, now
             run.postings_found, run.postings_new = len(seen), new
-            run.postings_closed = closed.rowcount or 0
+            run.postings_closed = closed_count
             await session.commit()
             outcome.postings_new += new
         if failures and len(failures) * 2 > len(boards):

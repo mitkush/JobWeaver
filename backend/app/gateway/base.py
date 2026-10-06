@@ -4,6 +4,8 @@ from app.gateway.schemas import (
     DraftResult,
     EmbedRequest,
     EmbedResult,
+    ExtractAdvertsRequest,
+    ExtractAdvertsResult,
     ExtractSkillsRequest,
     ExtractSkillsResult,
     GatewayResponse,
@@ -35,6 +37,11 @@ class BaseAIGateway(ABC):
     async def extract_skills(
         self, request: ExtractSkillsRequest
     ) -> GatewayResponse[ExtractSkillsResult]: ...
+
+    @abstractmethod
+    async def extract_adverts(
+        self, request: ExtractAdvertsRequest
+    ) -> GatewayResponse[ExtractAdvertsResult]: ...
 
     @abstractmethod
     async def embed_texts(self, request: EmbedRequest) -> GatewayResponse[EmbedResult]:

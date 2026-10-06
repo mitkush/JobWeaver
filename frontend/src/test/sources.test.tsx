@@ -30,6 +30,9 @@ const linkedin: SourceStatus = {
   open_postings: 1234,
   boards: null,
   manual_runs_left: 4,
+  standby_for: null,
+  shares_budget_with: [],
+  disabled_reason: null,
   budget: {
     allowance: 5000,
     unit: "credits",
@@ -67,6 +70,39 @@ it("shows health, budget pace and the most expensive searches", async () => {
   expect(within(card).getByText(/runs out around/)).toBeInTheDocument();
   expect(within(card).getByText("backend engineer · Bengaluru, India")).toBeInTheDocument();
   expect(screen.getByText(/Company boards · 12 tracked/)).toBeInTheDocument();
+});
+
+it("explains standbys, shared allowances and sources that are off by default", async () => {
+  const apify: SourceStatus = {
+    ...linkedin,
+    name: "linkedin-apify",
+    label: "LinkedIn (Apify)",
+    state: "healthy",
+    last_error: null,
+    degraded_since: null,
+    standby_for: "LinkedIn (Bright Data)",
+    shares_budget_with: ["Naukri (Apify)"],
+    budget: { ...linkedin.budget!, unit: "US cents", allowance: 500, spent: 120, top_queries: [] },
+  };
+  const workday: SourceStatus = {
+    ...greenhouse,
+    name: "workday",
+    label: "Workday",
+    enabled: false,
+    state: "disabled",
+    disabled_reason: "Not a published API.",
+  };
+  mockFetch({
+    "GET /api/admin/sources": () => json([apify, workday]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(
+    await screen.findByText(/Standby for LinkedIn \(Bright Data\): runs only while that source is degraded/),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Shares this allowance with Naukri (Apify).")).toBeInTheDocument();
+  expect(screen.getByText("Off by default")).toBeInTheDocument();
+  expect(screen.getByText("Not a published API.")).toBeInTheDocument();
 });
 
 it("asks before a manual run and says what it costs", async () => {

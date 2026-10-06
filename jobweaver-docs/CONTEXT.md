@@ -40,9 +40,13 @@ The first Fetch Run of a windowed Source, or for a new set of Preferences: the l
 
 The current health of each Source: **Healthy**, **Degraded** (last run failed or hit a limit; will retry next run) or **Disabled** (turned off by the Admin). Visible to the Admin; Users see a short notice when a Source their Feed relies on is degraded.
 
+## Standby
+
+A second provider for the same jobs as a Source (LinkedIn through Apify for LinkedIn through Bright Data; SerpApi for JSearch). It runs only while that Source is Degraded or Disabled, and it shares the Source's search windows so nothing is paid for twice (ADR-0016).
+
 ## Credit Budget
 
-The monthly allowance of a paid-by-credits Source (Bright Data: 5,000 credits, 1 credit = 1 record). Shared by all Users, never used to silently cut results, and tracked per query with a month-end projection (ADR-0009).
+The monthly allowance of a paid-by-credits Source (Bright Data: 5,000 credits, 1 credit = 1 record). Sources billed from one account share one Credit Budget (Naukri and LinkedIn through Apify: $5). Shared by all Users, never used to silently cut results, and tracked per query with a month-end projection (ADR-0009).
 
 ## Company
 

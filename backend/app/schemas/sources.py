@@ -40,6 +40,12 @@ class SourceStatusOut(BaseModel):
     boards: int | None
     budget: BudgetOut | None
     manual_runs_left: int
+    # Label of the Source this one backs up; it runs only while that one is Degraded.
+    standby_for: str | None
+    # Labels of the other Sources drawing on the same allowance.
+    shares_budget_with: list[str]
+    # Why a Source is off by default (e.g. no stable API).
+    disabled_reason: str | None
 
 
 class SourceUpdate(BaseModel):

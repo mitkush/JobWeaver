@@ -1,12 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.ats_urls import parse_ats_url
 from app.adapters.base import SnapshotSourceAdapter
-from app.adapters.registry import get_adapter_class, registered_adapters
+from app.adapters.registry import get_adapter_class, pool_of, registered_adapters
 from app.core.config import get_settings
+from app.core.db import among
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.models.fetch import FetchRun
 from app.models.posting import AtsBoard, Company, Posting
@@ -47,6 +48,7 @@ async def list_statuses(
             )
         ).all()
     )
+    labels = {cls.name: cls.label for cls in registered_adapters()}
     out = []
     for cls in registered_adapters():
         source = rows.get(cls.name)
@@ -64,7 +66,7 @@ async def list_statuses(
             )
         today = now.date().isoformat()
         used = source.manual_runs_today if source and source.manual_runs_date == today else 0
-        enabled = source.enabled if source else True
+        enabled = source.enabled if source else cls.default_enabled
         out.append(
             SourceStatusOut(
                 name=cls.name,
@@ -96,6 +98,11 @@ async def list_statuses(
                     top_queries=[QuerySpend(query_key=k, spent=v) for k, v in budget.top_queries],
                 ),
                 manual_runs_left=max(MANUAL_RUNS_PER_DAY - used, 0),
+                standby_for=labels.get(cls.standby_for, cls.standby_for)
+                if cls.standby_for
+                else None,
+                shares_budget_with=sorted(labels[n] for n in pool_of(cls) - {cls.name}),
+                disabled_reason=cls.disabled_reason,
             )
         )
     return out
@@ -160,6 +167,7 @@ async def notices(session: AsyncSession, now: datetime | None = None) -> list[So
         )
     ).scalars()
     labels = {cls.name: cls.label for cls in registered_adapters()}
+    covered = await _covered_by_standby(session)
     return [
         SourceNotice(
             label=labels.get(s.name, s.name),
@@ -167,14 +175,36 @@ async def notices(session: AsyncSession, now: datetime | None = None) -> list[So
             message=f"{labels.get(s.name, s.name)} jobs are delayed; other sources are up to date.",
         )
         for s in rows
-        if s.degraded_since is not None
+        if s.degraded_since is not None and s.name not in covered
     ]
 
 
-FETCHED_ATS = {"greenhouse", "lever"}
+async def _covered_by_standby(session: AsyncSession) -> set[str]:
+    """Main Sources whose standby is enabled and healthy: users are not missing jobs."""
+    standbys = {cls.name: cls.standby_for for cls in registered_adapters() if cls.standby_for}
+    if not standbys:
+        return set()
+    rows = (
+        await session.execute(
+            select(Source.name).where(
+                among(Source.name, standbys, String()),
+                Source.enabled.is_(True),
+                Source.state == SourceState.HEALTHY,
+                Source.last_success_at.is_not(None),
+            )
+        )
+    ).scalars()
+    return {standbys[name] for name in rows}
 
 
 async def list_boards(session: AsyncSession) -> list[AtsBoardOut]:
+    enabled = {s.name: s.enabled for s in (await session.execute(select(Source))).scalars()}
+    # Boards of an ATS whose Source an admin turned off (or that is off by default) wait.
+    fetched_ats = {
+        cls.ats
+        for cls in registered_adapters()
+        if issubclass(cls, SnapshotSourceAdapter) and enabled.get(cls.name, cls.default_enabled)
+    }
     counts = dict(
         (
             await session.execute(
@@ -197,7 +227,7 @@ async def list_boards(session: AsyncSession) -> list[AtsBoardOut]:
             company=company,
             discovered_from=board.discovered_from,
             enabled=board.enabled,
-            fetched=board.ats in FETCHED_ATS,
+            fetched=board.ats in fetched_ats,
             last_fetched_at=board.last_fetched_at,
             open_postings=int(counts.get(board.id, 0)),
         )
@@ -211,7 +241,7 @@ async def add_board(session: AsyncSession, user: User, url: str) -> AtsBoard:
     if found is None:
         raise ValidationFailedError(
             "Paste a link to a company's job board on Greenhouse, Lever, Ashby, "
-            "SmartRecruiters, Workable or Recruitee."
+            "SmartRecruiters, Workable, Recruitee or Workday."
         )
     ats, slug = found
     board = (

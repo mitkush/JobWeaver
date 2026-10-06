@@ -1,5 +1,5 @@
 import uuid
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,6 +71,41 @@ class JobSkills(BaseModel):
 
 class ExtractSkillsResult(BaseModel):
     jobs: list[JobSkills]
+
+
+class AdvertText(BaseModel):
+    ref: str
+    text: str
+
+
+class ExtractAdvertsRequest(BaseModel):
+    """Public free-text adverts (e.g. Hacker News comments); never User data (ADR-0002)."""
+
+    adverts: list[AdvertText] = Field(min_length=1, max_length=10)
+
+
+class ExtractedJob(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str = Field(min_length=1, max_length=300)
+    company: str = Field(min_length=1, max_length=200)
+    locations: list[str] = Field(default_factory=list, max_length=20)
+    work_mode: Literal["onsite", "hybrid", "remote"] | None = None
+    apply_url: str | None = None
+    contact_email: str | None = None
+
+
+class AdvertJobs(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ref: str
+    # False for comments that are not job adverts (questions, replies, meta posts).
+    is_job_advert: bool = True
+    jobs: list[ExtractedJob] = Field(default_factory=list, max_length=15)
+
+
+class ExtractAdvertsResult(BaseModel):
+    adverts: list[AdvertJobs]
 
 
 class TailorDraftRequest(BaseModel):

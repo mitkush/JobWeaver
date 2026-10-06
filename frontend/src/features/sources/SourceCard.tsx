@@ -40,6 +40,11 @@ export function SourceCard({ source }: { source: SourceStatus }) {
               {source.mode === "snapshot" ? `Company boards · ${source.boards ?? 0} tracked` : "Search"} ·
               priority {source.priority} · {source.open_postings.toLocaleString()} open postings
             </p>
+            {source.standby_for && (
+              <p className="mt-1 text-xs text-slate-600">
+                Standby for {source.standby_for}: runs only while that source is degraded or disabled.
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
@@ -85,7 +90,17 @@ export function SourceCard({ source }: { source: SourceStatus }) {
         {!source.configured && source.enabled && (
           <Alert tone="info">Add this source's API key to the server settings to start fetching.</Alert>
         )}
+        {!source.enabled && source.disabled_reason && (
+          <Alert tone="info" title="Off by default">
+            {source.disabled_reason}
+          </Alert>
+        )}
         {source.budget && <BudgetMeter budget={source.budget} />}
+        {source.budget && source.shares_budget_with.length > 0 && (
+          <p className="text-xs text-slate-500">
+            Shares this allowance with {source.shares_budget_with.join(", ")}.
+          </p>
+        )}
       </CardBody>
 
       <ConfirmDialog

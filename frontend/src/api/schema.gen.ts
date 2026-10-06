@@ -1554,6 +1554,12 @@ export interface components {
             budget: components["schemas"]["BudgetOut"] | null;
             /** Manual Runs Left */
             manual_runs_left: number;
+            /** Standby For */
+            standby_for: string | null;
+            /** Shares Budget With */
+            shares_budget_with: string[];
+            /** Disabled Reason */
+            disabled_reason: string | null;
         };
         /** SourceUpdate */
         SourceUpdate: {

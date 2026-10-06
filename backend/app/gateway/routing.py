@@ -56,4 +56,10 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("groq", GROQ_LARGE, 4096),
         Route("openrouter", OPENROUTER_FREE, 4096),
     ],
+    # Hacker News "Who is hiring" comments into Postings: same volume profile as skills.
+    "extract_adverts": [
+        Route("gemini", GEMINI_FLASH_LITE, 8192),
+        Route("groq", GROQ_LARGE, 8192),
+        Route("openrouter", OPENROUTER_FREE, 8192),
+    ],
 }

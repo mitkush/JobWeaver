@@ -15,6 +15,7 @@ const ATS_LABELS: Record<string, string> = {
   smartrecruiters: "SmartRecruiters",
   workable: "Workable",
   recruitee: "Recruitee",
+  workday: "Workday",
 };
 
 /** Company boards are learned from apply links; users can add more (FR-B7). */
@@ -74,7 +75,7 @@ export function CompanyBoards() {
                 ) : board.fetched ? (
                   <Badge tone="success">Fetched daily</Badge>
                 ) : (
-                  <Badge>Supported later</Badge>
+                  <Badge>Source turned off</Badge>
                 )}
               </div>
             </li>
