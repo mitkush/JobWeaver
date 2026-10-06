@@ -10,6 +10,7 @@ from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJ
 from app.models.oauth_credential import OAuthCredential
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
+from app.models.raw_advert import RawAdvert
 from app.models.session import UserSession
 from app.models.source import Source, SourceState
 from app.models.user import Role, User
@@ -30,6 +31,7 @@ __all__ = [
     "FetchRun",
     "Posting",
     "QueryWatermark",
+    "RawAdvert",
     "RunStatus",
     "Source",
     "SourceState",

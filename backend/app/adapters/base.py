@@ -1,8 +1,11 @@
 """Source Adapter interface (ADR-0003)."""
 
+import asyncio
 import enum
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Iterable
 from datetime import datetime
+from typing import TypeVar
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +18,25 @@ from app.adapters.errors import (
     SourceUnavailable,
 )
 from app.core.config import Settings
+
+T = TypeVar("T")
+
+
+async def bounded_gather(calls: Iterable[Awaitable[T]], limit: int) -> list[T]:
+    """Runs calls with at most `limit` in flight, so one board never floods a provider."""
+    gate = asyncio.Semaphore(limit)
+
+    async def one(call: Awaitable[T]) -> T:
+        async with gate:
+            return await call
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(one(c)) for c in calls]
+    except ExceptionGroup as failed:
+        # The first failure cancels the rest; callers handle it like a single call's error.
+        raise failed.exceptions[0] from None
+    return [task.result() for task in tasks]
 
 
 class FetchMode(enum.StrEnum):
@@ -78,10 +100,23 @@ class NormalizedPosting(BaseModel):
     posted_at: datetime | None = None
 
 
+class PendingAdvert(BaseModel):
+    """Free text that may advertise jobs, for Sources whose adverts have no structure
+    (Hacker News). AI extraction turns it into Postings later (FR-B8)."""
+
+    ref: str
+    text: str
+    url: str | None = None
+    posted_at: datetime | None = None
+
+
 class FetchResult(BaseModel):
     postings: list[NormalizedPosting]
+    pending: list[PendingAdvert] = Field(default_factory=list)
     # Credits or requests this call used, for the Credit Budget (FR-B5).
     credits_used: int = 0
+    # False when a snapshot provider capped its list: missing jobs are not closed.
+    complete: bool = True
 
 
 class SourceAdapter(ABC):
@@ -95,10 +130,21 @@ class SourceAdapter(ABC):
     renewal_day: int = 1
     # Some providers ask for a minimum gap between calls (e.g. Remotive: 4 a day).
     min_interval_hours: float = 0
+    # A standby only runs while the Source it backs up is Degraded or disabled, and the
+    # two share query watermarks so a search is never paid for twice.
+    standby_for: str | None = None
+    # Sources billed from one account share a single allowance (e.g. "apify").
+    budget_pool: str | None = None
+    # Sources that are not reliable enough to run unless an admin turns them on.
+    default_enabled: bool = True
+    disabled_reason: str | None = None
 
     def __init__(self, http: httpx.AsyncClient, settings: Settings) -> None:
         self.http = http
         self.settings = settings
+        # Set by the fetcher before each call on metered Sources, so providers that take a
+        # spending cap (Apify) stop at the budget instead of overrunning it.
+        self.allowance_left: int | None = None
 
     def is_configured(self) -> bool:
         return True

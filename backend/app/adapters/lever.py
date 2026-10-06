@@ -5,6 +5,7 @@ from typing import Any
 from app.adapters.base import FetchResult, NormalizedPosting, SnapshotSourceAdapter, WorkMode
 from app.adapters.errors import BoardNotFound, SourceBadResponse
 from app.adapters.normalize import (
+    company_from_slug,
     extract_contact_email,
     html_to_text,
     parse_datetime,
@@ -15,11 +16,6 @@ from app.adapters.registry import register_adapter
 
 API = "https://api.lever.co/v0/postings"
 _WORKPLACE = {"remote": WorkMode.REMOTE, "hybrid": WorkMode.HYBRID, "onsite": WorkMode.ONSITE}
-
-
-def company_from_slug(slug: str) -> str:
-    # Lever's API has no company name; "acme-labs" reads as "Acme Labs".
-    return " ".join(part.capitalize() for part in slug.replace(".", "-").split("-") if part)
 
 
 @register_adapter

@@ -23,3 +23,17 @@ from app.adapters.ats_urls import parse_ats_url
 )
 def test_parse_ats_url(url, expected):
     assert parse_ats_url(url) == expected
+
+
+def test_workday_career_sites_keep_the_site_case():
+    url = "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Pune/E_1"
+    assert parse_ats_url(url) == ("workday", "nvidia/wd5/NVIDIAExternalCareerSite")
+    assert parse_ats_url("https://acme.wd1.myworkdayjobs.com/Careers") == (
+        "workday",
+        "acme/wd1/Careers",
+    )
+    assert parse_ats_url("https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Ext/jobs") == (
+        "workday",
+        "acme/wd1/Ext",
+    )
+    assert parse_ats_url("https://acme.wd1.myworkdayjobs.com/") is None

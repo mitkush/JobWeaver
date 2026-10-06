@@ -98,6 +98,43 @@ async def test_users_see_notices_only_after_a_day_of_degradation(alice, db):
     assert notice["message"] == "Greenhouse (test) jobs are delayed; other sources are up to date."
 
 
+class Standby(Board):
+    name = "greenhouse-standby"
+    label = "Standby (test)"
+    standby_for = "greenhouse-test"
+    disabled_reason = "No stable API"
+
+
+async def test_standby_is_labelled_and_covers_its_main_in_notices(alice, admin, db):
+    registry.register_adapter(Standby)
+    _, user_client = alice
+    _, admin_client = admin
+    now = datetime.now(UTC)
+    db.add_all(
+        [
+            Source(
+                name="greenhouse-test",
+                state=SourceState.DEGRADED,
+                degraded_since=now - timedelta(days=2),
+            ),
+            Source(name="greenhouse-standby", last_success_at=now),
+        ]
+    )
+    await db.commit()
+    status = {s["name"]: s for s in (await admin_client.get("/api/admin/sources")).json()}
+    assert status["greenhouse-standby"]["standby_for"] == "Greenhouse (test)"
+    assert status["greenhouse-standby"]["disabled_reason"] == "No stable API"
+    assert status["greenhouse-test"]["standby_for"] is None
+    # The standby is fetching in its place, so users are not missing jobs.
+    assert (await user_client.get("/api/sources/notices")).json() == []
+    standby = (
+        await db.execute(select(Source).where(Source.name == "greenhouse-standby"))
+    ).scalar_one()
+    standby.state = SourceState.DEGRADED
+    await db.commit()
+    assert len((await user_client.get("/api/sources/notices")).json()) == 1
+
+
 async def test_users_add_company_boards_by_link(alice):
     _, client = alice
     added = await client.post(
@@ -111,7 +148,8 @@ async def test_users_add_company_boards_by_link(alice):
         "company": None,
         "discovered_from": "manual",
         "enabled": True,
-        "fetched": True,
+        # Only a Greenhouse Source is registered in these tests.
+        "fetched": False,
         "last_fetched_at": None,
         "open_postings": 0,
     }
@@ -121,6 +159,15 @@ async def test_users_add_company_boards_by_link(alice):
     assert bad.status_code == 422
     assert "Greenhouse, Lever" in bad.json()["error"]["message"]
     assert len((await client.get("/api/ats-boards")).json()) == 1
+
+
+async def test_boards_wait_while_their_source_is_turned_off(alice, admin):
+    _, client = alice
+    _, admin_client = admin
+    await client.post("/api/ats-boards", json={"url": "https://boards.greenhouse.io/acme"})
+    assert (await client.get("/api/ats-boards")).json()[0]["fetched"] is True
+    await admin_client.patch("/api/admin/sources/greenhouse-test", json={"enabled": False})
+    assert (await client.get("/api/ats-boards")).json()[0]["fetched"] is False
 
 
 async def test_cron_endpoint_needs_its_secret(anon, monkeypatch):

@@ -21,6 +21,8 @@ from app.gateway.schemas import (
     DraftResult,
     EmbedRequest,
     EmbedResult,
+    ExtractAdvertsRequest,
+    ExtractAdvertsResult,
     ExtractSkillsRequest,
     ExtractSkillsResult,
     GatewayResponse,
@@ -81,6 +83,17 @@ class LiveAIGateway(BaseAIGateway):
             prompts.EXTRACT_SKILLS_SYSTEM,
             prompts.extract_skills_user(request),
             ExtractSkillsResult,
+        )
+
+    async def extract_adverts(
+        self, request: ExtractAdvertsRequest
+    ) -> GatewayResponse[ExtractAdvertsResult]:
+        return await self._run(
+            "extract_adverts",
+            None,
+            prompts.EXTRACT_ADVERTS_SYSTEM,
+            prompts.extract_adverts_user(request),
+            ExtractAdvertsResult,
         )
 
     async def embed_texts(self, request: EmbedRequest) -> GatewayResponse[EmbedResult]:

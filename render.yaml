@@ -40,5 +40,13 @@ services:
         sync: false
       - key: RAPIDAPI_KEY
         sync: false
+      - key: APIFY_TOKEN
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
       - key: INTERNAL_CRON_SECRET
         generateValue: true

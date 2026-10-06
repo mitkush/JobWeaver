@@ -1,3 +1,26 @@
 """Import each adapter module here so it registers itself (one line per Source)."""
 
-from app.adapters import greenhouse, jsearch, lever, linkedin_brightdata, remotive  # noqa: F401
+from app.adapters import (  # noqa: F401
+    adzuna,
+    ashby,
+    foundit,
+    greenhouse,
+    hackernews,
+    himalayas,
+    instahyre,
+    jobicy,
+    jsearch,
+    lever,
+    linkedin_apify,
+    linkedin_brightdata,
+    naukri_apify,
+    recruitee,
+    remoteok,
+    remotive,
+    serpapi,
+    smartrecruiters,
+    weworkremotely,
+    workable,
+    workday,
+    workingnomads,
+)

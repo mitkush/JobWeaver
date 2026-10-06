@@ -3,6 +3,7 @@
 import html
 import re
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from app.adapters.base import Location, WorkMode
 
@@ -51,6 +52,16 @@ _BLOCK_TAGS = re.compile(r"</?(p|div|br|li|ul|ol|h[1-6]|tr)[^>]*>", re.IGNORECAS
 _RELATIVE = re.compile(r"(\d+)\s*\+?\s*(minute|hour|day|week|month)s?\s+ago", re.IGNORECASE)
 
 
+def first(record: dict[str, Any], *keys: str) -> Any:
+    """For payloads whose field names are not under our control (actors, site fetches):
+    the first non-empty value among alternative keys."""
+    for key in keys:
+        value = record.get(key)
+        if value not in (None, "", []):
+            return value
+    return None
+
+
 def clean_space(text: str) -> str:
     return " ".join(text.split())
 
@@ -95,6 +106,11 @@ _COUNTRY_NAMES = {
 }  # fmt: skip
 
 
+def company_from_slug(slug: str) -> str:
+    """For ATS APIs without a company name: "acme-labs" reads as "Acme Labs"."""
+    return " ".join(part.capitalize() for part in re.split(r"[-._]", slug) if part)
+
+
 def country_display(code: str) -> str:
     """Country name for search queries; falls back to the code itself."""
     return _COUNTRY_NAMES.get(code.upper(), code.upper())
@@ -111,9 +127,12 @@ def country_code(value: str | None) -> str | None:
     if not value:
         return None
     raw = clean_space(value).strip(" ,.")
+    # Names and common aliases first: "UK" is GB, not a code of its own.
+    if raw.lower() in _COUNTRIES:
+        return _COUNTRIES[raw.lower()]
     if len(raw) == 2 and raw.isalpha():
         return raw.upper()
-    return _COUNTRIES.get(raw.lower())
+    return None
 
 
 def parse_location(text: str | None, default_country: str | None = None) -> Location:
@@ -140,6 +159,24 @@ def parse_location(text: str | None, default_country: str | None = None) -> Loca
     if city and country_code(city):
         country, city = country or country_code(city), None
     return Location(city=city, country=country or default_country, remote=remote)
+
+
+_ANYWHERE = re.compile(r"^(anywhere|worldwide|global|remote|anywhere in the world)$", re.I)
+
+
+def remote_locations(value: object) -> list[Location]:
+    """Remote-board location text ("USA, Canada", ["India"], "Anywhere") as remote
+    Locations: the countries a remote hire may live in, or one with no country."""
+    parts = value if isinstance(value, list) else re.split(r"[,;/|]| or ", str(value or ""))
+    found: list[Location] = []
+    for part in parts:
+        text = clean_space(str(part)).strip(" .()")
+        if not text or _ANYWHERE.match(text):
+            continue
+        code = country_code(text) or parse_location(text).country
+        if code and all(loc.country != code for loc in found):
+            found.append(Location(country=code, remote=True))
+    return found or [Location(remote=True)]
 
 
 def work_mode_from(text: str | None, *, remote_flag: bool | None = None) -> WorkMode | None:

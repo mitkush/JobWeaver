@@ -15,6 +15,8 @@ from app.gateway.schemas import (
     DraftResult,
     EmbedRequest,
     EmbedResult,
+    ExtractAdvertsRequest,
+    ExtractAdvertsResult,
     ExtractSkillsRequest,
     ExtractSkillsResult,
     GatewayResponse,
@@ -56,6 +58,11 @@ class RecordedAIGateway(BaseAIGateway):
         self, request: ExtractSkillsRequest
     ) -> GatewayResponse[ExtractSkillsResult]:
         return self._serve("extract_skills", ExtractSkillsResult)
+
+    async def extract_adverts(
+        self, request: ExtractAdvertsRequest
+    ) -> GatewayResponse[ExtractAdvertsResult]:
+        return self._serve("extract_adverts", ExtractAdvertsResult)
 
     async def embed_texts(self, request: EmbedRequest) -> GatewayResponse[EmbedResult]:
         """Vectors cannot be captured meaningfully as fixtures, so recorded mode builds a

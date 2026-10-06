@@ -21,3 +21,28 @@ def get_adapter_class(name: str) -> type[SourceAdapter]:
 
 def registered_adapters() -> list[type[SourceAdapter]]:
     return sorted(_REGISTRY.values(), key=lambda cls: cls.priority)
+
+
+def standbys_of(name: str) -> list[type[SourceAdapter]]:
+    return [cls for cls in registered_adapters() if cls.standby_for == name]
+
+
+def family_of(cls: type[SourceAdapter]) -> set[str]:
+    """A Source plus its main and standbys: they share query watermarks."""
+    main = cls.standby_for or cls.name
+    return {main, *(c.name for c in standbys_of(main))}
+
+
+def pool_of(cls: type[SourceAdapter]) -> set[str]:
+    """Sources whose spend counts against the same allowance as this one."""
+    if cls.budget_pool is None:
+        return {cls.name}
+    return {c.name for c in registered_adapters() if c.budget_pool == cls.budget_pool}
+
+
+def run_order() -> list[type[SourceAdapter]]:
+    """Main Sources by priority, then standbys: a standby decides from its main's
+    state after that run, not yesterday's."""
+    return sorted(
+        registered_adapters(), key=lambda cls: (cls.standby_for is not None, cls.priority)
+    )
