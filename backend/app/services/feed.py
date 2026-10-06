@@ -15,6 +15,7 @@ from app.adapters.registry import registered_adapters
 from app.core.db import among
 from app.core.errors import NotFoundError
 from app.dedup.scoring import clean_title
+from app.models.draft import Application, Draft
 from app.models.fact import Fact, FactKind
 from app.models.fetch import FetchRun, RunStatus
 from app.models.job import Job, MatchPair, PairStatus, UserJob
@@ -32,7 +33,7 @@ from app.schemas.feed import (
     PostingOut,
     SourceBadge,
 )
-from app.services.skills import UserSkills, skill_gaps, user_skills
+from app.tailoring.skills import UserSkills, skill_gaps, user_skills
 
 LINK_CHUNK = 1000
 
@@ -270,6 +271,40 @@ def _locations(job: Job) -> list[LocationOut]:
     return [LocationOut.model_validate(loc) for loc in job.locations or []]
 
 
+async def package_states(
+    session: AsyncSession,
+    user: User,
+    jobs: list[Job],
+) -> tuple[dict[uuid.UUID, uuid.UUID], dict[uuid.UUID, str], set[uuid.UUID]]:
+    """Package summaries and Company history are always scoped to this User."""
+    if not jobs:
+        return {}, {}, set()
+    job_ids = [job.id for job in jobs]
+    company_ids = {job.company_id for job in jobs}
+    drafts = await session.scalars(
+        select(Draft)
+        .where(Draft.user_id == user.id, Draft.job_id.in_(job_ids))
+        .order_by(Draft.created_at.desc(), Draft.id.desc())
+    )
+    draft_ids: dict[uuid.UUID, uuid.UUID] = {}
+    for draft in drafts:
+        draft_ids.setdefault(draft.job_id, draft.id)
+    applications = await session.execute(
+        select(Application, Job.company_id)
+        .join(Job, Job.id == Application.job_id)
+        .where(Application.user_id == user.id, Job.company_id.in_(company_ids))
+        .order_by(Application.created_at.desc(), Application.id.desc())
+    )
+    states: dict[uuid.UUID, str] = {}
+    applied_companies = set()
+    for application, company_id in applications:
+        states.setdefault(application.job_id, application.status)
+        if application.status == "applied":
+            states[application.job_id] = "applied"
+            applied_companies.add(company_id)
+    return draft_ids, states, applied_companies
+
+
 async def last_updated(session: AsyncSession) -> datetime | None:
     return await session.scalar(
         select(func.max(FetchRun.finished_at)).where(FetchRun.status == RunStatus.SUCCEEDED)
@@ -295,6 +330,9 @@ async def list_feed(
     skills = await load_user_skills(session, user)
     duplicates = await _possible_duplicates(session, [job.id for job, _ in rows])
     labels = _labels()
+    draft_ids, application_states, applied_companies = await package_states(
+        session, user, [job for job, _ in rows]
+    )
     items = [
         FeedCard(
             job_id=job.id,
@@ -311,6 +349,9 @@ async def list_feed(
             else skill_gaps(job.required_skills, skills),
             possible_duplicate=job.id in duplicates,
             hidden=link.hidden_at is not None,
+            draft_id=draft_ids.get(job.id),
+            application_status=application_states.get(job.id),
+            company_applied=job.company_id in applied_companies,
         )
         for job, link in rows
     ]
@@ -374,6 +415,7 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
     if job is None:
         raise NotFoundError("Job not found in your feed")
     labels = _labels()
+    draft_ids, application_states, applied_companies = await package_states(session, user, [job])
     priorities = {cls.name: cls.priority for cls in registered_adapters()}
     postings = await _postings_of(session, job_id)
     postings.sort(key=lambda p: (p.id != job.primary_posting_id, priorities.get(p.source, 99)))
@@ -440,6 +482,9 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         expired=job.expired_at is not None,
         postings=[_posting_out(p, labels, job.primary_posting_id) for p in postings],
         possible_duplicates=duplicates,
+        draft_id=draft_ids.get(job.id),
+        application_status=application_states.get(job.id),
+        company_applied=job.company_id in applied_companies,
     )
 
 

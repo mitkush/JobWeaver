@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from app.gateway.schemas import (
+    DraftResult,
     EmbedRequest,
     EmbedResult,
     ExtractSkillsRequest,
@@ -8,6 +9,8 @@ from app.gateway.schemas import (
     GatewayResponse,
     ParseDocumentsRequest,
     ParseDocumentsResult,
+    ReviseDraftRequest,
+    TailorDraftRequest,
 )
 
 
@@ -16,6 +19,12 @@ class BaseAIGateway(ABC):
 
     # Stored with every vector; vectors from different models are never compared.
     embedding_model: str
+
+    @abstractmethod
+    async def tailor_draft(self, request: TailorDraftRequest) -> GatewayResponse[DraftResult]: ...
+
+    @abstractmethod
+    async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]: ...
 
     @abstractmethod
     async def parse_documents(

@@ -38,6 +38,7 @@ from app.dedup.scoring import (
 )
 from app.gateway.base import BaseAIGateway
 from app.gateway.schemas import EmbedRequest, ExtractSkillsRequest, JobAdvert
+from app.models.draft import Application, Draft
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.posting import Company, Posting
 from app.models.user import User
@@ -217,7 +218,8 @@ async def merge_jobs(
     Returns None when a Rejected Pair stands between them (ADR-0004)."""
     if a_id == b_id:
         return a_id
-    a, b = await session.get(Job, a_id), await session.get(Job, b_id)
+    a = await session.get(Job, a_id, populate_existing=True)
+    b = await session.get(Job, b_id, populate_existing=True)
     if a is None or b is None:
         return None
     if await has_rejection(
@@ -244,6 +246,10 @@ async def merge_jobs(
     if survivor.required_skills is None and gone.required_skills is not None:
         survivor.required_skills = gone.required_skills
         survivor.skills_extracted_at = gone.skills_extracted_at
+    for model in (Draft, Application):
+        await session.execute(
+            update(model).where(model.job_id == gone.id).values(job_id=survivor.id)
+        )
     await session.delete(gone)
     await session.flush()
     await refresh_jobs(session, [survivor.id], priorities)

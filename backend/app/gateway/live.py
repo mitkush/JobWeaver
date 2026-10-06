@@ -18,6 +18,7 @@ from app.gateway.routing import (
     ROUTING_TABLE,
 )
 from app.gateway.schemas import (
+    DraftResult,
     EmbedRequest,
     EmbedResult,
     ExtractSkillsRequest,
@@ -25,6 +26,8 @@ from app.gateway.schemas import (
     GatewayResponse,
     ParseDocumentsRequest,
     ParseDocumentsResult,
+    ReviseDraftRequest,
+    TailorDraftRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,24 @@ class LiveAIGateway(BaseAIGateway):
     def __init__(self, clients: dict[str, ProviderClient], ledger: UsageLedger) -> None:
         self.clients = clients
         self.ledger = ledger
+
+    async def tailor_draft(self, request: TailorDraftRequest) -> GatewayResponse[DraftResult]:
+        return await self._run(
+            "tailor_draft",
+            request.user_id,
+            prompts.TAILOR_DRAFT_SYSTEM,
+            prompts.draft_user(request),
+            DraftResult,
+        )
+
+    async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
+        return await self._run(
+            "revise_draft",
+            request.user_id,
+            prompts.REVISE_DRAFT_SYSTEM,
+            prompts.draft_user(request),
+            DraftResult,
+        )
 
     async def parse_documents(
         self, request: ParseDocumentsRequest
@@ -114,7 +135,7 @@ class LiveAIGateway(BaseAIGateway):
                 result = parse_output(completion.text, result_type)
             except GatewayError as exc:
                 logger.warning(
-                    "AI route %s/%s failed for %s: %s", route.provider, route.model, task, exc
+                    "AI route %s/%s failed for %s: %s", route.provider, route.model, task, exc.code
                 )
                 await self.ledger.record(
                     user_id=user_id,

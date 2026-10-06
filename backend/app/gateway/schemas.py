@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.document import DocumentKind
 from app.models.fact import FactKind
+from app.tailoring.content import DraftContent, FactSnapshot
 
 ResultT = TypeVar("ResultT", bound=BaseModel)
 
@@ -70,3 +71,22 @@ class JobSkills(BaseModel):
 
 class ExtractSkillsResult(BaseModel):
     jobs: list[JobSkills]
+
+
+class TailorDraftRequest(BaseModel):
+    user_id: uuid.UUID
+    job_title: str
+    company: str
+    description: str
+    facts: list[FactSnapshot] = Field(min_length=1, max_length=200)
+    has_email: bool
+
+
+class ReviseDraftRequest(TailorDraftRequest):
+    content: DraftContent
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class DraftResult(BaseModel):
+    content: DraftContent
+    message: str = ""

@@ -8,12 +8,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import adapters  # noqa: F401  (registers Source Adapters)
-from app.api import auth, fact_bank, feed, health, me, preferences, sources
+from app.api import auth, drafts, fact_bank, feed, health, me, preferences, sources
 from app.api.csrf import CSRFMiddleware
 from app.core.config import get_settings
 from app.core.db import dispose_engine
 from app.core.errors import JobWeaverError, NotFoundError
+from app.gateway.factory import build_gateway
 from app.scheduler import start_scheduler, stop_scheduler
+from app.services.drafting import recover_queued, stop_tasks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
@@ -21,10 +23,12 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    await recover_queued(build_gateway())
     if get_settings().scheduler_enabled:
         start_scheduler()
     yield
     stop_scheduler()
+    await stop_tasks()
     await dispose_engine()
 
 
@@ -38,7 +42,7 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
             {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status_code
         )
 
-    for module in (health, auth, me, fact_bank, preferences, sources, feed):
+    for module in (health, auth, me, fact_bank, preferences, sources, feed, drafts):
         app.include_router(module.router)
 
     if frontend_dist is not None and frontend_dist.is_dir():

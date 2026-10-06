@@ -65,6 +65,18 @@ async def gmail_status(session: AsyncSession, user: User) -> tuple[GmailState, d
     return GmailState.CONNECTED, expires_at
 
 
+async def access_token(session: AsyncSession, user: User, google: GoogleOAuthClient) -> str:
+    state, _ = await gmail_status(session, user)
+    if state in (GmailState.NOT_CONNECTED, GmailState.EXPIRED):
+        raise GoogleFlowError("gmail_expired", "Connect Gmail again to continue")
+    credential = await _credential(session, user)
+    try:
+        token = decrypt(credential.refresh_token_encrypted)
+    except JobWeaverError as exc:
+        raise GoogleFlowError("gmail_expired", "Connect Gmail again to continue") from exc
+    return await google.refresh_access_token(token)
+
+
 async def disconnect_gmail(session: AsyncSession, user: User, google: GoogleOAuthClient) -> None:
     credential = await _credential(session, user)
     if credential is None:

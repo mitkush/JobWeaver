@@ -68,3 +68,22 @@ async def test_network_errors_become_readable_sign_in_errors():
 
     with pytest.raises(GoogleFlowError):
         await google_with(lambda r: httpx.Response(200, text="<html>")).fetch_profile("at")
+
+
+async def test_gmail_refresh_uses_refresh_grant():
+    def handler(request):
+        query = parse_qs(request.read().decode())
+        assert query["grant_type"] == ["refresh_token"]
+        assert query["refresh_token"] == ["stored-refresh-token"]
+        return httpx.Response(200, json={"access_token": "fresh-token"})
+
+    assert await google_with(handler).refresh_access_token("stored-refresh-token") == "fresh-token"
+
+
+@pytest.mark.parametrize("response", [httpx.Response(400), httpx.Response(200, json={})])
+async def test_gmail_refresh_failure_requires_reconnection(response):
+    from app.core.errors import GoogleFlowError
+
+    with pytest.raises(GoogleFlowError) as error:
+        await google_with(lambda request: response).refresh_access_token("token")
+    assert error.value.reason == "gmail_expired"
