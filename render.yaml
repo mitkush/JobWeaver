@@ -1,0 +1,44 @@
+# Render Blueprint: one free web service (ADR-0008). The database is Neon's free
+# Postgres, not Render's free Postgres, which is deleted after 30 days (COSTS.md).
+services:
+  - type: web
+    name: jobweaver
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false # Neon connection string, as postgresql+asyncpg://...?ssl=require
+      - key: PUBLIC_URL
+        sync: false # e.g. https://jobweaver.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CREDENTIALS_ENCRYPTION_KEY
+        sync: false # Fernet key; never change it once Gmail tokens are stored
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: GMAIL_TOKEN_LIFETIME_DAYS
+        value: "7"
+      - key: GATEWAY_MODE
+        value: live
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GEMINI_FREE_TIER
+        value: "true"
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: RAPIDAPI_KEY
+        sync: false
+      - key: INTERNAL_CRON_SECRET
+        generateValue: true
