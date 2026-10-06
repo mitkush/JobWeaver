@@ -17,6 +17,7 @@ import { PossibleDuplicateCard } from "@/features/feed/PossibleDuplicateCard";
 import { PostingRow } from "@/features/feed/PostingRow";
 import { SkillGaps } from "@/features/feed/SkillGaps";
 import { fromNow } from "@/lib/time";
+import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
 
 function BackToFeed() {
   return (
@@ -116,6 +117,7 @@ export function JobPage() {
   return (
     <>
       <BackToFeed />
+      {data.company_applied && <Alert tone="warning" className="mb-4">Already applied to this Company. You can still create a Draft for this Job.</Alert>}
       {data.expired && (
         <Alert tone="warning" className="mb-4">
           This job is no longer listed by any source.
@@ -134,6 +136,7 @@ export function JobPage() {
               <Badge key={place}>{place}</Badge>
             ))}
             {mode && <Badge>{mode}</Badge>}
+            {data.application_status && <Badge>{data.application_status === "applied" ? "Applied" : "Drafted"}</Badge>}
             {data.posted_at && <span>Posted {fromNow(data.posted_at)}</span>}
           </div>
           {data.contact_email && (
@@ -144,11 +147,12 @@ export function JobPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
           <Button variant="ghost" onClick={toggleHidden} loading={setHidden.isPending}>
             {data.hidden ? "Show in feed" : "Hide"}
           </Button>
           {advertUrl && (
-            <a href={advertUrl} target="_blank" rel="noreferrer noopener" className={buttonClasses("primary")}>
+            <a href={advertUrl} target="_blank" rel="noreferrer noopener" className={buttonClasses("secondary")}>
               Open job advert
               <ExternalLink className="size-4" aria-hidden />
             </a>

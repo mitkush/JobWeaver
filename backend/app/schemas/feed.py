@@ -49,6 +49,9 @@ class FeedCard(BaseModel):
     skill_gaps: list[str] | None
     possible_duplicate: bool
     hidden: bool
+    draft_id: uuid.UUID | None = None
+    application_status: str | None = None
+    company_applied: bool = False
 
 
 class FeedCounts(BaseModel):
@@ -109,6 +112,9 @@ class JobDetailOut(BaseModel):
     expired: bool
     postings: list[PostingOut]
     possible_duplicates: list[PossibleDuplicateOut]
+    draft_id: uuid.UUID | None = None
+    application_status: str | None = None
+    company_applied: bool = False
 
 
 class JobRef(BaseModel):

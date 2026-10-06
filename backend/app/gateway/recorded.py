@@ -12,6 +12,7 @@ from app.gateway.base import BaseAIGateway
 from app.gateway.parsing import parse_output
 from app.gateway.routing import EMBEDDING_DIMENSIONS
 from app.gateway.schemas import (
+    DraftResult,
     EmbedRequest,
     EmbedResult,
     ExtractSkillsRequest,
@@ -19,6 +20,8 @@ from app.gateway.schemas import (
     GatewayResponse,
     ParseDocumentsRequest,
     ParseDocumentsResult,
+    ReviseDraftRequest,
+    TailorDraftRequest,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -37,6 +40,12 @@ class RecordedAIGateway(BaseAIGateway):
     def __init__(self, fixture_dir: Path, variant: Variant = "success") -> None:
         self.fixture_dir = fixture_dir
         self.variant = variant
+
+    async def tailor_draft(self, request: TailorDraftRequest) -> GatewayResponse[DraftResult]:
+        return self._serve("tailor_draft", DraftResult)
+
+    async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
+        return self._serve("revise_draft", DraftResult)
 
     async def parse_documents(
         self, request: ParseDocumentsRequest

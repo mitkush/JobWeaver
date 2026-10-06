@@ -33,6 +33,16 @@ DAILY_QUOTAS: dict[tuple[str, str], int] = {
 }
 
 ROUTING_TABLE: dict[str, list[Route]] = {
+    "tailor_draft": [
+        Route("gemini", GEMINI_FLASH),
+        Route("groq", GROQ_LARGE),
+        Route("openrouter", OPENROUTER_FREE),
+    ],
+    "revise_draft": [
+        Route("gemini", GEMINI_FLASH),
+        Route("groq", GROQ_LARGE),
+        Route("openrouter", OPENROUTER_FREE),
+    ],
     # Once per upload and quality matters, so the strongest model goes first.
     "parse_documents": [
         Route("gemini", GEMINI_FLASH),

@@ -605,10 +605,203 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create */
+        post: operations["create_api_drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_drafts__draft_id__get"];
+        /** Save */
+        put: operations["save_api_drafts__draft_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry */
+        post: operations["retry_api_drafts__draft_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Chat */
+        post: operations["chat_api_drafts__draft_id__chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Versions */
+        get: operations["versions_api_drafts__draft_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore */
+        post: operations["restore_api_drafts__draft_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diff */
+        get: operations["diff_api_drafts__draft_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pdf */
+        get: operations["pdf_api_drafts__draft_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/email-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Email Check */
+        get: operations["email_check_api_drafts__draft_id__email_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Handoff */
+        post: operations["handoff_api_drafts__draft_id__handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Applied */
+        post: operations["applied_api_drafts__draft_id__applied_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AppliedIn */
+        AppliedIn: {
+            /** Expected Version */
+            expected_version: number;
+        };
         /** AtsBoardIn */
         AtsBoardIn: {
             /** Url */
@@ -692,6 +885,20 @@ export interface components {
              */
             name?: string;
         };
+        /** DiffLine */
+        DiffLine: {
+            /** Text */
+            text: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "unchanged" | "rewritten" | "added_from_portfolio" | "reordered" | "removed";
+            /** Fact Refs */
+            fact_refs: string[];
+            /** Before */
+            before?: string[];
+        };
         /**
          * DocumentKind
          * @enum {string}
@@ -709,6 +916,107 @@ export interface components {
             filename: string;
             /** Size Bytes */
             size_bytes: number;
+        };
+        /** DraftChat */
+        DraftChat: {
+            /** Expected Version */
+            expected_version: number;
+            /** Message */
+            message: string;
+            /**
+             * Overwrite Manual
+             * @default false
+             */
+            overwrite_manual?: boolean;
+        };
+        /** DraftContent */
+        DraftContent: {
+            /** Resume */
+            resume: components["schemas"]["DraftLine"][];
+            /** Cover Letter */
+            cover_letter: components["schemas"]["DraftLine"][];
+            /**
+             * Email Subject
+             * @default
+             */
+            email_subject?: string;
+            /** Email Body */
+            email_body?: components["schemas"]["DraftLine"][];
+        };
+        /** DraftCreate */
+        DraftCreate: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** DraftLine */
+        DraftLine: {
+            /** Id */
+            id?: string;
+            /** Text */
+            text: string;
+            /** Fact Refs */
+            fact_refs: string[];
+            /**
+             * Section
+             * @default Experience
+             * @enum {string}
+             */
+            section?: "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional";
+            /**
+             * Manual
+             * @default false
+             */
+            manual?: boolean;
+        };
+        /** DraftOut */
+        DraftOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** State */
+            state: string;
+            /** Progress */
+            progress: string;
+            /** Error */
+            error: string | null;
+            /** Current Version */
+            current_version: number;
+            /** Job */
+            job: {
+                [key: string]: unknown;
+            };
+            /** Base Resume */
+            base_resume: string;
+            version: components["schemas"]["VersionOut"] | null;
+            /** Application Status */
+            application_status: string | null;
+            /** Attachment Name */
+            attachment_name: string;
+        };
+        /** DraftSave */
+        DraftSave: {
+            /** Expected Version */
+            expected_version: number;
+            content: components["schemas"]["DraftContent"];
+        };
+        /** EmailCheck */
+        EmailCheck: {
+            /** Recipient */
+            recipient: string;
+            /** Valid */
+            valid: boolean;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * FactBankChanges
@@ -781,6 +1089,24 @@ export interface components {
             /** Edited */
             edited: boolean;
         };
+        /** FactSnapshot */
+        FactSnapshot: {
+            /** Ref */
+            ref: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Group */
+            group: string;
+            /** Text */
+            text: string;
+            /** In Base Resume */
+            in_base_resume: boolean;
+        };
         /** FactUpdate */
         FactUpdate: {
             kind?: components["schemas"]["FactKind"] | null;
@@ -820,6 +1146,15 @@ export interface components {
             possible_duplicate: boolean;
             /** Hidden */
             hidden: boolean;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Application Status */
+            application_status?: string | null;
+            /**
+             * Company Applied
+             * @default false
+             */
+            company_applied?: boolean;
         };
         /** FeedCounts */
         FeedCounts: {
@@ -890,6 +1225,45 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HandoffIn */
+        HandoffIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Template
+             * @default standard
+             * @enum {string}
+             */
+            template?: "standard" | "compact";
+            /** Recipient */
+            recipient: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm?: boolean;
+            /**
+             * Confirm Email Warning
+             * @default false
+             */
+            confirm_email_warning?: boolean;
+        };
+        /** HandoffOut */
+        HandoffOut: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "gmail" | "fallback" | "reconnect";
+            /** Url */
+            url: string;
+            /** Attachment Name */
+            attachment_name: string;
+            /** Message */
+            message: string;
+            /** Application Id */
+            application_id?: string | null;
+        };
         /** JobDetailOut */
         JobDetailOut: {
             /**
@@ -927,6 +1301,15 @@ export interface components {
             postings: components["schemas"]["PostingOut"][];
             /** Possible Duplicates */
             possible_duplicates: components["schemas"]["PossibleDuplicateOut"][];
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Application Status */
+            application_status?: string | null;
+            /**
+             * Company Applied
+             * @default false
+             */
+            company_applied?: boolean;
         };
         /**
          * JobRef
@@ -1085,6 +1468,13 @@ export interface components {
             /** Spent */
             spent: number;
         };
+        /** RestoreVersion */
+        RestoreVersion: {
+            /** Expected Version */
+            expected_version: number;
+            /** Number */
+            number: number;
+        };
         /**
          * Role
          * @enum {string}
@@ -1195,6 +1585,25 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VersionOut */
+        VersionOut: {
+            /** Number */
+            number: number;
+            /** Source */
+            source: string;
+            content: components["schemas"]["DraftContent"];
+            /** Facts */
+            facts: components["schemas"]["FactSnapshot"][];
+            /** Warnings */
+            warnings: string[];
+            /** Message */
+            message: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * WorkMode
@@ -2511,6 +2920,430 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JobRef"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_api_drafts__draft_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_api_drafts__draft_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_api_drafts__draft_id__chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftChat"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    versions_api_drafts__draft_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_api_drafts__draft_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreVersion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_api_drafts__draft_id__diff_get: {
+        parameters: {
+            query?: {
+                number?: number | null;
+            };
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffLine"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pdf_api_drafts__draft_id__pdf_get: {
+        parameters: {
+            query?: {
+                kind?: "resume" | "cover_letter";
+                template?: "standard" | "compact";
+                number?: number | null;
+            };
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    email_check_api_drafts__draft_id__email_check_get: {
+        parameters: {
+            query: {
+                recipient: string;
+            };
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCheck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handoff_api_drafts__draft_id__handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    applied_api_drafts__draft_id__applied_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppliedIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

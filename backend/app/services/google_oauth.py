@@ -104,6 +104,25 @@ class GoogleOAuthClient:
         with contextlib.suppress(httpx.HTTPError):
             await self.http.post(REVOKE_URL, data={"token": token})
 
+    async def refresh_access_token(self, refresh_token: str) -> str:
+        settings = get_settings()
+        response = await self._call(
+            "post",
+            TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+            },
+        )
+        if response.status_code >= 400:
+            raise GoogleFlowError("gmail_expired", "Connect Gmail again to continue")
+        token = _json(response).get("access_token")
+        if not isinstance(token, str) or not token:
+            raise GoogleFlowError("gmail_expired", "Connect Gmail again to continue")
+        return token
+
 
 def _json(response: httpx.Response) -> dict[str, Any]:
     try:
