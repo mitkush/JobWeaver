@@ -12,13 +12,13 @@
 | # | Source | Access | Free allowance (checked 5 Oct 2026) | When it runs out |
 |---|---|---|---|---|
 | 1 | LinkedIn | Bright Data "Discover jobs by keyword" | **5,000 credits/month, 1 credit = 1 record** (founder's account). Up to 1,000 Postings per keyword call. Time ranges seen in use: "Past 24 hours", "Past week", "Past month" | Full scope, no caps; projection warns first (ADR-0009). At zero: Degraded until renewal; month 1 is founder-only |
-| 1b | LinkedIn (Apify), Standby for row 1 | Apify actor `curious_coder~linkedin-jobs-scraper` *(unconfirmed: actor choice and fields)* | **$5 of platform usage per month**, permanent, no card; shared with Naukri. Runs only while row 1 is Degraded or off (proposed ADR-0016). Each run is capped at what is left of the $5 | Degraded until renewal |
+| 1b | LinkedIn (Apify), Standby for row 1 | Apify actor `curious_coder~linkedin-jobs-scraper` *(unconfirmed: actor choice and fields)* | **$5 of platform usage per month**, permanent, no card; shared with Naukri. Runs only while row 1 is Degraded or off (ADR-0016). Each run is capped at what is left of the $5 | Degraded until renewal |
 | 2 | Naukri | Apify actor `muhammetakkurtt~naukri-job-scraper` *(unconfirmed: actor choice and fields)* | Shares the same $5/month Apify credit; India searches only | Degraded until renewal |
 | 3 | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee | Public job-board APIs, per company (snapshot mode) | Free, no key; keep request rates polite *(per-ATS limits unconfirmed)* | Per-board retry next run |
 | 3b | Workday | JSON behind career pages (`/wday/cxs/...`), not a published API; 20 jobs per page, about 2,000 listed per company | Free | **Off by default** (Admin turns it on). Past the listing cap nothing is closed from a partial list |
 | 4 | Instahyre, Cutshort, Hirist | Instahyre: JSON behind its search *(unconfirmed)*. Cutshort, Hirist: **not built**, no usable endpoint known | Free | Instahyre **off by default** (no dates or full descriptions). Cutshort and Hirist disabled for that reason |
 | 5 | JSearch | RapidAPI (OpenWeb Ninja) | **200 requests/month**, 1,000/hour, no card | Degraded until renewal |
-| 6 | SerpApi Google Jobs, Standby for row 5 | SerpApi | **250 searches/month**, 50/hour (older sources say 100; confirm in dashboard). 1 search per results page of up to 10 jobs; runs only while JSearch is Degraded or off (proposed ADR-0016) | Degraded until renewal |
+| 6 | SerpApi Google Jobs, Standby for row 5 | SerpApi | **250 searches/month**, 50/hour (older sources say 100; confirm in dashboard). 1 search per results page of up to 10 jobs; runs only while JSearch is Degraded or off (ADR-0016) | Degraded until renewal |
 | 7 | Adzuna | Adzuna API key | **25/minute, 250/day, 1,000/week, 2,500/month** | Degraded, retry next run |
 | 8 | Remotive, Remote OK, We Work Remotely, Himalayas, Jobicy, Working Nomads | Public APIs / RSS | Free *(terms and attribution rules unconfirmed per board)* | Degraded, retry next run |
 | 9 | Hacker News "Who is hiring" | Public HN API + AI extraction | Free; costs AI calls (see 2) | Extraction queued until AI quota returns |

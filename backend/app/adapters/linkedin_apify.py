@@ -1,4 +1,4 @@
-"""LinkedIn via an Apify actor: standby for Bright Data (proposed ADR-0016).
+"""LinkedIn via an Apify actor: standby for Bright Data (ADR-0016).
 
 Runs only while LinkedIn (Bright Data) is Degraded or disabled, continuing from the same
 query watermarks, and shares the Apify allowance with Naukri. Like Bright Data it fetches

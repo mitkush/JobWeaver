@@ -42,7 +42,7 @@ The current health of each Source: **Healthy**, **Degraded** (last run failed or
 
 ## Standby
 
-A second provider for the same jobs as a Source (LinkedIn through Apify for LinkedIn through Bright Data; SerpApi for JSearch). It runs only while that Source is Degraded or Disabled, and it shares the Source's search windows so nothing is paid for twice (proposed ADR-0016).
+A second provider for the same jobs as a Source (LinkedIn through Apify for LinkedIn through Bright Data; SerpApi for JSearch). It runs only while that Source is Degraded or Disabled, and it shares the Source's search windows so nothing is paid for twice (ADR-0016).
 
 ## Credit Budget
 

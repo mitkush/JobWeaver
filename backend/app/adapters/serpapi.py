@@ -1,4 +1,4 @@
-"""SerpApi Google Jobs: standby for JSearch (proposed ADR-0016, COSTS.md: 250/month).
+"""SerpApi Google Jobs: standby for JSearch (ADR-0016, COSTS.md: 250/month).
 
 Both read Google for Jobs, so SerpApi runs only while JSearch is Degraded or disabled and
 continues from JSearch's query watermarks. Each results page is one paid search."""

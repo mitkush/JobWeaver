@@ -1,6 +1,6 @@
 # A standby provider may stand in for a Source that reads the same jobs
 
-**Status: Proposed** (amends ADR-0003; needs the founder's acceptance).
+**Status: Accepted** (6 Oct 2026; amends ADR-0003).
 
 ADR-0003 rejected "substituting a backup Source for a failed one", because Sources are not interchangeable: jobs only on LinkedIn are simply missed while it is down. That reason holds between different job sites. It does not hold between two providers that read the **same** site. LinkedIn through Apify returns the same LinkedIn jobs as LinkedIn through Bright Data. SerpApi and JSearch both read Google for Jobs. A Source may therefore declare a **Standby** for another Source (`standby_for`). The Standby runs only while its main Source is Degraded or turned off. It continues from the main Source's query watermarks, and the main Source continues from the Standby's, so a search is never paid for twice. Standbys run after all main Sources in a Fetch Run, so they decide from that run's state. An Admin can still run a Standby by hand. Users see no "jobs are delayed" notice for a main Source while its Standby is enabled and healthy. Every other part of ADR-0003 is unchanged: each Source is still one module, failures stay isolated, and different job sites never stand in for each other.
 
