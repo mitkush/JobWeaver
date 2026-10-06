@@ -39,6 +39,13 @@ BLR = {"city": "Bengaluru", "country": "IN"}
         ([{"city": None, "country": None, "remote": True}], "remote", [BLR], ["remote"], True),
         ([{"city": None, "country": "US", "remote": True}], "remote", [BLR], ["remote"], False),
         ([], None, [BLR], ["onsite"], True),
+        ([{"city": "Berlin", "country": "DE"}], "onsite", [], ["onsite"], True),
+        ([BLR], "onsite", [], ["onsite"], True),
+        ([{"city": "Pune", "country": "IN", "remote": True}], "remote", [BLR], ["remote"], False),
+        (
+            [{"city": "Pune", "country": "IN", "remote": True}],
+            "remote", [{"country": "IN", "city": None}], ["remote"], True,
+        ),
     ],
 )
 def test_location_matches(locations, work_mode, wanted, modes, ok):
@@ -57,3 +64,10 @@ def test_work_mode_must_be_wanted_when_known():
         None,
         Preference(titles=["Backend Engineer"], locations=[BLR], work_modes=["onsite"]),
     )
+
+
+def test_global_location_does_not_override_work_mode():
+    pref = Preference(titles=["Backend Engineer"], locations=[], work_modes=["remote"])
+    place = [{"city": "Berlin", "country": "DE"}]
+    assert job_matches("Backend Engineer", place, "remote", pref)
+    assert not job_matches("Backend Engineer", place, "onsite", pref)

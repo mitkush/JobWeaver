@@ -17,8 +17,7 @@ export function JobCard({ job }: { job: FeedCard }) {
   const setHidden = useSetHidden();
   const toast = useToast();
   const mode = workModeLabel(job.work_mode);
-  // "Remote" as a place and as the work mode would say the same thing twice.
-  const places = [...new Set(job.locations.map(formatLocation))].filter((place) => !(mode === "Remote" && place === "Remote"));
+  const places = [...new Set(job.locations.map(formatLocation))];
 
   async function toggleHidden() {
     try {

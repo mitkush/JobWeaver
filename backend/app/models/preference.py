@@ -15,6 +15,6 @@ class Preference(Base):
     user_id: Mapped[uuid.UUID] = user_fk()
     titles: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
     keywords: Mapped[list[str]] = mapped_column(ARRAY(String(100)), default=list)
-    # [{"city": "Bengaluru" | null, "country": "IN"}]; city null means the whole country.
+    # City null means the whole country; an empty list means global job locations.
     locations: Mapped[list[dict[str, str | None]]] = mapped_column(JSONB, default=list)
     work_modes: Mapped[list[str]] = mapped_column(ARRAY(String(16)), default=list)

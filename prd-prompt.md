@@ -42,6 +42,7 @@ An AI job-hunt assistant that fetches jobs from many sources, removes and groups
   - Contact email
   - **Documents:** resume, cover letter / detailed portfolio, short summary
   - **Preferences (multi-select):** locations - India (cities) / non-India (countries/cities); work mode - onsite / hybrid / remote; target job titles / keywords
+    - Clarification: location choices are India, other country with optional city, or Global (no country selection, including India). Location is optional. Remote means WFH, hybrid means some days in office, and onsite means office; work mode and the posting's listed location are separate filters.
 - Gmail connection status + re-login reminder (see 5.4).
 
 ### 5.2 Job fetching

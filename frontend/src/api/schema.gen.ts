@@ -1063,7 +1063,7 @@ export interface components {
             /** Keywords */
             keywords?: string[];
             /** Locations */
-            locations: components["schemas"]["PreferenceLocation"][];
+            locations?: components["schemas"]["PreferenceLocation"][];
             /** Work Modes */
             work_modes: components["schemas"]["WorkMode"][];
         };
@@ -1074,7 +1074,7 @@ export interface components {
             /** Keywords */
             keywords?: string[];
             /** Locations */
-            locations: components["schemas"]["PreferenceLocation"][];
+            locations?: components["schemas"]["PreferenceLocation"][];
             /** Work Modes */
             work_modes: components["schemas"]["WorkMode"][];
         };

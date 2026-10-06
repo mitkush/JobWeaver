@@ -71,7 +71,7 @@ export function JobPage() {
   const primary = data.postings.find((p) => p.primary) ?? data.postings[0];
   // The Job's link is merged from every Posting, so it exists even if the primary has none.
   const advertUrl = primary?.apply_url ?? data.apply_url;
-  const places = [...new Set(data.locations.map(formatLocation))].filter((place) => !(mode === "Remote" && place === "Remote"));
+  const places = [...new Set(data.locations.map(formatLocation))];
 
   async function decide(pairId: string, action: "confirm" | "reject") {
     setBusyPair({ id: pairId, action });

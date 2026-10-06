@@ -82,6 +82,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC4: A User can export and delete their Fact Bank and documents.
 
 **FR-A3 [V1] - Preferences.** Multi-select target titles and keywords, locations (India cities; other countries and cities) and work modes (onsite, hybrid, remote). Editable at any time.
+- Location choices are India, other country (with optional city), or Global (no country/city restriction, including India). Job locations are optional: an empty list means Global. Work mode is separate: remote means WFH, hybrid means some days in the office, and onsite means office. A posting can list India and be remote; remote does not replace its listed location or bypass a selected city/country.
 - AC1: Changing Preferences updates the Feed from Jobs already fetched within one minute, without waiting for the next Fetch Run.
 - AC2: New titles or locations are included in the next Fetch Run's queries; a Backfill runs for them.
 

@@ -98,7 +98,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         payload = [
             {
                 "keyword": query.keywords,
-                "location": location or ("Worldwide" if loc and loc.remote else ""),
+                "location": location or "Worldwide",
                 "country": (loc.country or "") if loc else "",
                 "time_range": time_range_for(window),
                 "job_type": "",

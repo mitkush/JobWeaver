@@ -138,8 +138,19 @@ def test_queries_are_shared_across_users_and_include_remote():
     keys = [q.key for q in queries_from_preferences([a, b])]
     assert keys == [
         "backend engineer@Bengaluru|IN|False",
-        "backend engineer@|IN|True",
+        "backend engineer@Bengaluru|IN|True",
     ]
+
+
+def test_global_preferences_generate_queries_without_location_filters():
+    pref = Preference(titles=["Backend Engineer"], locations=[], work_modes=["onsite", "remote"])
+    queries = queries_from_preferences([pref])
+    assert len(queries) == 2
+    assert {q.location.remote for q in queries} == {False, True}
+    assert all(q.location.country is None and q.location.city is None for q in queries)
+    pref.work_modes = ["remote"]
+    assert len(queries_from_preferences([pref])) == 1
+    assert queries_from_preferences([pref])[0].location.remote is True
 
 
 def test_billing_period():
