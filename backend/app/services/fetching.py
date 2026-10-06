@@ -85,14 +85,16 @@ def queries_from_preferences(preferences: list[Preference]) -> list[SourceQuery]
         modes = set(pref.work_modes)
         remote_only = modes == {WorkMode.REMOTE.value}
         for title in pref.titles:
-            for loc in pref.locations:
+            # Global preferences still produce searches, without a country/city filter.
+            for loc in pref.locations or [{"city": None, "country": None}]:
                 country = loc.get("country")
                 location = Location(city=loc.get("city"), country=country, remote=remote_only)
                 query = SourceQuery(keywords=title, location=location)
                 queries.setdefault(query.key, query)
                 if WorkMode.REMOTE.value in modes and not remote_only:
                     remote = SourceQuery(
-                        keywords=title, location=Location(country=country, remote=True)
+                        keywords=title,
+                        location=Location(city=loc.get("city"), country=country, remote=True),
                     )
                     queries.setdefault(remote.key, remote)
     return sorted(queries.values(), key=lambda q: q.key)
