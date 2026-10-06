@@ -61,7 +61,7 @@ async def update_source(
 @router.post("/admin/sources/{name}/run")
 async def run_source(_: AdminUser, name: str, fetcher: FetcherDep) -> RunOutcomeOut:
     try:
-        outcome = await fetcher.manual_run(name)
+        outcome = await fetcher.start_manual_run(name)
     except KeyError as exc:
         raise NotFoundError("Unknown source") from exc
     return RunOutcomeOut(**outcome.__dict__)

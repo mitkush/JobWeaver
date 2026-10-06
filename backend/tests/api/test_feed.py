@@ -13,7 +13,7 @@ from app.core.db import get_sessionmaker
 from app.gateway.recorded import RecordedAIGateway
 from app.main import app
 from app.models import FetchRun, Job, MatchPair, PairStatus, Posting, RejectedPair, RunStatus
-from app.services.correspondence import Correspondence
+from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
 BACKEND_BLR = {
@@ -310,3 +310,41 @@ async def test_confirm_is_refused_when_a_split_stands_between_the_jobs(alice, db
     assert response.status_code == 409
     db.expire_all()
     assert (await db.get(MatchPair, duplicate["pair_id"])).status == PairStatus.OPEN
+
+
+async def test_split_clears_possible_duplicates_between_former_group_mates(alice, db):
+    _, client = alice
+    job_id, duplicate = await medium_pair(client)
+    # The pair's Postings end up in one Job some other way (e.g. a High match via a third
+    # Posting), leaving the Medium pair open.
+    pair = await db.get(MatchPair, duplicate["pair_id"])
+    pair_id, split_posting_id = pair.id, pair.posting_b_id
+    jobs_of = select(Posting.job_id).where(Posting.id.in_([pair.posting_a_id, pair.posting_b_id]))
+    first, second = (await db.execute(jobs_of)).scalars().all()
+    await merge_jobs(db, first, second, source_priorities())
+    await db.commit()
+    merged = (await client.get("/api/feed", params={"section": "link"})).json()["items"][0][
+        "job_id"
+    ]
+
+    response = await client.post(f"/api/jobs/{merged}/postings/{split_posting_id}/split")
+    assert response.status_code == 200
+    db.expire_all()
+    assert (await db.get(MatchPair, pair_id)).status == PairStatus.REJECTED
+    feed = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert feed["total"] == 2
+    assert not any(card["possible_duplicate"] for card in feed["items"])
+    again = await client.post(f"/api/possible-duplicates/{pair_id}/reject")
+    assert again.status_code == 409
+
+
+async def test_not_the_same_job_tolerates_an_existing_rejected_pair(alice, db):
+    _, client = alice
+    _, duplicate = await medium_pair(client)
+    pair = await db.get(MatchPair, duplicate["pair_id"])
+    db.add(
+        RejectedPair(posting_a_id=pair.posting_a_id, posting_b_id=pair.posting_b_id, reason="split")
+    )
+    await db.commit()
+    response = await client.post(f"/api/possible-duplicates/{pair.id}/reject")
+    assert response.status_code == 204

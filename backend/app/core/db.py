@@ -1,5 +1,8 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
+from typing import Any
 
+from sqlalchemy import ColumnElement, Uuid, any_, literal
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -38,3 +41,11 @@ async def dispose_engine() -> None:
         await _engine.dispose()
     _engine = None
     _sessionmaker = None
+
+
+def among(
+    column: ColumnElement[Any], ids: Iterable[Any], item_type: Any = None
+) -> ColumnElement[bool]:
+    """`column = ANY(:ids)`: one bound parameter however many ids. A plain IN list uses a
+    parameter per id, and asyncpg allows at most 32,767 per statement."""
+    return column == any_(literal(list(ids), ARRAY(item_type or Uuid())))

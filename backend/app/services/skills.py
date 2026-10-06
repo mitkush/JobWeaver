@@ -51,7 +51,8 @@ _SPLIT = re.compile(r"[,;|/]\s*|\s+and\s+")
 
 
 def canonical_skill(name: str) -> str:
-    key = " ".join(name.lower().strip(" .,;:").split())
+    # Only trailing dots go: the leading one is part of ".NET".
+    key = " ".join(name.lower().split()).strip(" ,;:").rstrip(".")
     return _CANONICAL.get(key, key)
 
 

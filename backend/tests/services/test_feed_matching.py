@@ -14,6 +14,12 @@ from app.services.feed import job_matches, location_matches, title_matches
         ("Data Engineer", ["Backend Engineer"], False),
         ("Backend Engineer", ["Senior Backend Engineer"], False),
         ("Product Manager", ["Backend Engineer", "Product Manager"], True),
+        ("Dev-Ops Engineer", ["DevOps Engineer"], True),
+        ("DevOps Engineer", ["Dev Ops Engineer"], True),
+        ("Python Dev", ["Python Developer"], True),
+        ("ML Engineer", ["Machine Learning Engineer"], True),
+        ("Full-Stack Developer", ["Fullstack Engineer"], True),
+        ("DevOps Engineer", ["Backend Engineer"], False),
     ],
 )
 def test_title_matches(job, wanted, ok):

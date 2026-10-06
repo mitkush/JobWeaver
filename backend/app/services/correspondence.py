@@ -15,10 +15,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.registry import registered_adapters
 from app.core.config import Settings, get_settings
+from app.core.db import among
 from app.core.errors import (
     ConflictError,
     GatewayError,
@@ -131,7 +133,7 @@ async def refresh_jobs(
         names = dict(
             (
                 await session.execute(
-                    select(Company.id, Company.name).where(Company.id.in_(company_ids))
+                    select(Company.id, Company.name).where(among(Company.id, company_ids))
                 )
             ).all()
         )
@@ -444,7 +446,7 @@ class Correspondence:
             rows = (
                 await session.execute(
                     select(Posting.id, Posting.title, Posting.description).where(
-                        Posting.id.in_(needed),
+                        among(Posting.id, needed),
                         or_(Posting.embedding_model.is_(None), Posting.embedding_model != model),
                     )
                 )
@@ -532,12 +534,12 @@ class Correspondence:
             resolved = {c.owner for c in candidates.values()} - waiting
             if resolved:
                 await session.execute(
-                    update(Posting).where(Posting.id.in_(resolved)).values(match_state=DONE)
+                    update(Posting).where(among(Posting.id, resolved)).values(match_state=DONE)
                 )
             if waiting:
                 await session.execute(
                     update(Posting)
-                    .where(Posting.id.in_(waiting))
+                    .where(among(Posting.id, waiting))
                     .values(match_state=AWAITING_EMBEDDING)
                 )
             report.awaiting_embedding = len(waiting)
@@ -682,21 +684,34 @@ async def confirm_pair(session: AsyncSession, user: User, pair_id: uuid.UUID) ->
     return merged
 
 
+async def add_rejected_pair(
+    session: AsyncSession,
+    a: uuid.UUID,
+    b: uuid.UUID,
+    *,
+    reason: str,
+    user_id: uuid.UUID | None,
+) -> None:
+    """Stores a Rejected Pair once; a pair that is already rejected stays as it is."""
+    first, second = pair_key(a, b)
+    await session.execute(
+        insert(RejectedPair)
+        .values(
+            id=uuid.uuid4(), posting_a_id=first, posting_b_id=second, reason=reason, user_id=user_id
+        )
+        .on_conflict_do_nothing(index_elements=["posting_a_id", "posting_b_id"])
+    )
+
+
 async def reject_pair(session: AsyncSession, user: User, pair_id: uuid.UUID) -> None:
     """Not the same Job: stored as a Rejected Pair, never proposed again (FR-C3 AC2)."""
     await lock_grouping(session)
     pair = await _open_pair_for(session, user, pair_id)
     pair.status = PairStatus.REJECTED
     pair.decided_by_user_id, pair.decided_at = user.id, datetime.now(UTC)
-    session.add(
-        RejectedPair(
-            posting_a_id=pair.posting_a_id,
-            posting_b_id=pair.posting_b_id,
-            reason="not_same",
-            user_id=user.id,
-        )
+    await add_rejected_pair(
+        session, pair.posting_a_id, pair.posting_b_id, reason="not_same", user_id=user.id
     )
-    await session.flush()
 
 
 async def split_posting(
@@ -712,17 +727,21 @@ async def split_posting(
         raise NotFoundError("That posting is not part of this job")
     if not others:
         raise ValidationFailedError("This job has only one posting; there is nothing to split")
+    now = datetime.now(UTC)
     for other in others:
         a, b = pair_key(posting_id, other)
-        exists_already = await session.scalar(
-            select(RejectedPair.id).where(
-                RejectedPair.posting_a_id == a, RejectedPair.posting_b_id == b
+        await add_rejected_pair(session, a, b, reason="split", user_id=user.id)
+        # A Possible Duplicate left open between former group-mates is decided too, or
+        # it would stay on both cards with no way to clear it.
+        await session.execute(
+            update(MatchPair)
+            .where(
+                MatchPair.posting_a_id == a,
+                MatchPair.posting_b_id == b,
+                MatchPair.status == PairStatus.OPEN,
             )
+            .values(status=PairStatus.REJECTED, decided_by_user_id=user.id, decided_at=now)
         )
-        if exists_already is None:
-            session.add(
-                RejectedPair(posting_a_id=a, posting_b_id=b, reason="split", user_id=user.id)
-            )
     posting = await session.get(Posting, posting_id)
     assert posting is not None
     new_job = Job(id=uuid.uuid4(), company_id=posting.company_id)

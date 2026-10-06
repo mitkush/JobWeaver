@@ -1,14 +1,15 @@
 """Fetch orchestration (FR-B3 to FR-B11). Every Source runs in isolation (ADR-0003):
 a failure marks that Source Degraded and the run moves on to the next one."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import String, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.ats_urls import parse_ats_url
@@ -35,6 +36,7 @@ from app.adapters.errors import (
 from app.adapters.normalize import normalize_company
 from app.adapters.registry import get_adapter_class, registered_adapters
 from app.core.config import Settings, get_settings
+from app.core.db import among
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
@@ -49,6 +51,9 @@ BOARD_STALE_AFTER = timedelta(days=30)
 BOARD_WEEKLY = timedelta(days=7)
 MANUAL_RUNS_PER_DAY = 4
 MANUAL = "manual"
+BUSY = "A fetch is already running; try again when it finishes"
+# Background manual runs, kept referenced until they finish.
+_BACKGROUND: set[asyncio.Task[None]] = set()
 # A windowed search done this recently is not repeated by cron or catch-up runs.
 ALREADY_FETCHED = timedelta(hours=20)
 
@@ -230,13 +235,24 @@ async def save_postings(
                 )
             )
         ).scalar_one_or_none()
+        is_new = posting is None
         if posting is None:
             posting = Posting(source=source, source_job_id=item.source_job_id, first_seen_at=now)
             session.add(posting)
             new += 1
+        title = item.title[:500]
+        if not is_new and (posting.title, posting.description) != (
+            title,
+            item.description,
+        ):
+            # The advert changed: its embedding described the old text, so it is
+            # recomputed and the Posting compared again (ADR-0014).
+            posting.embedding = None
+            posting.embedding_model = None
+            posting.match_state = "pending"
         posting.company_id = company.id
         posting.ats_board_id = board.id if board else posting.ats_board_id
-        posting.title = item.title[:500]
+        posting.title = title
         posting.description = item.description
         posting.locations = [loc.model_dump() for loc in item.locations]
         posting.work_mode = item.work_mode.value if item.work_mode else None
@@ -323,6 +339,7 @@ class Fetcher:
         self.adapter_factory = adapter_factory or (lambda cls, http, settings: cls(http, settings))
         # Grouping, Feeds and skills (services.correspondence), run while the lock is held.
         self.after_fetch = after_fetch
+        self.manual_task: asyncio.Task[None] | None = None
 
     async def sync_sources(self) -> None:
         async with self.sessionmaker() as session:
@@ -522,10 +539,12 @@ class Fetcher:
         now = self.clock()
         due = or_(
             AtsBoard.last_fetched_at.is_(None),
+            # Daily while the board had jobs in the last 30 days; a board that never had
+            # any counts from when it was added, so it does not stay daily for ever.
             (AtsBoard.last_fetched_at < now - BOARD_DAILY)
-            & or_(
-                AtsBoard.last_nonempty_at.is_(None),
-                AtsBoard.last_nonempty_at >= now - BOARD_STALE_AFTER,
+            & (
+                func.coalesce(AtsBoard.last_nonempty_at, AtsBoard.created_at)
+                >= now - BOARD_STALE_AFTER
             ),
             AtsBoard.last_fetched_at < now - BOARD_WEEKLY,
         )
@@ -567,7 +586,7 @@ class Fetcher:
                 .where(
                     Posting.ats_board_id == board.id,
                     Posting.closed_at.is_(None),
-                    Posting.source_job_id.not_in(seen) if seen else text("true"),
+                    ~among(Posting.source_job_id, seen, String()),
                 )
                 .values(closed_at=now, closed_reason="board")
             )
@@ -585,28 +604,64 @@ class Fetcher:
                 f"(last: {failures[-1]})"
             )
 
-    async def manual_run(self, name: str) -> SourceOutcome:
-        """Admin "Run now" (FR-B11), limited per Source per day."""
+    async def _claim_manual_run(self, name: str) -> SourceOutcome | None:
+        """Counts one manual run; returns a skip outcome when today's limit is reached."""
         today = self.clock().date().isoformat()
+        async with self.sessionmaker() as session:
+            source = await self._source_row(session, name)
+            if source.manual_runs_date != today:
+                source.manual_runs_date, source.manual_runs_today = today, 0
+            if source.manual_runs_today >= MANUAL_RUNS_PER_DAY:
+                return SourceOutcome(
+                    name, "skipped", f"Limit of {MANUAL_RUNS_PER_DAY} manual runs a day reached"
+                )
+            source.manual_runs_today += 1
+            await session.commit()
+        return None
+
+    async def manual_run(self, name: str) -> SourceOutcome:
+        """Admin "Run now" (FR-B11), limited per Source per day. Waits for the whole run;
+        the API uses start_manual_run instead."""
         get_adapter_class(name)
         async with self._exclusive() as got:
             if not got:
-                return SourceOutcome(
-                    name, "skipped", "A fetch is already running; try again when it finishes"
-                )
-            async with self.sessionmaker() as session:
-                source = await self._source_row(session, name)
-                if source.manual_runs_date != today:
-                    source.manual_runs_date, source.manual_runs_today = today, 0
-                if source.manual_runs_today >= MANUAL_RUNS_PER_DAY:
-                    return SourceOutcome(
-                        name, "skipped", f"Limit of {MANUAL_RUNS_PER_DAY} manual runs a day reached"
-                    )
-                source.manual_runs_today += 1
-                await session.commit()
+                return SourceOutcome(name, "skipped", BUSY)
+            refusal = await self._claim_manual_run(name)
+            if refusal is not None:
+                return refusal
             outcome = await self.run_source(name, trigger=MANUAL)
             await self._after_fetch()
             return outcome
+
+    async def start_manual_run(self, name: str) -> SourceOutcome:
+        """Checks the lock and the daily limit now, then fetches and processes in the
+        background: grouping and embeddings can take many minutes, far longer than an
+        HTTP request may stay open. Progress shows under Recent runs."""
+        get_adapter_class(name)
+        stack = AsyncExitStack()
+        try:
+            got = await stack.enter_async_context(self._exclusive())
+            refusal = SourceOutcome(name, "skipped", BUSY) if not got else None
+            refusal = refusal or await self._claim_manual_run(name)
+        except BaseException:
+            await stack.aclose()
+            raise
+        if refusal is not None:
+            await stack.aclose()
+            return refusal
+
+        async def run_in_background() -> None:
+            async with stack:  # releases the fetch lock when the run ends
+                try:
+                    await self.run_source(name, trigger=MANUAL)
+                    await self._after_fetch()
+                except Exception:
+                    logger.exception("Manual run of %s failed", name)
+
+        self.manual_task = asyncio.create_task(run_in_background())
+        _BACKGROUND.add(self.manual_task)
+        self.manual_task.add_done_callback(_BACKGROUND.discard)
+        return SourceOutcome(name, "started", "Fetching now; results appear under Recent runs")
 
 
 async def _guarded(adapter: SourceAdapter, call: Awaitable[FetchResult]) -> FetchResult:

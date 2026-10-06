@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.registry import registered_adapters
+from app.core.db import among
 from app.core.errors import NotFoundError
 from app.dedup.scoring import clean_title
 from app.models.fact import Fact, FactKind
@@ -33,7 +34,18 @@ from app.schemas.feed import (
 )
 from app.services.skills import UserSkills, skill_gaps, user_skills
 
-# Spellings that name the same role word ("Backend Developer" = "Back-end Engineer").
+LINK_CHUNK = 1000
+
+# Two-word spellings that are one word in other titles ("Dev-Ops" = "DevOps"), joined
+# before single words are mapped, so both sides end up with the same words.
+_JOINED: dict[tuple[str, str], str] = {
+    ("dev", "ops"): "devops",
+    ("back", "end"): "backend",
+    ("front", "end"): "frontend",
+    ("full", "stack"): "fullstack",
+    ("machine", "learning"): "ml",
+}
+# Spellings that name the same role word ("Backend Developer" = "Backend Engineer").
 _TITLE_WORDS: dict[str, tuple[str, ...]] = {
     "developer": ("engineer",),
     "dev": ("engineer",),
@@ -43,17 +55,23 @@ _TITLE_WORDS: dict[str, tuple[str, ...]] = {
     "swe": ("software", "engineer"),
     "sr": ("senior",),
     "jr": ("junior",),
-    "backend": ("back", "end"),
-    "frontend": ("front", "end"),
-    "fullstack": ("full", "stack"),
-    "devops": ("dev", "ops"),
-    "ml": ("machine", "learning"),
 }
 
 
 def title_words(title: str) -> set[str]:
+    raw = clean_title(title).split()
+    joined: list[str] = []
+    i = 0
+    while i < len(raw):
+        pair = (raw[i], raw[i + 1]) if i + 1 < len(raw) else None
+        if pair in _JOINED:
+            joined.append(_JOINED[pair])  # type: ignore[index]
+            i += 2
+        else:
+            joined.append(raw[i])
+            i += 1
     words: set[str] = set()
-    for word in clean_title(title).split():
+    for word in joined:
         words.update(_TITLE_WORDS.get(word, (word,)))
     return words
 
@@ -128,16 +146,18 @@ async def _apply_links(
 ) -> None:
     """Adds matching Jobs; removes considered Jobs that no longer match, unless the User
     hid them (their choice is kept if the Job comes back)."""
-    if matching:
+    rows = [{"id": uuid.uuid4(), "user_id": user_id, "job_id": j} for j in matching]
+    # Three parameters per row; chunks stay far below asyncpg's 32,767 per statement.
+    for start in range(0, len(rows), LINK_CHUNK):
         await session.execute(
             insert(UserJob)
-            .values([{"id": uuid.uuid4(), "user_id": user_id, "job_id": j} for j in matching])
+            .values(rows[start : start + LINK_CHUNK])
             .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
         )
     stale = delete(UserJob).where(
         UserJob.user_id == user_id,
         UserJob.hidden_at.is_(None),
-        UserJob.job_id.not_in(matching) if matching else text("true"),
+        ~among(UserJob.job_id, matching),
     )
     if considered is not None:
         stale = stale.where(UserJob.job_id.in_(considered))

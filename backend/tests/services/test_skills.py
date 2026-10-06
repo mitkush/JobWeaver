@@ -45,3 +45,14 @@ def test_a_combined_skill_fact_is_split():
 def test_no_gaps():
     skills = user_skills(["Python"], ["Python"])
     assert skill_gaps(["python"], skills) == []
+
+
+@pytest.mark.parametrize("spelling", [".NET", "dotnet", "ASP.NET", "ASP.NET Core", ".net."])
+def test_dotnet_keeps_its_leading_dot(spelling):
+    assert canonical_skill(spelling) == ".net"
+
+
+def test_dotnet_is_found_in_skills_and_in_experience_text():
+    assert skill_gaps([".NET"], user_skills(["ASP.NET Core"], [])) == []
+    assert skill_gaps([".NET"], user_skills([], ["Built billing APIs on ASP.NET"])) == []
+    assert skill_gaps([".NET"], user_skills(["Python"], ["Python"])) == [".NET"]

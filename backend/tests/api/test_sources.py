@@ -8,6 +8,7 @@ from app.adapters.base import FetchResult, NormalizedPosting, SnapshotSourceAdap
 from app.api.sources import get_fetcher
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
+from app.main import app
 from app.models import AtsBoard, FetchRun, Source, SourceState
 from app.services.fetching import Fetcher
 from tests.conftest import signed_in
@@ -46,6 +47,8 @@ async def test_admin_endpoints_are_admin_only(alice):
 
 async def test_source_status_and_run_now(admin, db):
     _, client = admin
+    fetcher = Fetcher(get_sessionmaker())
+    app.dependency_overrides[get_fetcher] = lambda: fetcher
     db.add(AtsBoard(ats="greenhouse", slug="acme", discovered_from="manual"))
     await db.commit()
 
@@ -55,7 +58,10 @@ async def test_source_status_and_run_now(admin, db):
     assert statuses[0]["manual_runs_left"] == 4
 
     outcome = (await client.post("/api/admin/sources/greenhouse-test/run")).json()
-    assert outcome["status"] == "succeeded" and outcome["postings_new"] == 1
+    # The request returns at once; the fetch runs in the background.
+    assert outcome["status"] == "started"
+    assert fetcher.manual_task is not None
+    await fetcher.manual_task
     after = (await client.get("/api/admin/sources")).json()[0]
     assert after["open_postings"] == 1 and after["manual_runs_left"] == 3
 

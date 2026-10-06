@@ -388,3 +388,30 @@ async def test_an_embedding_backlog_never_blocks_exact_grouping(db, monkeypatch)
     report = await build("refusal").process()
     assert report.exact_pairs == 1
     assert await job_of(db, "linkedin", "new1") == await job_of(db, "jsearch", "new2")
+
+
+async def test_an_edited_advert_is_embedded_and_compared_again(db):
+    await add("linkedin", posting("l1"))
+    await add(
+        "jsearch", posting("j1", title="Backend Engineer II", description=ADVERT + " Payments.")
+    )
+    await build(dedup_high_title=99).process()
+    stored = await db.scalar(select(Posting).where(Posting.source_job_id == "j1"))
+    assert stored.embedding_model is not None and stored.match_state == "done"
+
+    await add(
+        "jsearch", posting("j1", title="Backend Engineer II", description=ADVERT + " Lending.")
+    )
+    db.expire_all()
+    stored = await db.scalar(select(Posting).where(Posting.source_job_id == "j1"))
+    assert (stored.embedding_model, stored.match_state) == (None, "pending")
+
+    await add("linkedin", posting("l1"))  # unchanged text keeps its embedding
+    db.expire_all()
+    unchanged = await db.scalar(select(Posting).where(Posting.source_job_id == "l1"))
+    assert unchanged.embedding_model is not None
+    # A new rival is compared with the new text: the edited Posting is embedded again,
+    # the unchanged one is not.
+    await add("remotive", posting("r1", title="Backend Engineer III", description=ADVERT))
+    report = await build(dedup_high_title=99).process()
+    assert report.embedded == 2  # j1 again, plus the new r1

@@ -75,15 +75,37 @@ it("asks before a manual run and says what it costs", async () => {
     "GET /api/admin/sources": () => json([linkedin]),
     "GET /api/admin/fetch-runs": () => json([]),
     "POST /api/admin/sources/linkedin/run": () =>
-      json({ source: "linkedin", status: "succeeded", message: "", postings_new: 7, credits_used: 7 }),
+      json({ source: "linkedin", status: "started", message: "", postings_new: 0, credits_used: 0 }),
   });
   const user = userEvent.setup();
   renderWithApp(<AdminSourcesPage />);
   await user.click(await screen.findByRole("button", { name: "Run now" }));
   expect(screen.getByText(/uses credits for every result returned/)).toBeInTheDocument();
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Run now" }));
-  expect(await screen.findByText("7 new postings")).toBeInTheDocument();
+  expect(await screen.findByText("Run started. Its progress shows under Recent runs.")).toBeInTheDocument();
   expect(calls.some((c) => c.method === "POST")).toBe(true);
+});
+
+it("refreshes recent runs while a run is in progress", async () => {
+  let runs = [{ id: "r1", source: "greenhouse", status: "running", created_at: new Date().toISOString(), board: "acme", query_key: null, postings_found: 0, postings_new: 0, postings_closed: 0, credits_used: 0, error: null, trigger: "manual", window_since: null, window_until: null, finished_at: null }];
+  const calls = mockFetch({
+    "GET /api/admin/sources": () => json([linkedin]),
+    "GET /api/admin/fetch-runs": () => json(runs),
+  });
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    renderWithApp(<AdminSourcesPage />);
+    expect(await screen.findByText("running")).toBeInTheDocument();
+    runs = [{ ...runs[0]!, status: "succeeded" }];
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(await screen.findByText("succeeded")).toBeInTheDocument();
+    // Once nothing runs any more, the Sources are refreshed too.
+    await vi.waitFor(() =>
+      expect(calls.filter((c) => c.url.endsWith("/api/admin/sources")).length).toBeGreaterThan(1),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("formats search keys for people", () => {

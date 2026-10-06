@@ -23,6 +23,7 @@ export const keys = {
   notices: ["notices"] as const,
   boards: ["boards"] as const,
   feed: ["feed"] as const,
+  runStartedAt: ["admin", "run-started-at"] as const,
   job: (id: string) => ["job", id] as const,
 };
 
@@ -204,10 +205,27 @@ export function useSources() {
   return useQuery({ queryKey: keys.sources, queryFn: () => unwrap(api.GET("/api/admin/sources")) });
 }
 
+/** Refreshes every few seconds while a run is in progress (a manual run runs in the
+ * background), and refreshes the Sources once it ends. */
 export function useFetchRuns() {
+  const client = useQueryClient();
   return useQuery({
     queryKey: keys.runs,
-    queryFn: () => unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } })),
+    queryFn: async () => {
+      const previous = client.getQueryData<{ status: string }[]>(keys.runs);
+      const runs = await unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } }));
+      const wasRunning = previous?.some((run) => run.status === "running");
+      if (wasRunning && !runs.some((run) => run.status === "running")) {
+        void client.invalidateQueries({ queryKey: keys.sources });
+      }
+      return runs;
+    },
+    refetchInterval: (query) => {
+      if (query.state.data?.some((run) => run.status === "running")) return 5000;
+      // A run just started may not have written its first row yet.
+      const startedAt = client.getQueryData<number>(keys.runStartedAt) ?? 0;
+      return Date.now() - startedAt < 60_000 ? 3000 : false;
+    },
   });
 }
 
@@ -225,6 +243,9 @@ export function useRunSource() {
   return useMutation({
     mutationFn: (name: string) =>
       unwrap(api.POST("/api/admin/sources/{name}/run", { params: { path: { name } } })),
+    onSuccess: (outcome) => {
+      if (outcome.status === "started") client.setQueryData(keys.runStartedAt, Date.now());
+    },
     onSettled: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: keys.sources }),

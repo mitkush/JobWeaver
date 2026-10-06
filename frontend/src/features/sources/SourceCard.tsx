@@ -98,11 +98,15 @@ export function SourceCard({ source }: { source: SourceStatus }) {
         onConfirm={async () => {
           try {
             const outcome = await run.mutateAsync(source.name);
+            // The API starts the run and returns; Recent runs shows it as it progresses.
+            const ok = outcome.status === "started" || outcome.status === "succeeded";
             toast(
-              outcome.status === "succeeded" ? "success" : "error",
-              outcome.status === "succeeded"
-                ? `${outcome.postings_new} new postings`
-                : outcome.message || "The run did not finish",
+              ok ? "success" : "error",
+              outcome.status === "started"
+                ? "Run started. Its progress shows under Recent runs."
+                : outcome.status === "succeeded"
+                  ? `${outcome.postings_new} new postings`
+                  : outcome.message || "The run did not finish",
             );
           } catch (error) {
             toast("error", (error as Error).message);
