@@ -63,6 +63,8 @@ class AdzunaAdapter(WindowedSourceAdapter):
         postings: list[NormalizedPosting] = []
         spent = 0
         for page in range(1, max(self.settings.adzuna_pages_per_query, 1) + 1):
+            if self.allowance_left is not None and spent >= self.allowance_left:
+                break  # each page is a paid request; stop at the monthly allowance
             response = await self.http.get(f"{API}/{country}/search/{page}", params=params)
             try:
                 self.check_response(self.label, response)

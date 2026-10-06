@@ -39,13 +39,25 @@ class NaukriApifyAdapter(ApifyAdapter):
         loc = query.location
         if loc and loc.country and loc.country != "IN":
             return None  # Naukri lists Indian jobs; other countries would only cost money
-        place = "remote" if loc and loc.remote else (loc.city if loc else None)
-        return {
-            "keyword": " ".join(x for x in (query.keywords, place) if x),
+        payload: dict[str, Any] = {
+            "keyword": query.keywords,
             "maxJobs": self.settings.apify_naukri_max_jobs,
             "freshness": freshness_for(window),
             "sortBy": "date",
+            "fetchDetails": self.settings.apify_naukri_fetch_details,
         }
+        if loc and loc.remote:
+            payload["workMode"] = ["remote"]
+        elif loc and loc.city:
+            ids = {
+                name.lower(): value for name, value in self.settings.apify_naukri_city_ids.items()
+            }
+            city_id = ids.get(loc.city.lower())
+            if city_id:
+                payload["cities"] = [city_id]
+            else:
+                payload["keyword"] = f"{query.keywords} {loc.city}"
+        return payload
 
     def to_posting(self, record: dict[str, Any]) -> NormalizedPosting | None:
         job_id = first(record, "jobId", "job_id", "id")

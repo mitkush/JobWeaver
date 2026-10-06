@@ -4,6 +4,7 @@ Start a run, wait for it, read its dataset. Spend is the run's reported cost in 
 counted against one Apify allowance shared by every Apify Source (budget_pool)."""
 
 import asyncio
+import logging
 import math
 import time
 from collections.abc import Awaitable, Callable
@@ -15,6 +16,8 @@ import httpx
 from app.adapters.base import FetchResult, FetchWindow, SourceQuery, WindowedSourceAdapter
 from app.adapters.errors import SourceBadResponse, SourceError, SourceUnavailable
 from app.core.config import Settings
+
+logger = logging.getLogger(__name__)
 
 API = "https://api.apify.com/v2"
 DATASET_PAGE = 1000
@@ -37,6 +40,7 @@ class ApifyAdapter(WindowedSourceAdapter):
     allowance_unit = "US cents"
     poll_seconds = 60  # Apify holds each poll open up to this long
     retry_seconds = 5.0
+    settle_seconds = 10.0
     run_timeout = timedelta(minutes=20)
 
     def __init__(
@@ -48,6 +52,7 @@ class ApifyAdapter(WindowedSourceAdapter):
         super().__init__(http, settings)
         self.sleep = sleep
         self._last_run: dict[str, Any] | None = None
+        self._settled_cost: int | None = None
         self.monotonic: Callable[[], float] = time.monotonic
 
     def actor(self) -> str:
@@ -74,14 +79,48 @@ class ApifyAdapter(WindowedSourceAdapter):
         if payload is None:
             return FetchResult(postings=[])
         run = await self._wait(await self._start(payload))
-        spent = cents(run)
         try:
             records = await self._items(str(run.get("defaultDatasetId") or ""))
-        except SourceError as exc:
-            exc.credits_used = spent
-            raise
-        postings = [p for r in records if (p := self.to_posting(r)) is not None]
-        return FetchResult(postings=postings, credits_used=spent)
+            postings = [p for r in records if (p := self.to_posting(r)) is not None]
+        except Exception as exc:
+            # The run finished and is billed whatever happens to its results (FR-B5).
+            raise self._billed(exc, await self._final_cost(run)) from exc
+        return FetchResult(postings=postings, credits_used=await self._final_cost(run))
+
+    def _billed(self, exc: Exception, spent: int) -> SourceError:
+        """Any failure after a run started, as a SourceError that still carries its cost:
+        the fetcher's generic handler would otherwise record the run as free."""
+        if isinstance(exc, SourceError):
+            error = exc
+        elif isinstance(exc, httpx.TimeoutException):
+            error = SourceUnavailable(f"{self.label} timed out")
+        elif isinstance(exc, httpx.HTTPError):
+            error = SourceUnavailable(f"{self.label} could not be reached ({type(exc).__name__})")
+        elif isinstance(exc, ValueError | KeyError | TypeError):
+            error = SourceBadResponse(f"{self.label} returned data JobWeaver could not read")
+        else:
+            logger.exception("Unexpected error after an Apify run of %s", self.label)
+            error = SourceBadResponse(f"{self.label} failed unexpectedly; see the server logs")
+        error.credits_used = max(error.credits_used, spent)
+        return error
+
+    async def _final_cost(self, run: dict[str, Any]) -> int:
+        """Apify may report a just-finished run's cost as preliminary and asks callers to
+        read it again about 10 seconds later. The larger of the two is kept, so the shared
+        allowance never reads low. Read once per run."""
+        if self._settled_cost is not None:
+            return self._settled_cost
+        preliminary = cents(run)
+        final = preliminary
+        await self.sleep(self.settle_seconds)
+        try:
+            response = await self.http.get(f"{API}/actor-runs/{run['id']}", headers=self._headers)
+            self.check_response(self.label, response)
+            final = cents(response.json().get("data") or {})
+        except Exception:  # noqa: BLE001 - the preliminary cost still stands
+            logger.warning("Could not read the final cost of %s run %s", self.label, run["id"])
+        self._settled_cost = max(preliminary, final)
+        return self._settled_cost
 
     async def _start(self, payload: dict[str, Any]) -> dict[str, Any]:
         params: dict[str, Any] = {"timeout": int(self.run_timeout.total_seconds())}
@@ -98,12 +137,11 @@ class ApifyAdapter(WindowedSourceAdapter):
         return run
 
     async def _wait(self, run: dict[str, Any]) -> dict[str, Any]:
-        """Polls until the run ends. A failure still reports what the run cost so far."""
+        """Polls until the run ends. A failure still reports what the run cost."""
         try:
             return await self._poll(run)
-        except SourceError as exc:
-            exc.credits_used = max(exc.credits_used, cents(self._last_run or run))
-            raise
+        except Exception as exc:
+            raise self._billed(exc, await self._final_cost(self._last_run or run)) from exc
 
     async def _poll(self, run: dict[str, Any]) -> dict[str, Any]:
         self._last_run = run

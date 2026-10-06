@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     apify_token: str = ""
     apify_naukri_actor: str = "muhammetakkurtt~naukri-job-scraper"
     apify_naukri_max_jobs: int = 200
+    # Full descriptions, needed for skills and contact emails (the actor's detail mode).
+    apify_naukri_fetch_details: bool = True
+    # The actor filters by Naukri's numeric city ids, which are not published. Map the
+    # cities you search ({"Bengaluru": "<id>"}) after checking them on naukri.com; an
+    # unmapped city is added to the keywords instead.
+    apify_naukri_city_ids: dict[str, str] = {}
     apify_linkedin_actor: str = "curious_coder~linkedin-jobs-scraper"
     # Upper bound per search, not a budget cut: LinkedIn shows at most about 1,000.
     apify_linkedin_max_items: int = 1000

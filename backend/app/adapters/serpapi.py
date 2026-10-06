@@ -69,6 +69,8 @@ class SerpApiAdapter(WindowedSourceAdapter):
         postings: list[NormalizedPosting] = []
         spent = 0
         for _ in range(max(self.settings.serpapi_pages_per_query, 1)):
+            if self.allowance_left is not None and spent >= self.allowance_left:
+                break  # each page is a paid search; stop at the monthly allowance
             body = await self._search(params, spent)
             spent += 1
             jobs = body.get("jobs_results") or []

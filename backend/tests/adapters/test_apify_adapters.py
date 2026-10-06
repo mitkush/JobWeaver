@@ -203,5 +203,53 @@ async def test_a_run_past_its_timeout_is_aborted():
         adapter.monotonic = lambda: next(clock)
         with pytest.raises(SourceUnavailable) as caught:
             await adapter.fetch_window(QUERY, DAY)
-    assert api.requests[-1].url.path.endswith("/actor-runs/run1/abort")
+    assert any(r.url.path.endswith("/actor-runs/run1/abort") for r in api.requests)
     assert caught.value.credits_used == 2
+
+
+async def test_a_network_failure_after_the_run_keeps_its_cost():
+    class Flaky(FakeApify):
+        def __call__(self, request):
+            if "/datasets/" in request.url.path:
+                raise httpx.ReadTimeout("slow dataset", request=request)
+            return super().__call__(request)
+
+    async with client(Flaky([], usage=0.05)) as http:
+        with pytest.raises(SourceUnavailable) as caught:
+            await NaukriApifyAdapter(http, SETTINGS, sleep=no_sleep).fetch_window(QUERY, DAY)
+    assert caught.value.credits_used == 5
+
+
+async def test_the_settled_cost_is_read_again_after_the_run_finishes():
+    class Settling(FakeApify):
+        def __call__(self, request):
+            response = super().__call__(request)
+            # Apify's first terminal answer can carry a preliminary cost.
+            if request.url.path.endswith("/actor-runs/run1") and self.polls > 2:
+                return httpx.Response(200, json={"data": {"id": "run1", "status": "SUCCEEDED",
+                                                          "usageTotalUsd": 0.071}})  # fmt: skip
+            return response
+
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    api = Settling([NAUKRI_RECORD], usage=0.0123)
+    async with client(api) as http:
+        result = await NaukriApifyAdapter(http, SETTINGS, sleep=sleep).fetch_window(QUERY, DAY)
+    assert result.credits_used == 8 and 10.0 in slept
+
+
+def test_naukri_uses_the_actors_own_filters():
+    adapter = NaukriApifyAdapter(
+        httpx.AsyncClient(), Settings(apify_token="t", apify_naukri_city_ids={"Bengaluru": "97"})
+    )
+    mapped = adapter.actor_input(QUERY, DAY)
+    assert mapped["cities"] == ["97"] and mapped["keyword"] == "Backend Engineer"
+    assert mapped["fetchDetails"] is True
+    remote = SourceQuery(keywords="SRE", location=Location(country="IN", remote=True))
+    assert adapter.actor_input(remote, DAY)["workMode"] == ["remote"]
+    pune = SourceQuery(keywords="SRE", location=Location(city="Pune", country="IN"))
+    unmapped = adapter.actor_input(pune, DAY)
+    assert "cities" not in unmapped and unmapped["keyword"] == "SRE Pune"

@@ -69,6 +69,22 @@ class TestSerpApi:
         assert job.work_mode == WorkMode.REMOTE and job.locations[0].remote
         assert job.apply_url == "https://acme.dev/jobs/1"
 
+    async def test_pages_stop_at_the_remaining_allowance(self):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            page = {"jobs_results": [SERP_JOB], "serpapi_pagination": {"next_page_token": "t"}}
+            return httpx.Response(200, json=page)
+
+        async with http(handler) as client:
+            adapter = SerpApiAdapter(
+                client, SETTINGS.model_copy(update={"serpapi_pages_per_query": 3})
+            )
+            adapter.allowance_left = 1
+            result = await adapter.fetch_window(QUERY, DAY)
+        assert result.credits_used == 1 and len(seen) == 1
+
     async def test_no_results_is_empty_and_exhaustion_is_a_quota_error(self):
         empty = {"error": "Google hasn't returned any results for this query."}
         async with http(always(200, empty)) as client:
@@ -123,6 +139,20 @@ class TestAdzuna:
         job = result.postings[0]
         assert job.title == "Backend Engineer" and job.locations[0].city == "Bengaluru"
         assert job.locations[0].country == "IN" and job.work_mode == WorkMode.HYBRID
+
+    async def test_pages_stop_at_the_remaining_allowance(self):
+        seen = []
+        full = {"results": [ADZUNA_RESULT | {"id": str(i)} for i in range(50)]}
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json=full)
+
+        async with http(handler) as client:
+            adapter = AdzunaAdapter(client, SETTINGS)
+            adapter.allowance_left = 1
+            result = await adapter.fetch_window(QUERY, DAY)
+        assert result.credits_used == 1 and len(seen) == 1
 
     async def test_unsupported_countries_and_global_searches_cost_nothing(self):
         async with http(always(500)) as client:
