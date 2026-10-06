@@ -88,11 +88,15 @@ async def test_global_wfh_feed_keeps_location_and_work_mode_separate(alice):
         "linkedin",
         posting("in-remote", company="IndiaCo", work_mode="remote"),
         posting(
-            "de-remote", company="GermanyCo", work_mode="remote",
+            "de-remote",
+            company="GermanyCo",
+            work_mode="remote",
             locations=[Location(city="Berlin", country="DE")],
         ),
         posting(
-            "de-office", company="OfficeCo", work_mode="onsite",
+            "de-office",
+            company="OfficeCo",
+            work_mode="onsite",
             locations=[Location(city="Berlin", country="DE")],
         ),
     )

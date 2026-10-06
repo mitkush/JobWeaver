@@ -44,7 +44,10 @@ BLR = {"city": "Bengaluru", "country": "IN"}
         ([{"city": "Pune", "country": "IN", "remote": True}], "remote", [BLR], ["remote"], False),
         (
             [{"city": "Pune", "country": "IN", "remote": True}],
-            "remote", [{"country": "IN", "city": None}], ["remote"], True,
+            "remote",
+            [{"country": "IN", "city": None}],
+            ["remote"],
+            True,
         ),
     ],
 )
