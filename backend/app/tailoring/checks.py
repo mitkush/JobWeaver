@@ -182,9 +182,7 @@ class Checker:
         """The word or its singular ("APIs" for "API") appears in the Fact Bank."""
         folded = word.casefold()
         forms = {folded, folded.removesuffix("s"), folded.removesuffix("es")} - {""}
-        return any(
-            re.search(rf"(?<![\w]){re.escape(form)}(?![\w])", self._bank) for form in forms
-        )
+        return any(re.search(rf"(?<![\w]){re.escape(form)}(?![\w])", self._bank) for form in forms)
 
     def problems(self, line: DraftLine, part: Part) -> list[str]:
         if len(set(line.fact_refs)) != len(line.fact_refs):
