@@ -47,7 +47,10 @@ logger = logging.getLogger(__name__)
 # pipeline and a User's Confirm or Split never interleave.
 GROUPING_LOCK_ID = 7_201_027
 PENDING, AWAITING_EMBEDDING, DONE = "pending", "awaiting_embedding", "done"
-MAX_PENDING_PER_RUN = 3000
+# New Postings are always scanned in full; only the embedding backlog is capped, so a long
+# Gemini outage can never starve Exact grouping (FR-C1 AC4).
+MAX_AWAITING_PER_RUN = 1000
+SCAN_CHUNK = 500
 MAX_SKILLS = 25
 
 PairKey = tuple[uuid.UUID, uuid.UUID]
@@ -317,66 +320,103 @@ class Correspondence:
 
     async def _exact_pass(self, report: Report) -> dict[PairKey, _Candidate]:
         """Exact pairs group at once and need no embedding (FR-C1 AC4). Returns the pairs
-        whose titles are close enough to be worth a semantic comparison."""
-        th = thresholds(self.settings)
-        cutoff = self.clock() - timedelta(days=self.settings.dedup_window_days)
+        whose titles are close enough to be worth a semantic comparison.
+
+        Every new Posting is scanned, in chunks with a commit after each so User actions
+        can interleave. Postings already waiting for embeddings are rescanned only up to
+        MAX_AWAITING_PER_RUN, after the new ones."""
         candidates: dict[PairKey, _Candidate] = {}
+        handled: set[PairKey] = set()
         async with self.sessionmaker() as session:
             await lock_grouping(session)
             report.jobs_created += await ensure_jobs(session, self.priorities)
-            pending = list(
+            order = (Posting.first_seen_at, Posting.id)
+            open_ = Posting.closed_at.is_(None)
+            new_ids = list(
                 (
                     await session.execute(
-                        select(Posting)
-                        .where(Posting.match_state != DONE, Posting.closed_at.is_(None))
-                        .order_by(Posting.first_seen_at, Posting.id)
-                        .limit(MAX_PENDING_PER_RUN)
+                        select(Posting.id)
+                        .where(Posting.match_state == PENDING, open_)
+                        .order_by(*order)
                     )
                 ).scalars()
             )
-            handled: set[PairKey] = set()
-            for posting in pending:
-                others = (
+            waiting_ids = list(
+                (
                     await session.execute(
-                        select(Posting).where(
-                            Posting.company_id == posting.company_id,
-                            Posting.id != posting.id,
-                            Posting.closed_at.is_(None),
-                            func.coalesce(Posting.posted_at, Posting.first_seen_at) >= cutoff,
-                        )
+                        select(Posting.id)
+                        .where(Posting.match_state == AWAITING_EMBEDDING, open_)
+                        .order_by(*order)
+                        .limit(MAX_AWAITING_PER_RUN)
                     )
                 ).scalars()
-                handled |= await self._known_pairs(session, posting.id)
-                for other in others:
-                    key = pair_key(posting.id, other.id)
-                    if key in handled:
-                        continue
-                    handled.add(key)
-                    reason = exact_reason(_view(posting), _view(other))
-                    if reason is not None:
-                        session.add(
-                            MatchPair(
-                                posting_a_id=key[0],
-                                posting_b_id=key[1],
-                                band=Band.EXACT,
-                                status=PairStatus.AUTO,
-                                signals={"reason": reason},
-                            )
-                        )
-                        report.exact_pairs += 1
-                        await self._merge_postings(session, posting.id, other.id)
-                        continue
-                    if await _job_of(session, posting.id) == await _job_of(session, other.id):
-                        continue
-                    score = title_similarity(posting.title, other.title)
-                    if score >= th.medium_title:
-                        candidates[key] = _Candidate(score, posting.id)
-            owners = {c.owner for c in candidates.values()}
-            for posting in pending:
-                if posting.id not in owners:
-                    posting.match_state = DONE
+            )
             await session.commit()
+            ids = new_ids + waiting_ids
+            for start in range(0, len(ids), SCAN_CHUNK):
+                await lock_grouping(session)
+                chunk = (
+                    await session.execute(
+                        select(Posting)
+                        .where(Posting.id.in_(ids[start : start + SCAN_CHUNK]))
+                        .order_by(*order)
+                    )
+                ).scalars()
+                await self._scan(session, list(chunk), candidates, handled, report)
+                await session.commit()
         return candidates
+
+    async def _scan(
+        self,
+        session: AsyncSession,
+        postings: list[Posting],
+        candidates: dict[PairKey, _Candidate],
+        handled: set[PairKey],
+        report: Report,
+    ) -> None:
+        th = thresholds(self.settings)
+        cutoff = self.clock() - timedelta(days=self.settings.dedup_window_days)
+        for posting in postings:
+            others = (
+                await session.execute(
+                    select(Posting).where(
+                        Posting.company_id == posting.company_id,
+                        Posting.id != posting.id,
+                        Posting.closed_at.is_(None),
+                        func.coalesce(Posting.posted_at, Posting.first_seen_at) >= cutoff,
+                    )
+                )
+            ).scalars()
+            handled |= await self._known_pairs(session, posting.id)
+            owns_candidate = False
+            for other in others:
+                key = pair_key(posting.id, other.id)
+                if key in handled:
+                    continue
+                handled.add(key)
+                reason = exact_reason(_view(posting), _view(other))
+                if reason is not None:
+                    session.add(
+                        MatchPair(
+                            posting_a_id=key[0],
+                            posting_b_id=key[1],
+                            band=Band.EXACT,
+                            status=PairStatus.AUTO,
+                            signals={"reason": reason},
+                        )
+                    )
+                    report.exact_pairs += 1
+                    await self._merge_postings(session, posting.id, other.id)
+                    continue
+                if await _job_of(session, posting.id) == await _job_of(session, other.id):
+                    continue
+                score = title_similarity(posting.title, other.title)
+                if score >= th.medium_title:
+                    candidates[key] = _Candidate(score, posting.id)
+                    owns_candidate = True
+            # Postings with a semantic candidate keep their state until _semantic_pass.
+            if not owns_candidate:
+                posting.match_state = DONE
 
     @staticmethod
     async def _known_pairs(session: AsyncSession, posting_id: uuid.UUID) -> set[PairKey]:

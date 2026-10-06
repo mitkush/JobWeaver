@@ -362,3 +362,29 @@ def test_a_place_without_its_country_is_not_listed_twice():
         ("Pune", None),
         (None, "IN"),
     ]
+
+
+async def test_an_embedding_backlog_never_blocks_exact_grouping(db, monkeypatch):
+    # A long Gemini outage leaves many Postings waiting for embeddings; new Postings must
+    # still reach the Exact pass (FR-C1 AC4).
+    monkeypatch.setattr(service, "MAX_AWAITING_PER_RUN", 2)
+    await add(
+        "linkedin",
+        *[
+            posting(f"wait{i}", title=f"Backend Engineer {i}", description=f"{ADVERT} Team {i}.")
+            for i in range(4)
+        ],
+    )
+    await build("refusal").process()
+    waiting = await db.scalar(
+        select(func.count()).select_from(Posting).where(Posting.match_state == "awaiting_embedding")
+    )
+    # Each pair is owned by one side, so the last Posting itself has nothing to wait for.
+    assert waiting == 3  # more than the backlog cap of 2
+
+    url = "https://jobs.lever.co/globex/42"
+    await add("linkedin", posting("new1", company="Globex", apply_url=url))
+    await add("jsearch", posting("new2", company="Globex", apply_url=url))
+    report = await build("refusal").process()
+    assert report.exact_pairs == 1
+    assert await job_of(db, "linkedin", "new1") == await job_of(db, "jsearch", "new2")
