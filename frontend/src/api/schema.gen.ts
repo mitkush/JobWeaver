@@ -502,6 +502,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feed */
+        get: operations["get_feed_api_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/feed/{job_id}/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide Job */
+        post: operations["hide_job_api_feed__job_id__hide_post"];
+        /** Unhide Job */
+        delete: operations["unhide_job_api_feed__job_id__hide_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/possible-duplicates/{pair_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Duplicate */
+        post: operations["confirm_duplicate_api_possible_duplicates__pair_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/possible-duplicates/{pair_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Duplicate */
+        post: operations["reject_duplicate_api_possible_duplicates__pair_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/postings/{posting_id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Split Posting */
+        post: operations["split_posting_api_jobs__job_id__postings__posting_id__split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -688,6 +791,55 @@ export interface components {
             /** In Base Resume */
             in_base_resume?: boolean | null;
         };
+        /** FeedCard */
+        FeedCard: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Locations */
+            locations: components["schemas"]["LocationOut"][];
+            /** Work Mode */
+            work_mode: string | null;
+            /** Posted At */
+            posted_at: string | null;
+            /** Sources */
+            sources: components["schemas"]["SourceBadge"][];
+            /** Contact Email */
+            contact_email: string | null;
+            /** Apply Url */
+            apply_url: string | null;
+            /** Skill Gaps */
+            skill_gaps: string[] | null;
+            /** Possible Duplicate */
+            possible_duplicate: boolean;
+            /** Hidden */
+            hidden: boolean;
+        };
+        /** FeedCounts */
+        FeedCounts: {
+            /** With Email */
+            with_email: number;
+            /** Apply Link Only */
+            apply_link_only: number;
+        };
+        /** FeedOut */
+        FeedOut: {
+            /** Items */
+            items: components["schemas"]["FeedCard"][];
+            /** Total */
+            total: number;
+            counts: components["schemas"]["FeedCounts"];
+            /** Last Updated At */
+            last_updated_at: string | null;
+            /** Sources */
+            sources: components["schemas"]["SourceBadge"][];
+        };
         /** FetchRunOut */
         FetchRunOut: {
             /**
@@ -738,6 +890,67 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** JobDetailOut */
+        JobDetailOut: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Description */
+            description: string;
+            /** Locations */
+            locations: components["schemas"]["LocationOut"][];
+            /** Work Mode */
+            work_mode: string | null;
+            /** Posted At */
+            posted_at: string | null;
+            /** Contact Email */
+            contact_email: string | null;
+            /** Apply Url */
+            apply_url: string | null;
+            /** Sources */
+            sources: components["schemas"]["SourceBadge"][];
+            /** Required Skills */
+            required_skills: string[] | null;
+            /** Skill Gaps */
+            skill_gaps: string[] | null;
+            /** Hidden */
+            hidden: boolean;
+            /** Expired */
+            expired: boolean;
+            /** Postings */
+            postings: components["schemas"]["PostingOut"][];
+            /** Possible Duplicates */
+            possible_duplicates: components["schemas"]["PossibleDuplicateOut"][];
+        };
+        /**
+         * JobRef
+         * @description Where the User's view continues after a merge or a split.
+         */
+        JobRef: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** LocationOut */
+        LocationOut: {
+            /** City */
+            city?: string | null;
+            /** Country */
+            country?: string | null;
+            /**
+             * Remote
+             * @default false
+             */
+            remote?: boolean;
+        };
         /** MeOut */
         MeOut: {
             /**
@@ -775,6 +988,66 @@ export interface components {
             gmail_connected: boolean;
             /** Next Step */
             next_step: string;
+        };
+        /** PossibleDuplicateOut */
+        PossibleDuplicateOut: {
+            /**
+             * Pair Id
+             * Format: uuid
+             */
+            pair_id: string;
+            /**
+             * Posting Id
+             * Format: uuid
+             */
+            posting_id: string;
+            /**
+             * Other Job Id
+             * Format: uuid
+             */
+            other_job_id: string;
+            /** Other Job In Feed */
+            other_job_in_feed: boolean;
+            /** Other Title */
+            other_title: string;
+            /** Other Company */
+            other_company: string;
+            /** Other Postings */
+            other_postings: components["schemas"]["PostingOut"][];
+            /** Title Similarity */
+            title_similarity: number | null;
+            /** Description Similarity */
+            description_similarity: number | null;
+        };
+        /** PostingOut */
+        PostingOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            source: components["schemas"]["SourceBadge"];
+            /** Title */
+            title: string;
+            /** Locations */
+            locations: components["schemas"]["LocationOut"][];
+            /** Work Mode */
+            work_mode: string | null;
+            /** Posted At */
+            posted_at: string | null;
+            /**
+             * First Seen At
+             * Format: date-time
+             */
+            first_seen_at: string;
+            /** Apply Url */
+            apply_url: string | null;
+            /** Contact Email */
+            contact_email: string | null;
+            /** Closed */
+            closed: boolean;
+            /** Primary */
+            primary: boolean;
         };
         /** PreferenceLocation */
         PreferenceLocation: {
@@ -835,6 +1108,13 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "running" | "succeeded" | "failed" | "skipped";
+        /** SourceBadge */
+        SourceBadge: {
+            /** Name */
+            name: string;
+            /** Label */
+            label: string;
+        };
         /** SourceNotice */
         SourceNotice: {
             /** Label */
@@ -1996,6 +2276,240 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_feed_api_feed_get: {
+        parameters: {
+            query?: {
+                section?: "email" | "link";
+                q?: string | null;
+                location?: string | null;
+                work_mode?: components["schemas"]["WorkMode"] | null;
+                source?: string | null;
+                posted_within_days?: number | null;
+                hidden?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_job_api_feed__job_id__hide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unhide_job_api_feed__job_id__hide_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_duplicate_api_possible_duplicates__pair_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRef"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_duplicate_api_possible_duplicates__pair_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_posting_api_jobs__job_id__postings__posting_id__split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                posting_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRef"];
                 };
             };
             /** @description Validation Error */

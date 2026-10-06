@@ -85,6 +85,19 @@ def _location_key(location: dict[str, object]) -> tuple[str, str, bool]:
     )
 
 
+def merge_locations(locations: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    """Union of places, where "Bengaluru" and "Bengaluru, IN" are one place (FR-C2 AC2)."""
+    merged: dict[tuple[str, str, bool], dict[str, object]] = {}
+    for location in locations:
+        merged.setdefault(_location_key(location), location)
+    known = {(city, remote) for city, country, remote in merged if city and country}
+    return [
+        location
+        for (city, country, remote), location in merged.items()
+        if country or not city or (city, remote) not in known
+    ]
+
+
 async def refresh_jobs(
     session: AsyncSession, job_ids: Iterable[uuid.UUID], priorities: dict[str, int]
 ) -> None:
@@ -146,11 +159,7 @@ def _derive(
     job.apply_url = next((p.apply_url for p in postings if p.apply_url), None)
     job.contact_email = next((p.contact_email for p in postings if p.contact_email), None)
     job.work_mode = next((p.work_mode for p in postings if p.work_mode), None)
-    locations: dict[tuple[str, str, bool], dict[str, object]] = {}
-    for posting in postings:
-        for location in posting.locations or []:
-            locations.setdefault(_location_key(location), location)
-    job.locations = list(locations.values())
+    job.locations = merge_locations(loc for p in postings for loc in p.locations or [])
     job.posted_at = min(p.posted_at or p.first_seen_at for p in postings)
     job.sources = list(dict.fromkeys(p.source for p in (open_postings or postings)))
     job.expired_at = (

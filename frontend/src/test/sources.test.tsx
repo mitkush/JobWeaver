@@ -8,7 +8,7 @@ import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { formatQueryKey } from "@/lib/query-key";
 import { AdminSourcesPage } from "@/pages/AdminSourcesPage";
 
-import { json, makeMe, mockFetch, renderWithApp } from "./utils";
+import { json, makeFeed, makeMe, mockFetch, renderWithApp } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -121,7 +121,11 @@ it("adds a company board from a link and explains bad links", async () => {
 });
 
 it("shows the Sources page to the admin only", async () => {
-  mockFetch({ "GET /api/me": () => json(makeMe()), "GET /api/sources/notices": () => json([]) });
+  mockFetch({
+    "GET /api/me": () => json(makeMe()),
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () => json(makeFeed()),
+  });
   renderWithApp(<App />, { route: "/feed" });
   await screen.findByText("No jobs yet");
   expect(screen.queryByRole("link", { name: "Sources" })).not.toBeInTheDocument();
@@ -129,6 +133,7 @@ it("shows the Sources page to the admin only", async () => {
   vi.unstubAllGlobals();
   mockFetch({
     "GET /api/me": () => json({ ...makeMe(), role: "admin" }),
+    "GET /api/feed": () => json(makeFeed()),
     "GET /api/sources/notices": () =>
       json([{ label: "LinkedIn", since: inDays(-2), message: "LinkedIn jobs are delayed; other sources are up to date." }]),
   });

@@ -8,6 +8,7 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { AdminSourcesPage } from "@/pages/AdminSourcesPage";
 import { FactBankPage } from "@/pages/FactBankPage";
 import { FeedPage } from "@/pages/FeedPage";
+import { JobPage } from "@/pages/JobPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PreferencesPage } from "@/pages/PreferencesPage";
@@ -47,6 +48,7 @@ export function App() {
       <Route path="/" element={<Navigate to="/feed" replace />} />
       <Route path="/onboarding/:step?" element={<Authenticated>{(me) => <OnboardingPage me={me} />}</Authenticated>} />
       <Route path="/feed" element={<Authenticated>{() => <FeedPage />}</Authenticated>} />
+      <Route path="/jobs/:jobId" element={<Authenticated>{() => <JobPage />}</Authenticated>} />
       <Route path="/fact-bank" element={<Authenticated>{() => <FactBankPage />}</Authenticated>} />
       <Route path="/preferences" element={<Authenticated>{() => <PreferencesPage />}</Authenticated>} />
       <Route path="/settings" element={<Authenticated>{(me) => <SettingsPage me={me} />}</Authenticated>} />

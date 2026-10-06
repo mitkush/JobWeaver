@@ -346,3 +346,19 @@ async def test_unchanged_jobs_are_not_refreshed_again(db, monkeypatch):
     await build().process()
     await build().process()
     assert refreshed[-1] == 0
+
+
+def test_a_place_without_its_country_is_not_listed_twice():
+    merged = service.merge_locations(
+        [
+            {"city": "Bengaluru", "country": "IN", "remote": False},
+            {"city": "Bengaluru", "country": None, "remote": False},
+            {"city": "Pune", "country": None, "remote": False},
+            {"city": None, "country": "IN", "remote": True},
+        ]
+    )
+    assert [(m["city"], m["country"]) for m in merged] == [
+        ("Bengaluru", "IN"),
+        ("Pune", None),
+        (None, "IN"),
+    ]

@@ -8,6 +8,7 @@ import {
   type DocumentKind,
   type Fact,
   type FactKind,
+  type FeedQuery,
   type Me,
   type Preferences,
 } from "./client";
@@ -21,6 +22,8 @@ export const keys = {
   runs: ["admin", "runs"] as const,
   notices: ["notices"] as const,
   boards: ["boards"] as const,
+  feed: ["feed"] as const,
+  job: (id: string) => ["job", id] as const,
 };
 
 export function useMe() {
@@ -168,7 +171,10 @@ export function useSavePreferences() {
     mutationFn: (body: Preferences) => unwrap(api.PUT("/api/preferences", { body })),
     onSuccess: (saved) => {
       client.setQueryData(keys.preferences, saved);
-      return client.invalidateQueries({ queryKey: keys.me });
+      return Promise.all([
+        client.invalidateQueries({ queryKey: keys.me }),
+        client.invalidateQueries({ queryKey: keys.feed }),
+      ]);
     },
   });
 }
@@ -240,6 +246,80 @@ export function useAddBoard() {
   return useMutation({
     mutationFn: (url: string) => unwrap(api.POST("/api/ats-boards", { body: { url } })),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.boards }),
+  });
+}
+
+export function useFeed(query: FeedQuery) {
+  return useQuery({
+    queryKey: [...keys.feed, query],
+    queryFn: () => unwrap(api.GET("/api/feed", { params: { query } })),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useJob(jobId: string) {
+  return useQuery({
+    queryKey: keys.job(jobId),
+    queryFn: () => unwrap(api.GET("/api/jobs/{job_id}", { params: { path: { job_id: jobId } } })),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  });
+}
+
+/** Grouping changes are shared: every Feed and Job view may have changed. */
+function useInvalidateJobs() {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: keys.feed }),
+      client.invalidateQueries({ queryKey: ["job"] }),
+    ]);
+}
+
+export function useSetHidden() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: ({ jobId, hidden }: { jobId: string; hidden: boolean }) => {
+      const params = { params: { path: { job_id: jobId } } };
+      return unwrap(hidden ? api.POST("/api/feed/{job_id}/hide", params) : api.DELETE("/api/feed/{job_id}/hide", params));
+    },
+    onSettled: invalidate,
+  });
+}
+
+export function useConfirmDuplicate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (pairId: string) =>
+      unwrap(api.POST("/api/possible-duplicates/{pair_id}/confirm", { params: { path: { pair_id: pairId } } })),
+    // One of the two Jobs no longer exists: mark Job views stale without refetching the
+    // open one, so the screen moves to the merged Job instead of flashing "not found".
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: keys.feed }),
+        client.invalidateQueries({ queryKey: ["job"], refetchType: "none" }),
+      ]),
+  });
+}
+
+export function useRejectDuplicate() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: (pairId: string) =>
+      unwrap(api.POST("/api/possible-duplicates/{pair_id}/reject", { params: { path: { pair_id: pairId } } })),
+    onSettled: invalidate,
+  });
+}
+
+export function useSplitPosting() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: ({ jobId, postingId }: { jobId: string; postingId: string }) =>
+      unwrap(
+        api.POST("/api/jobs/{job_id}/postings/{posting_id}/split", {
+          params: { path: { job_id: jobId, posting_id: postingId } },
+        }),
+      ),
+    onSettled: invalidate,
   });
 }
 

@@ -2,7 +2,7 @@
 
 AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates across sites, shows skill gaps, and prepares a truthful tailored resume, cover letter and email for any job, which you review and send yourself from Gmail.
 
-**Status:** Phases 0 to 2 are built: Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection, account deletion, and daily job fetching from LinkedIn (Bright Data), JSearch, Greenhouse, Lever and Remotive with source health and budgets on the admin Sources page. Grouping duplicates and the Feed come in Phase 3 (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
+**Status:** Phases 0 to 3 are built: Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection, account deletion, daily job fetching from LinkedIn (Bright Data), JSearch, Greenhouse, Lever and Remotive with source health and budgets on the admin Sources page, duplicates grouped into one Job per opening (with Possible Duplicates to confirm), and a personal Feed with Skill Gaps, filters and the Correspondence view. Drafts come in Phase 4 (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
 
 ## Docs
 - [PRD](jobweaver-docs/PRD.md) - what V1 does, requirements, architecture, release plan
@@ -13,7 +13,7 @@ AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates a
 
 ## Run locally
 
-Needs Python 3.12, Node 22 and Postgres 16 (or `docker compose up postgres`).
+Needs Python 3.12, Node 22 and Postgres 16 with the [pgvector](https://github.com/pgvector/pgvector) extension (or `docker compose up postgres`, which uses the pgvector image). Creating the extension needs a superuser once per database: `CREATE EXTENSION vector;` in `jobweaver` and `jobweaver_test`.
 
 ```bash
 # Backend
@@ -43,7 +43,7 @@ Backend tests need a Postgres database `jobweaver_test` (user/password `jobweave
 
 ## Deploy (free tier, ADR-0008)
 
-1. **Database:** create a free [Neon](https://neon.tech) project. Use its connection string as `DATABASE_URL`, written as `postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require`. Do not use Render's free Postgres: it is deleted after 30 days.
+1. **Database:** create a free [Neon](https://neon.tech) project. Use its connection string as `DATABASE_URL`, written as `postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require`. Neon includes pgvector, and the first migration run creates the extension. Do not use Render's free Postgres: it is deleted after 30 days.
 2. **Google Cloud:** create an OAuth client (Web application) with the redirect URI `https://<your-app>/api/auth/google/callback`. On the OAuth consent screen choose External, keep it in Testing, add the Gmail scope `gmail.compose`, and add every user's Gmail address under Test users (up to 100). Testing-mode Gmail access lasts 7 days; the app reminds users to reconnect.
 3. **Render:** create a Blueprint from this repo (`render.yaml`) and fill in the secret values. Generate `CREDENTIALS_ENCRYPTION_KEY` with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and never change it afterwards. Production refuses to start without its secrets.
 4. **Keep warm:** add an [UptimeRobot](https://uptimerobot.com) HTTP monitor on `https://<your-app>/health` every 5 minutes. `/health` never touches the database, so Neon can still sleep.
