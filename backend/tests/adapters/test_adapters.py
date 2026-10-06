@@ -238,3 +238,14 @@ class TestRemotive:
             result = await RemotiveAdapter(client, SETTINGS).fetch_window(None, DAY)
         assert [p.source_job_id for p in result.postings] == ["1"]
         assert result.postings[0].locations[0] == Location(country="IN", remote=True)
+
+
+async def test_jsearch_counts_failed_requests_that_reached_rapidapi():
+    async with http(lambda r: httpx.Response(500, text="oops")) as client:
+        with pytest.raises(SourceUnavailable) as error:
+            await JSearchAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+    assert error.value.credits_used == 1
+    async with http(lambda r: httpx.Response(429, text="slow down")) as client:
+        with pytest.raises(SourceRateLimited) as error:
+            await JSearchAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+    assert error.value.credits_used == 0

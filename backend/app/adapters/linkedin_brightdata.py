@@ -143,7 +143,12 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             f"{API}/snapshot/{snapshot_id}", params={"format": "json"}, headers=self._headers
         )
         self.check_response(self.label, response)
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise SourceBadResponse(
+                "Bright Data returned a snapshot JobWeaver could not read"
+            ) from exc
         if not isinstance(data, list):
             raise SourceBadResponse("Bright Data returned an unexpected snapshot format")
         return [r for r in data if isinstance(r, dict) and not r.get("error")]

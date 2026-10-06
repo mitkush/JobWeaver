@@ -349,7 +349,10 @@ async def test_network_errors_and_bad_data_never_stop_the_run(db, fetcher):
     await db.commit()
     outcomes = {o.source: o for o in await fetcher.run_all()}
     assert outcomes["fake-search"].message == "Fake Search could not be reached (ConnectError)"
-    assert outcomes["fake-board"].message == "Fake Board returned data JobWeaver could not read"
+    assert outcomes["fake-board"].message == (
+        "1 of 1 Fake Board boards failed "
+        "(last: acme: Fake Board returned data JobWeaver could not read)"
+    )
     runs = list((await db.execute(select(FetchRun))).scalars())
     assert {r.status.value for r in runs} == {"failed"}
 
@@ -400,3 +403,112 @@ def test_scheduler_registers_the_daily_job_and_a_catch_up():
         return jobs
 
     assert asyncio.run(check()) == {"daily_fetch", "catch_up_after_restart"}
+
+
+# --- Review fixes: board isolation, credits, trigger limits, manual-run lock -----------
+
+
+async def add_boards(db, *slugs):
+    for slug in slugs:
+        db.add(AtsBoard(ats="greenhouse", slug=slug, discovered_from="manual"))
+    await db.commit()
+
+
+async def test_one_broken_board_does_not_stop_the_boards_after_it(db, fetcher):
+    await add_boards(db, "acme", "beta", "gamma")
+    FakeBoard.boards = {
+        "acme": SourceUnavailable("Greenhouse rejected the API key (HTTP 403)"),
+        "beta": FetchResult(postings=[posting("b1")]),
+        "gamma": FetchResult(postings=[posting("g1")]),
+    }
+    outcome = await fetcher.run_source("fake-board")
+    assert outcome.status == "succeeded" and outcome.postings_new == 2
+    assert (await source_row(db, "fake-board")).state == SourceState.HEALTHY
+    statuses = {r.status.value for r in (await db.execute(select(FetchRun))).scalars()}
+    assert statuses == {"failed", "succeeded"}
+
+
+async def test_most_boards_failing_degrades_the_source(db, fetcher):
+    await add_boards(db, "a", "b", "c")
+    FakeBoard.boards = {
+        "a": SourceUnavailable("down"),
+        "b": SourceUnavailable("down"),
+        "c": FetchResult(postings=[posting("c1")]),
+    }
+    outcome = await fetcher.run_source("fake-board")
+    assert outcome.status == "failed"
+    assert outcome.message == "2 of 3 Fake Board boards failed (last: b: down)"
+    assert await db.scalar(select(func.count()).select_from(Posting)) == 1
+
+
+async def test_rate_limit_stops_the_ats_for_the_day(db, fetcher):
+    from app.adapters.errors import SourceRateLimited
+
+    await add_boards(db, "a", "b")
+    FakeBoard.boards = {"a": SourceRateLimited("slow down"), "b": FetchResult(postings=[])}
+    outcome = await fetcher.run_source("fake-board")
+    assert outcome.status == "failed"
+    assert await db.scalar(select(func.count()).select_from(FetchRun)) == 1  # "b" not tried
+
+
+async def test_spend_is_recorded_even_when_saving_fails(db, fetcher, monkeypatch):
+    await add_preferences(db)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr("app.services.fetching.save_postings", boom)
+    FakeSearch.results = [FetchResult(postings=[posting("1")], credits_used=7)] * 2
+    await fetcher.run_source("fake-search")
+    db.expire_all()
+    runs = list((await db.execute(select(FetchRun))).scalars())
+    # The first search was billed (7 credits); the failure then stops this source.
+    assert [(r.status.value, r.credits_used) for r in runs] == [("failed", 7)]
+
+
+async def test_spend_on_a_failed_call_is_recorded(db, fetcher):
+    await add_preferences(db)
+    FakeSearch.results = [SourceUnavailable("HTTP 500", credits_used=1)] * 2
+    await fetcher.run_source("fake-search")
+    run = (await db.execute(select(FetchRun))).scalars().first()
+    assert (run.status.value, run.credits_used) == ("failed", 1)
+
+
+async def test_cron_after_the_daily_run_repeats_nothing(db, fetcher, clock):
+    await add_preferences(db)
+    await add_boards(db, "acme")
+    FakeBoard.boards = {"acme": FetchResult(postings=[posting("g1")])}
+    FakeSearch.results = [FetchResult(postings=[])] * 10
+    await fetcher.run_all(trigger="schedule")
+    calls_after_schedule = len(FakeSearch.windows)
+    runs_after_schedule = await db.scalar(select(func.count()).select_from(FetchRun))
+
+    clock.now += timedelta(hours=3)
+    await fetcher.run_all(trigger="cron")
+    assert len(FakeSearch.windows) == calls_after_schedule
+    assert await db.scalar(select(func.count()).select_from(FetchRun)) == runs_after_schedule
+
+    # The admin's "Run now" deliberately repeats searches and boards.
+    await fetcher.manual_run("fake-search")
+    await fetcher.manual_run("fake-board")
+    assert len(FakeSearch.windows) > calls_after_schedule
+    assert await db.scalar(select(func.count()).select_from(FetchRun)) > runs_after_schedule
+
+
+async def test_provider_call_limits_apply_to_manual_runs_too(db, fetcher, clock, monkeypatch):
+    monkeypatch.setattr(FakeSearch, "per_query", False)
+    monkeypatch.setattr(FakeSearch, "min_interval_hours", 6)
+    await fetcher.run_source("fake-search")
+    clock.now += timedelta(hours=1)
+    assert (await fetcher.manual_run("fake-search")).message == "ran recently"
+    assert len(FakeSearch.windows) == 1
+
+
+async def test_manual_run_waits_for_the_daily_run(db, fetcher):
+    await fetcher.sync_sources()
+    async with get_sessionmaker()() as other:
+        await other.execute(text(f"SELECT pg_advisory_lock({FETCH_LOCK_ID})"))
+        outcome = await fetcher.manual_run("fake-board")
+        await other.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+    assert outcome.status == "skipped" and "already running" in outcome.message
+    assert (await source_row(db, "fake-board")).manual_runs_today == 0

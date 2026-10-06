@@ -11,7 +11,7 @@ from app.adapters.base import (
     SourceQuery,
     WindowedSourceAdapter,
 )
-from app.adapters.errors import SourceBadResponse
+from app.adapters.errors import SourceBadResponse, SourceError
 from app.adapters.normalize import (
     country_code,
     country_display,
@@ -74,11 +74,21 @@ class JSearchAdapter(WindowedSourceAdapter):
             params=params,
             headers={"X-RapidAPI-Key": self.settings.rapidapi_key, "X-RapidAPI-Host": HOST},
         )
-        self.check_response(self.label, response)
-        body = response.json()
+        try:
+            self.check_response(self.label, response)
+            body = response.json()
+        except SourceError as exc:
+            # A request that reached RapidAPI counts against the monthly quota; a 429
+            # (rate limit or quota already used up) does not.
+            exc.credits_used = 0 if response.status_code == 429 else 1
+            raise
+        except ValueError as exc:
+            raise SourceBadResponse(
+                "JSearch returned data JobWeaver could not read", credits_used=1
+            ) from exc
         data = body.get("data") if isinstance(body, dict) else None
         if not isinstance(data, list):
-            raise SourceBadResponse("JSearch returned an unexpected response")
+            raise SourceBadResponse("JSearch returned an unexpected response", credits_used=1)
         postings = [p for job in data if (p := self._to_posting(job)) is not None]
         return FetchResult(postings=postings, credits_used=1)
 

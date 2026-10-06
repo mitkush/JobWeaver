@@ -2,9 +2,11 @@
 
 
 class SourceError(Exception):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, credits_used: int = 0) -> None:
         super().__init__(message)
         self.message = message
+        # What the failed call still cost, so the Credit Budget never reads low (FR-B5).
+        self.credits_used = credits_used
 
 
 class SourceNotConfigured(SourceError):

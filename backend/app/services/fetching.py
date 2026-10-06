@@ -2,7 +2,8 @@
 a failure marks that Source Degraded and the run moves on to the next one."""
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -27,6 +28,8 @@ from app.adapters.errors import (
     SourceBadResponse,
     SourceError,
     SourceNotConfigured,
+    SourceQuotaExhausted,
+    SourceRateLimited,
     SourceUnavailable,
 )
 from app.adapters.normalize import normalize_company
@@ -45,6 +48,9 @@ BOARD_DAILY = timedelta(hours=20)
 BOARD_STALE_AFTER = timedelta(days=30)
 BOARD_WEEKLY = timedelta(days=7)
 MANUAL_RUNS_PER_DAY = 4
+MANUAL = "manual"
+# A windowed search done this recently is not repeated by cron or catch-up runs.
+ALREADY_FETCHED = timedelta(hours=20)
 
 Clock = Callable[[], datetime]
 
@@ -309,26 +315,33 @@ class Fetcher:
                     session.add(Source(name=cls.name))
             await session.commit()
 
+    @asynccontextmanager
+    async def _exclusive(self) -> AsyncIterator[bool]:
+        """One fetch at a time across daily, cron and manual runs (and across processes)."""
+        async with self.sessionmaker() as lock_session:
+            got = bool(
+                await lock_session.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
+            )
+            try:
+                yield got
+            finally:
+                if got:
+                    await lock_session.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
+                    await lock_session.commit()
+
     async def run_all(self, trigger: str = "schedule") -> list[SourceOutcome] | None:
         """Runs every enabled Source once. Returns None if another run holds the lock."""
         await self.sync_sources()
-        async with self.sessionmaker() as lock_session:
-            got = await lock_session.scalar(text(f"SELECT pg_try_advisory_lock({FETCH_LOCK_ID})"))
+        async with self._exclusive() as got:
             if not got:
                 logger.info("Fetch run skipped: another run is in progress")
                 return None
-            try:
-                outcomes = [
-                    await self.run_source(cls.name, trigger) for cls in registered_adapters()
-                ]
-                async with self.sessionmaker() as session:
-                    closed = await expire_postings(session, self.clock(), self.settings)
-                    await session.commit()
-                logger.info("Fetch run finished: %s; %s postings expired", outcomes, closed)
-                return outcomes
-            finally:
-                await lock_session.execute(text(f"SELECT pg_advisory_unlock({FETCH_LOCK_ID})"))
-                await lock_session.commit()
+            outcomes = [await self.run_source(cls.name, trigger) for cls in registered_adapters()]
+            async with self.sessionmaker() as session:
+                closed = await expire_postings(session, self.clock(), self.settings)
+                await session.commit()
+            logger.info("Fetch run finished: %s; %s postings expired", outcomes, closed)
+            return outcomes
 
     async def run_source(self, name: str, trigger: str = "schedule") -> SourceOutcome:
         cls = get_adapter_class(name)
@@ -337,7 +350,8 @@ class Fetcher:
             if not source.enabled:
                 return SourceOutcome(name, "skipped", "disabled")
             now = self.clock()
-            if cls.min_interval_hours and trigger == "schedule":
+            # A provider's own call limit (e.g. Remotive: 4 a day) applies to every trigger.
+            if cls.min_interval_hours:
                 last = source.last_success_at
                 if last and now - last < timedelta(hours=cls.min_interval_hours):
                     return SourceOutcome(name, "skipped", "ran recently")
@@ -427,6 +441,10 @@ class Fetcher:
             if watermark is None:
                 since = now - timedelta(days=self.settings.backfill_days)
             else:
+                # Cron and catch-up runs never repeat a search already done today; only
+                # the admin's manual run deliberately does.
+                if trigger != MANUAL and now - watermark.last_until < ALREADY_FETCHED:
+                    continue
                 since = watermark.last_until - timedelta(hours=self.settings.window_overlap_hours)
             window = FetchWindow(since=since, until=now)
             run = FetchRun(
@@ -443,9 +461,27 @@ class Fetcher:
                 result = await _guarded(adapter, adapter.fetch_window(query, window))
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
+                run.credits_used = exc.credits_used
                 await session.commit()
                 raise
-            new, seen = await save_postings(session, adapter.name, result.postings, now)
+            # Record the spend before anything else can fail: it is already billed (FR-B5).
+            run.credits_used = result.credits_used
+            await session.commit()
+            try:
+                new, seen = await save_postings(session, adapter.name, result.postings, now)
+            except Exception:
+                await session.rollback()
+                await session.execute(
+                    update(FetchRun)
+                    .where(FetchRun.id == run.id)
+                    .values(
+                        status=RunStatus.FAILED,
+                        error="Saving the results failed; see the server logs",
+                        finished_at=self.clock(),
+                    )
+                )
+                await session.commit()
+                raise
             run.status, run.finished_at = RunStatus.SUCCEEDED, self.clock()
             run.postings_found, run.postings_new, run.credits_used = (
                 len(seen),
@@ -478,9 +514,10 @@ class Fetcher:
             AtsBoard.last_fetched_at < now - BOARD_WEEKLY,
         )
         query = select(AtsBoard).where(AtsBoard.ats == adapter.ats, AtsBoard.enabled.is_(True))
-        if trigger == "schedule":
+        if trigger != MANUAL:
             query = query.where(due)
         boards = list((await session.execute(query.order_by(AtsBoard.slug))).scalars())
+        failures: list[str] = []
         for board in boards:
             run = FetchRun(
                 source=adapter.name, status=RunStatus.RUNNING, trigger=trigger, board_id=board.id
@@ -494,10 +531,17 @@ class Fetcher:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 await session.commit()
                 continue
-            except SourceError as exc:
+            except (SourceRateLimited, SourceQuotaExhausted) as exc:
+                # The provider is pushing back for everyone: stop this ATS for today.
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 await session.commit()
                 raise
+            except SourceError as exc:
+                # One broken board must not stop the boards after it (ADR-0003).
+                run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
+                await session.commit()
+                failures.append(f"{board.slug}: {exc.message}")
+                continue
             now = self.clock()
             new, seen = await save_postings(
                 session, adapter.name, result.postings, now, board=board
@@ -519,22 +563,32 @@ class Fetcher:
             run.postings_closed = closed.rowcount or 0
             await session.commit()
             outcome.postings_new += new
+        if failures and len(failures) * 2 > len(boards):
+            raise SourceUnavailable(
+                f"{len(failures)} of {len(boards)} {adapter.label} boards failed "
+                f"(last: {failures[-1]})"
+            )
 
     async def manual_run(self, name: str) -> SourceOutcome:
         """Admin "Run now" (FR-B11), limited per Source per day."""
         today = self.clock().date().isoformat()
         get_adapter_class(name)
-        async with self.sessionmaker() as session:
-            source = await self._source_row(session, name)
-            if source.manual_runs_date != today:
-                source.manual_runs_date, source.manual_runs_today = today, 0
-            if source.manual_runs_today >= MANUAL_RUNS_PER_DAY:
+        async with self._exclusive() as got:
+            if not got:
                 return SourceOutcome(
-                    name, "skipped", f"Limit of {MANUAL_RUNS_PER_DAY} manual runs a day reached"
+                    name, "skipped", "A fetch is already running; try again when it finishes"
                 )
-            source.manual_runs_today += 1
-            await session.commit()
-        return await self.run_source(name, trigger="manual")
+            async with self.sessionmaker() as session:
+                source = await self._source_row(session, name)
+                if source.manual_runs_date != today:
+                    source.manual_runs_date, source.manual_runs_today = today, 0
+                if source.manual_runs_today >= MANUAL_RUNS_PER_DAY:
+                    return SourceOutcome(
+                        name, "skipped", f"Limit of {MANUAL_RUNS_PER_DAY} manual runs a day reached"
+                    )
+                source.manual_runs_today += 1
+                await session.commit()
+            return await self.run_source(name, trigger=MANUAL)
 
 
 async def _guarded(adapter: SourceAdapter, call: Awaitable[FetchResult]) -> FetchResult:
