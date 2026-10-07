@@ -43,6 +43,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "natural language processing": ("nlp",),
     "google bigquery": ("bigquery", "big query"),
     "github actions": ("gh actions",),
+    "ruby on rails": ("rails", "ror", "ruby-on-rails"),
 }
 _CANONICAL = {alias: name for name, aliases in _ALIASES.items() for alias in aliases}
 # Words too common in prose to count as a mention ("at rest", "go to market").

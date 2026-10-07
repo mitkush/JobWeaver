@@ -87,12 +87,14 @@ def get_sources_http() -> httpx.AsyncClient:
 
 
 def queries_from_preferences(preferences: list[Preference]) -> list[SourceQuery]:
-    """One query per distinct (title, location) across all users (FR-B4 AC1)."""
+    """One query per distinct (title, location) across all users (FR-B4 AC1), plus one per
+    core keyword for Users who chose to search by keywords too (FR-A3)."""
     queries: dict[str, SourceQuery] = {}
     for pref in preferences:
         modes = set(pref.work_modes)
         remote_only = modes == {WorkMode.REMOTE.value}
-        for title in pref.titles:
+        terms = list(pref.titles) + (list(pref.core_keywords or []) if pref.search_keywords else [])
+        for title in terms:
             # Global preferences still produce searches, without a country/city filter.
             for loc in pref.locations or [{"city": None, "country": None}]:
                 country = loc.get("country")

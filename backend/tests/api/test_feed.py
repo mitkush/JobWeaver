@@ -12,7 +12,16 @@ from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.gateway.recorded import RecordedAIGateway
 from app.main import app
-from app.models import FetchRun, Job, MatchPair, PairStatus, Posting, RejectedPair, RunStatus
+from app.models import (
+    Draft,
+    FetchRun,
+    Job,
+    MatchPair,
+    PairStatus,
+    Posting,
+    RejectedPair,
+    RunStatus,
+)
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
@@ -119,7 +128,12 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     assert (await client.get("/api/feed")).json()["total"] == 0
     assert (await client.put("/api/preferences", json=BACKEND_BLR)).status_code == 200
     body = (await client.get("/api/feed")).json()
-    assert body["counts"] == {"with_email": 1, "apply_link_only": 1}
+    assert body["counts"] == {
+        "with_email": 1,
+        "apply_link_only": 1,
+        "title_matches": 2,
+        "keyword_matches": 0,
+    }
     [card] = body["items"]
     assert card["title"] == "Backend Engineer"
     assert card["contact_email"] == "hiring@acme.com"
@@ -390,3 +404,108 @@ async def test_search_text_is_literal_not_a_wildcard(alice):
     percent = (await client.get("/api/feed", params={"q": "%"})).json()["counts"]
     underscore = (await client.get("/api/feed", params={"q": "_"})).json()["counts"]
     assert sum(percent.values()) == 0 and sum(underscore.values()) == 0
+
+
+RAILS_ADVERT = (
+    "We are hiring an engineer for our payments platform. The stack is Ruby on Rails with "
+    "PostgreSQL and Redis, deployed on AWS. Strong guardrails for code review. Pune office."
+)
+RAILS_BLR = BACKEND_BLR | {
+    "titles": ["Backend Developer"],
+    "keywords": ["Rails", "Ruby on Rails", "PostgreSQL", "Git"],
+    "core_keywords": ["Rails"],
+    "keyword_min_matches": 2,
+}
+
+
+async def seed_keywords() -> None:
+    await add(
+        "linkedin",
+        posting("k1", title="Software Engineer - Payments", description=RAILS_ADVERT),
+        posting(
+            "k2",
+            title="Java Engineer",
+            company="Initech",
+            description="Java services with PostgreSQL and Git. Spring Boot. Bengaluru office.",
+        ),
+    )
+    await process()
+
+
+async def test_differently_titled_jobs_matching_core_keywords_get_their_own_section(alice):
+    _, client = alice
+    await seed_keywords()
+    assert (await client.put("/api/preferences", json=RAILS_BLR)).status_code == 200
+    title = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert title["items"] == []
+    assert title["counts"]["keyword_matches"] == 1
+    body = (await client.get("/api/feed", params={"section": "link", "match": "keywords"})).json()
+    [card] = body["items"]
+    assert card["title"] == "Software Engineer - Payments"
+    assert card["match"] == "keywords"
+    # "Rails" and "Ruby on Rails" are one skill; guardrails is not Rails.
+    assert card["matched_keywords"] == [
+        {"keyword": "Rails", "where": "description", "core": True},
+        {"keyword": "PostgreSQL", "where": "description", "core": False},
+    ]
+    detail = (await client.get(f"/api/jobs/{card['job_id']}")).json()
+    assert detail["match"] == "keywords"
+
+
+async def test_no_core_keyword_means_no_keyword_section(alice):
+    _, client = alice
+    await seed_keywords()
+    prefs = RAILS_BLR | {"core_keywords": []}
+    assert (await client.put("/api/preferences", json=prefs)).status_code == 200
+    body = (await client.get("/api/feed", params={"section": "link", "match": "keywords"})).json()
+    assert body["items"] == [] and body["counts"]["keyword_matches"] == 0
+
+
+async def test_core_keywords_must_be_keywords(alice):
+    _, client = alice
+    prefs = RAILS_BLR | {"core_keywords": ["Kotlin"]}
+    assert (await client.put("/api/preferences", json=prefs)).status_code == 422
+    prefs = RAILS_BLR | {"core_keywords": ["rails"]}
+    saved = (await client.put("/api/preferences", json=prefs)).json()
+    assert saved["core_keywords"] == ["Rails"]
+
+
+async def test_drafted_job_stays_marked_no_longer_matching(alice, db):
+    user, client = alice
+    await seed_keywords()
+    await client.put("/api/preferences", json=RAILS_BLR)
+    params = {"section": "link", "match": "keywords"}
+    job_id = (await client.get("/api/feed", params=params)).json()["items"][0]["job_id"]
+    db.add(Draft(user_id=user.id, job_id=job_id))
+    await db.commit()
+    assert (await client.put("/api/preferences", json=BACKEND_BLR)).status_code == 200
+    assert (await client.get("/api/feed", params=params)).json()["items"] == []
+    kept = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert [(c["job_id"], c["match"], c["matched_keywords"]) for c in kept] == [(job_id, None, [])]
+    # Matching again restores the reason.
+    await client.put("/api/preferences", json=RAILS_BLR)
+    [card] = (await client.get("/api/feed", params=params)).json()["items"]
+    assert card["job_id"] == job_id and card["match"] == "keywords"
+
+
+async def test_keywords_reach_only_their_owners_feed(alice, bob):
+    _, a = alice
+    _, b = bob
+    await seed_keywords()
+    await a.put("/api/preferences", json=RAILS_BLR)
+    await b.put("/api/preferences", json=BACKEND_BLR)
+    params = {"section": "link", "match": "keywords"}
+    assert len((await a.get("/api/feed", params=params)).json()["items"]) == 1
+    assert (await b.get("/api/feed", params=params)).json()["items"] == []
+    assert (await b.get("/api/feed", params={"section": "link"})).json()["items"] == []
+
+
+async def test_title_suggestions(alice):
+    _, client = alice
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    response = await client.get(
+        "/api/preferences/title-suggestions", params={"titles": ["Backend Developer"]}
+    )
+    body = response.json()
+    assert "Software Engineer" in body["titles"]
+    assert body["searches_per_title"] >= 0

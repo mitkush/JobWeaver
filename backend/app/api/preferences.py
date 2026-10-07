@@ -1,8 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Query
 
 from app.api.deps import CurrentUser, DbSession, Gateway
 from app.core.errors import NotFoundError
-from app.schemas.preferences import PreferencesIn, PreferencesOut
+from app.schemas.preferences import PreferencesIn, PreferencesOut, TitleSuggestionsOut
 from app.services import feed
 from app.services import preferences as service
 from app.services.pipeline import extract_skills_now
@@ -32,3 +34,17 @@ async def save_preferences(
     await db.commit()
     background.add_task(extract_skills_now, gateway)
     return PreferencesOut.model_validate(preference, from_attributes=True)
+
+
+@router.get("/title-suggestions")
+async def title_suggestions(
+    db: DbSession,
+    user: CurrentUser,
+    titles: Annotated[list[str], Query(max_length=20)],
+) -> TitleSuggestionsOut:
+    """Related titles to offer; only the ones the User adds are ever searched (FR-A3)."""
+    preference = await service.get_preferences(db, user)
+    return TitleSuggestionsOut(
+        titles=service.suggested_titles([t[:100] for t in titles]),
+        searches_per_title=await service.searches_per_title(db, preference),
+    )

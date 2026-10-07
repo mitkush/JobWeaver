@@ -1,0 +1,72 @@
+"""Preference keywords found in a Job (FR-D1): spellings count once, whole phrases only,
+and a core keyword gates the keyword section."""
+
+from app.tailoring.keywords import keyword_matches, keyword_rule, mentioned, qualifies
+
+
+def found(rule, requirements: str = "", description: str = ""):
+    return keyword_matches(
+        rule, mentioned(requirements, rule.terms), mentioned(description, rule.terms)
+    )
+
+
+def test_no_core_keyword_turns_the_keyword_section_off():
+    assert keyword_rule(["Ruby", "PostgreSQL"], [], 2) is None
+
+
+def test_core_must_name_one_of_the_keywords():
+    assert keyword_rule(["PostgreSQL"], ["Kotlin"], 1) is None
+
+
+def test_spellings_of_one_skill_count_once():
+    rule = keyword_rule(["Rails", "Ruby on Rails", "RoR", "PostgreSQL"], ["Rails"], 2)
+    assert [k.label for k in rule.keywords] == ["Rails", "PostgreSQL"]
+    matches = found(rule, description="We use Ruby on Rails, RoR tooling and Rails engines.")
+    assert [m.keyword for m in matches] == ["Rails"]
+    assert not qualifies(rule, matches)
+
+
+def test_core_flag_follows_any_spelling_of_the_skill():
+    rule = keyword_rule(["Rails", "Ruby on Rails"], ["Ruby on Rails"], 1)
+    assert [(k.label, k.core) for k in rule.keywords] == [("Rails", True)]
+
+
+def test_only_whole_skill_phrases_count():
+    rule = keyword_rule(["Rails", "Sidekiq"], ["Rails"], 1)
+    assert found(rule, description="Strong guardrails for our AI models, and Sidekiqs.") == []
+
+
+def test_users_own_terms_are_matched_too():
+    rule = keyword_rule(["Sidekiq", "Payments"], ["Sidekiq"], 2)
+    matches = found(rule, description="Background jobs in Sidekiq for payments at scale.")
+    assert {m.keyword for m in matches} == {"Sidekiq", "Payments"}
+    assert qualifies(rule, matches)
+
+
+def test_common_skills_alone_never_qualify_without_a_core_one():
+    rule = keyword_rule(["Ruby on Rails", "Git", "PostgreSQL"], ["Ruby on Rails"], 2)
+    matches = found(rule, description="Java role. Git and PostgreSQL required.")
+    assert {m.keyword for m in matches} == {"Git", "PostgreSQL"}
+    assert not qualifies(rule, matches)
+
+
+def test_marking_a_common_skill_core_is_the_users_choice():
+    rule = keyword_rule(["Git", "PostgreSQL"], ["Git"], 2)
+    assert qualifies(rule, found(rule, description="Java role. Git and PostgreSQL required."))
+
+
+def test_minimum_counts_distinct_keywords():
+    rule = keyword_rule(["Rails", "PostgreSQL", "Redis"], ["Rails"], 3)
+    two = found(rule, description="Rails and PostgreSQL.")
+    three = found(rule, description="Rails, PostgreSQL and Redis.")
+    assert not qualifies(rule, two)
+    assert qualifies(rule, three)
+
+
+def test_each_match_says_where_it_was_found():
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
+    matches = found(rule, requirements="Ruby on Rails", description="Rails app on Postgres.")
+    assert [(m.keyword, m.where, m.core) for m in matches] == [
+        ("Rails", "requirements", True),
+        ("PostgreSQL", "description", False),
+    ]
