@@ -34,8 +34,10 @@
 |---|---|---|---|---|
 | 1 | Google Gemini | Flash-Lite: high-volume extraction (skills per Job, HN, document parsing). Flash: tailoring and Draft Chat. Embeddings: duplicate detection, the **only** embedding provider (ADR-0014) | Limits are per model and shown per project in Google AI Studio, not in a public table. Reported: newest Flash models about **20 requests/day**; Flash-Lite **500 to 1,000 requests/day** (about 15/minute); embedding models free. Free-tier prompts may be used to improve Google products | Text tasks fall through to Groq; embeddings queue until Gemini returns (ADR-0014) |
 | 2 | Groq | All text tasks | About **1,000 requests/day** and 30/minute per model on popular open models (lower token caps per minute and day); limits are per organization, extra keys do not help. No embeddings | Falls through to OpenRouter |
-| 3 | OpenRouter `:free` models | All text tasks | **50 requests/day**, 20/minute (1,000/day only after a one-time $10 credit purchase, excluded by the zero budget). No embeddings used | Task queued and retried; the User sees "AI busy, retrying" |
+| 3 | OpenRouter `:free` models (currently `google/gemma-4-31b-it:free`) | All text tasks | **50 requests/day**, 20/minute (1,000/day only after a one-time $10 credit purchase, excluded by the zero budget). No embeddings used. Free models are withdrawn without notice (`openai/gpt-oss-20b:free` returned HTTP 404 on 7 Oct 2026); the logs then show `openrouter returned HTTP 404` and the model in `routing.py` must be replaced | Task queued and retried; the User sees "AI busy, retrying" |
 | dev | Ollama (local) | Local development only | Unlimited on the developer's machine | Not used in production |
+
+A provider that answers HTTP 503 ("high demand", common on Gemini's free models) is retried once after 2 seconds before the next provider is tried.
 
 **Daily AI budget (design consequence):** the strongest free model (Gemini Flash) allows only about 20 requests a day, so it is reserved for Draft generation and Draft Chat. Everything high-volume runs on Flash-Lite first, with Groq as the bulk fallback. The AI Gateway tracks requests per provider and model per day and routes before a quota is hit, not after (FR-G4).
 

@@ -8,7 +8,10 @@ They check what ADR-0005 forbids inventing, and nothing else, so ordinary reword
 - skills and technologies named anywhere must be in the Fact Bank;
 - numbers (metrics and dates) must appear in the cited Facts;
 - names (an employer, product or school written with a capital letter) must appear in
-  the Fact Bank; the Cover Letter and Email may also name the Job's company and title;
+  the Fact Bank; the Cover Letter and Email may also name the Job's company and title,
+  and any part may name the User. A capitalised word is not a name when it is a label
+  ("Languages:"), a past-tense verb ("Designed"), or a word the Fact Bank or the job
+  advert also writes in lower case ("conducted");
 - claims of seniority, leadership or expertise must appear in the cited Facts, and an
   Experience or Projects line must cite work, not only skills.
 
@@ -22,6 +25,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
+from app.tailoring.placeholders import PLACEHOLDER
 from app.tailoring.skills import TECHNOLOGIES, all_spellings, canonical_skill, covers, user_skills
 from app.tailoring.vocabulary import TECHNOLOGIES as COMMON_TECHNOLOGIES
 
@@ -159,12 +163,23 @@ def _sentence_starts(text: str) -> set[int]:
     return {0} | {m.end() for m in re.finditer(r"[.!?:;]\s+|\n+|[-•]\s+", text)}
 
 
+_LOWER_WORD = re.compile(r"(?<![\w'-])[a-z][a-z-]+(?![\w'])")
+
+
+def _looks_like_verb(word: str) -> bool:
+    """A past-tense verb ("Designed", "Conducted"), not a name, wherever it appears."""
+    return len(word) >= 5 and word.endswith("ed")
+
+
 @dataclass
 class Checker:
     facts: list[FactSnapshot]
     job_title: str = ""
     company: str = ""
     job_skills: tuple[str, ...] = ()
+    # The job advert and the User's own name: ordinary words and a name the User owns.
+    job_text: str = ""
+    user_name: str = ""
     _by_ref: dict[str, FactSnapshot] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -177,6 +192,10 @@ class Checker:
         self._terms = _base_terms() | frozenset(s.casefold() for s in self.job_skills)
         self._role_words = {w.casefold() for w in re.findall(r"[\w+#.]+", self.job_title)}
         self._company = " ".join(self.company.split()).casefold()
+        written = "\n".join([*(f"{f.group}\n{f.text}" for f in self.facts), self.job_text])
+        # Words written in lower case somewhere are ordinary English, not names.
+        self._ordinary = set(_LOWER_WORD.findall(written))
+        self._own_name = {w.casefold() for w in re.findall(r"[\w'-]+", self.user_name)}
 
     def _in_bank(self, word: str) -> bool:
         """The word or its singular ("APIs" for "API") appears in the Fact Bank."""
@@ -189,6 +208,10 @@ class Checker:
             return ["It lists the same Fact twice"]
         if not line.fact_refs or any(ref not in self._by_ref for ref in line.fact_refs):
             return ["It is not based on Facts in your Fact Bank"]
+        gap = PLACEHOLDER.search(line.text)
+        if gap:
+            # A template slot JobWeaver cannot fill ("[Phone Number]") is never sent.
+            return [f"It contains the placeholder {gap.group(0)}"]
         sources = [self._by_ref[ref] for ref in line.fact_refs]
         evidence = "\n".join(f"{f.group}\n{f.text}" for f in sources)
         reasons: list[str] = []
@@ -222,6 +245,10 @@ class Checker:
             if len(word) < 2 or folded in _LETTER_WORDS:
                 continue
             if match.start() in starts and _ordinary_opening(folded):
+                continue
+            if text[match.end() : match.end() + 1] == ":" and match.start() in starts:
+                continue  # a label such as "Languages:" or "Tools:"
+            if _looks_like_verb(folded) or folded in self._ordinary or folded in self._own_name:
                 continue
             if folded in self._role_words or folded in self._terms or self._in_bank(word):
                 continue
@@ -259,8 +286,10 @@ def check(
     job_title: str = "",
     company: str = "",
     job_skills: Iterable[str] = (),
+    job_text: str = "",
+    user_name: str = "",
 ) -> CheckResult:
-    checker = Checker(facts, job_title, company, tuple(job_skills))
+    checker = Checker(facts, job_title, company, tuple(job_skills), job_text, user_name)
     checked = content.model_copy(deep=True)
     result = CheckResult(checked)
     seen: set[str] = set()

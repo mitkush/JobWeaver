@@ -1,6 +1,7 @@
 """Small single-column PDFs with selectable, embedded Unicode text."""
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -31,6 +32,55 @@ def _layout(
 
 FONTS = Path(__file__).with_name("fonts")
 
+# Characters AI models often write that the embedded font lacks, mapped to ones it has.
+# Only the PDF changes; the saved Draft keeps the original text.
+_FALLBACK = str.maketrans(
+    {
+        "\u2011": "-",  # non-breaking hyphen ("full\u2011stack")
+        "\u2012": "-",  # figure dash
+        "\u2043": "-",  # hyphen bullet
+        "\u2023": "\u2022",  # triangular bullet
+        "\u2794": "\u2192",  # heavy arrows
+        "\u27a4": "\u2192",
+        "\u2713": "",  # check marks used as bullets
+        "\u2714": "",
+        "\u2605": "*",  # star
+        "\u20b9": "Rs ",  # rupee sign
+        "\u2060": "",  # word joiner
+        "\ufeff": "",  # byte order mark
+    }
+)
+
+
+def pdf_text(text: str) -> str:
+    """The text as the PDF prints it, with unsupported look-alikes replaced."""
+    # A removed check mark or "Rs " before a space would otherwise leave a double space.
+    return re.sub(r"(?<=\S) {2,}", " ", text.translate(_FALLBACK))
+
+
+@lru_cache(maxsize=1)
+def _supported() -> frozenset[int]:
+    with TTFont(FONTS / "LiberationSans-Regular.ttf") as font:
+        return frozenset(font.getBestCmap())
+
+
+def _unsupported(text: str) -> str | None:
+    supported = _supported()
+    return next((c for c in text if not c.isspace() and ord(c) not in supported), None)
+
+
+def _check_printable(labelled: list[tuple[str, str]]) -> None:
+    """Names the first character the font cannot draw and the line it is in."""
+    for label, text in labelled:
+        char = _unsupported(pdf_text(text))
+        if char is not None:
+            snippet = " ".join(text.split())
+            snippet = snippet if len(snippet) <= 60 else snippet[:57] + "..."
+            raise ValidationFailedError(
+                f'The PDF cannot show "{char}" (U+{ord(char):04X}) in {label} "{snippet}". '
+                "Remove or replace that character."
+            )
+
 
 def filename(name: str, company: str, title: str, kind: str = "resume") -> str:
     parts = [
@@ -50,11 +100,16 @@ def render_pdf(
     facts: list[FactSnapshot] | None = None,
 ) -> bytes:
     font_path = FONTS / "LiberationSans-Regular.ttf"
-    text = "\n".join([name, email, *(line.text for line in getattr(content, kind))])
-    with TTFont(font_path) as font:
-        supported = font.getBestCmap()
-        if any(ord(char) not in supported for char in text if not char.isspace()):
-            raise ValidationFailedError("This PDF font cannot render a character. Edit it first.")
+    part = "cover letter line" if kind == "cover_letter" else "resume line"
+    labelled = [("your name", name), ("your email", email)]
+    labelled += [(f"the {part}", line.text) for line in getattr(content, kind)]
+    labelled += [
+        ("the heading", heading)
+        for _, groups in _layout(content.resume, facts or [])
+        for heading, _ in groups
+        if kind == "resume" and heading
+    ]
+    _check_printable(labelled)
     pdf = FPDF()
     pdf.set_margins(18, 15, 18)
     pdf.set_auto_page_break(True, 15)
@@ -62,15 +117,15 @@ def render_pdf(
     pdf.add_font("Liberation", style="B", fname=str(FONTS / "LiberationSans-Bold.ttf"))
     pdf.add_page()
     pdf.set_font("Liberation", "B", 16)
-    pdf.multi_cell(0, 8, name, new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 8, pdf_text(name), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Liberation", size=10)
-    pdf.multi_cell(0, 5, email, new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 5, pdf_text(email), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
     size, height = (10, 5) if template == "compact" else (11, 5.5)
     if kind == "cover_letter":
         for line in content.cover_letter:
             pdf.set_font("Liberation", size=size)
-            pdf.multi_cell(0, height, line.text, new_x="LMARGIN", new_y="NEXT")
+            pdf.multi_cell(0, height, pdf_text(line.text), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(3)
     else:
         for section, groups in _layout(content.resume, facts or []):
@@ -79,10 +134,10 @@ def render_pdf(
             for heading, lines in groups:
                 if heading:
                     pdf.set_font("Liberation", "B", size)
-                    pdf.multi_cell(0, height, heading, new_x="LMARGIN", new_y="NEXT")
+                    pdf.multi_cell(0, height, pdf_text(heading), new_x="LMARGIN", new_y="NEXT")
                 for line in lines:
                     pdf.set_font("Liberation", size=size)
-                    pdf.multi_cell(0, height, line.text, new_x="LMARGIN", new_y="NEXT")
+                    pdf.multi_cell(0, height, pdf_text(line.text), new_x="LMARGIN", new_y="NEXT")
                     pdf.ln(1)
             pdf.ln(1)
     if kind == "resume" and pdf.pages_count > 2:

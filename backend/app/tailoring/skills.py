@@ -128,6 +128,9 @@ def spellings(canonical: str) -> list[str]:
 class UserSkills:
     canonical: set[str]
     text: str  # every Fact, lower case, for mentions inside experience or project lines
+    # Every Fact as written: short names that are also English words ("AI", "Go") count
+    # only when written as a name, which the lower-case text cannot show.
+    raw: str = ""
 
 
 def user_skills(skill_facts: Iterable[str], all_facts: Iterable[str]) -> UserSkills:
@@ -135,12 +138,19 @@ def user_skills(skill_facts: Iterable[str], all_facts: Iterable[str]) -> UserSki
     for fact in skill_facts:
         canonical.add(canonical_skill(fact))
         canonical.update(canonical_skill(part) for part in _SPLIT.split(fact) if part.strip())
-    return UserSkills(canonical, "\n".join(all_facts).lower())
+    raw = "\n".join(all_facts)
+    return UserSkills(canonical, raw.lower(), raw)
 
 
-def _mentioned(canonical: str, text: str) -> bool:
+def _mentioned(canonical: str, text: str, raw: str = "") -> bool:
     for spelling in spellings(canonical):
         if len(spelling) < 3 or spelling in PROSE_WORDS:
+            # "AI" or "built in Go" as a name; never "ai" inside a word, "go" as a verb,
+            # or a capital that only opens a sentence ("Go to market").
+            upper = rf"(?<![\w+#.]){re.escape(spelling.upper())}(?![\w+#])"
+            inside = rf"(?<=[\w,;)] ){re.escape(spelling.capitalize())}(?![\w+#])"
+            if re.search(upper, raw) or re.search(inside, raw):
+                return True
             continue
         if re.search(rf"(?<![\w+#.]){re.escape(spelling)}(?![\w+#])", text):
             return True
@@ -150,7 +160,9 @@ def _mentioned(canonical: str, text: str) -> bool:
 def covers(skills: UserSkills, name: str) -> bool:
     """True when the User has this skill as a Fact or names it anywhere in their Facts."""
     canonical = canonical_skill(name)
-    return bool(canonical) and (canonical in skills.canonical or _mentioned(canonical, skills.text))
+    if not canonical:
+        return False
+    return canonical in skills.canonical or _mentioned(canonical, skills.text, skills.raw)
 
 
 def all_spellings() -> dict[str, str]:
@@ -167,7 +179,7 @@ def skill_gaps(required: Iterable[str], skills: UserSkills) -> list[str]:
         if not canonical or canonical in seen:
             continue
         seen.add(canonical)
-        if canonical in skills.canonical or _mentioned(canonical, skills.text):
+        if canonical in skills.canonical or _mentioned(canonical, skills.text, skills.raw):
             continue
         gaps.append(name.strip())
     return gaps

@@ -63,3 +63,17 @@ async def test_blocked_gemini_response_is_a_gateway_error():
     async with client_for(lambda r: httpx.Response(200, json=body)) as http:
         with pytest.raises(GatewayError, match="no content"):
             await GeminiClient("k", http).complete_json("m", "s", "u", 10)
+
+
+async def test_http_503_is_a_retryable_busy_error_with_the_providers_reason():
+    import httpx
+
+    from app.core.errors import ProviderBusy
+    from app.gateway.providers import GeminiClient
+
+    def busy(request):
+        return httpx.Response(503, json={"error": {"message": "high demand", "code": 503}})
+
+    client = GeminiClient("k", httpx.AsyncClient(transport=httpx.MockTransport(busy)))
+    with pytest.raises(ProviderBusy, match="overloaded \\(HTTP 503\\): high demand"):
+        await client.complete_json("m", "s", "u", 10)

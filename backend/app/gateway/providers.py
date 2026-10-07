@@ -5,7 +5,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.core.errors import GatewayError
+from app.core.errors import GatewayError, ProviderBusy
 
 
 @dataclass(frozen=True)
@@ -146,8 +146,22 @@ def _json(provider: str, response: httpx.Response) -> dict[str, Any]:
     return body
 
 
+def _reason(response: httpx.Response) -> str:
+    """The provider's own explanation ("This model is unavailable for free"), for the logs."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else error
+    return f": {' '.join(str(message).split())[:200]}" if message else ""
+
+
 def _raise_for_status(provider: str, response: httpx.Response) -> None:
-    if response.status_code == 429:
-        raise GatewayError(f"{provider} rate limit or quota exceeded")
-    if response.status_code >= 400:
-        raise GatewayError(f"{provider} returned HTTP {response.status_code}")
+    status = response.status_code
+    if status == 429:
+        raise GatewayError(f"{provider} rate limit or quota exceeded{_reason(response)}")
+    if status == 503:
+        raise ProviderBusy(f"{provider} is overloaded (HTTP 503){_reason(response)}")
+    if status >= 400:
+        raise GatewayError(f"{provider} returned HTTP {status}{_reason(response)}")

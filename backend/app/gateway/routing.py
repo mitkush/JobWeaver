@@ -17,7 +17,9 @@ class Route:
 GEMINI_FLASH = "gemini-flash-latest"
 GEMINI_FLASH_LITE = "gemini-flash-lite-latest"
 GROQ_LARGE = "openai/gpt-oss-120b"
-OPENROUTER_FREE = "openai/gpt-oss-20b:free"
+# Free OpenRouter models come and go: gpt-oss-20b:free was withdrawn on 7 Oct 2026 (HTTP 404).
+# Gemma answers without hidden reasoning, so its whole output budget goes to the JSON.
+OPENROUTER_FREE = "google/gemma-4-31b-it:free"
 # The only embedding model (ADR-0014). Changing it means re-embedding every Posting.
 GEMINI_EMBEDDING = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768

@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 
 import { DraftPage, DraftWorkspace } from "@/pages/DraftPage";
 import type { Draft, Version } from "@/features/drafts/api";
@@ -178,4 +178,82 @@ it("shows apply-link downloads and records Applied after the user's action", asy
   expect(screen.queryByRole("button", { name: "Open in Gmail" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Mark as applied" }));
   expect(await screen.findByRole("button", { name: "Applied" })).toBeDisabled();
+});
+
+// jsdom has no object URLs; the real ones are restored after each test.
+function stubObjectUrls(create: () => string) {
+  const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  URL.createObjectURL = create;
+  URL.revokeObjectURL = vi.fn();
+  onTestFinished(() => {
+    URL.createObjectURL = original.create;
+    URL.revokeObjectURL = original.revoke;
+  });
+}
+
+it("shows why a PDF cannot be made instead of starting a broken download", async () => {
+  const message = 'The PDF cannot show "🚀" (U+1F680) in the resume line "Shipped 🚀". Remove or replace that character.';
+  setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () => json({ error: { code: "validation_failed", message } }, 422),
+  });
+  const createObjectURL = vi.fn(() => "blob:pdf");
+  stubObjectUrls(createObjectURL);
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByRole("button", { name: "Download Resume PDF" }));
+  expect(await screen.findByText(/The PDF cannot show "🚀"/)).toBeInTheDocument();
+  expect(screen.getByText("The PDF could not be made")).toBeInTheDocument();
+  expect(createObjectURL).not.toHaveBeenCalled();
+});
+
+it("saves a PDF under the server's file name", async () => {
+  const calls = setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () =>
+      new Response("%PDF-1.7", {
+        headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename*=UTF-8''Asha_Acme_Backend_Engineer_Cover_Letter.pdf" },
+      }),
+  });
+  const createObjectURL = vi.fn(() => "blob:pdf");
+  stubObjectUrls(createObjectURL);
+  const clicked: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    clicked.push(this.download);
+  });
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByRole("button", { name: "Download Cover Letter PDF" }));
+  await waitFor(() => expect(clicked).toEqual(["Asha_Acme_Backend_Engineer_Cover_Letter.pdf"]));
+  expect(calls.some((c) => new URL(c.url).searchParams.get("kind") === "cover_letter")).toBe(true);
+  expect(screen.queryByText("The PDF could not be made")).not.toBeInTheDocument();
+  click.mockRestore();
+});
+
+it("previews the exact PDF in the page and downloads it from the preview", async () => {
+  const calls = setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () =>
+      new Response("%PDF-1.7", {
+        headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename*=UTF-8''Asha_Acme_Backend_Engineer.pdf" },
+      }),
+  });
+  stubObjectUrls(() => "blob:resume-preview");
+  const clicked: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    clicked.push(this.download);
+  });
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.selectOptions(screen.getByLabelText("PDF layout"), "compact");
+  await user.click(screen.getByRole("button", { name: "Preview Resume" }));
+  const dialog = await screen.findByRole("dialog", { name: "Resume preview · Compact" });
+  expect(within(dialog).getByTitle("Resume preview · Compact")).toHaveAttribute("src", "blob:resume-preview");
+  expect(within(dialog).getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", "blob:resume-preview");
+  const pdfCall = calls.find((c) => new URL(c.url).pathname.endsWith("/pdf"))!;
+  expect(new URL(pdfCall.url).searchParams.get("template")).toBe("compact");
+  // Downloading from the preview saves the same file without asking the server again.
+  await user.click(within(dialog).getByRole("button", { name: "Download" }));
+  expect(clicked).toEqual(["Asha_Acme_Backend_Engineer.pdf"]);
+  expect(calls.filter((c) => new URL(c.url).pathname.endsWith("/pdf"))).toHaveLength(1);
+  await user.click(within(dialog).getByRole("button", { name: "Close preview" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  click.mockRestore();
 });

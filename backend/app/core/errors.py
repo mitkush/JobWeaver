@@ -57,6 +57,10 @@ class GatewayError(JobWeaverError):
     code = "ai_unavailable"
 
 
+class ProviderBusy(GatewayError):
+    """The provider is briefly overloaded (HTTP 503); worth one retry before falling through."""
+
+
 class ExternalServiceError(JobWeaverError):
     status_code = 502
     code = "external_service_error"
