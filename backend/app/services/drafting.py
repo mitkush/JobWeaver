@@ -49,6 +49,7 @@ from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import moved
+from app.tailoring.placeholders import fill_placeholders
 from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
@@ -151,12 +152,21 @@ def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
 
 def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> CheckResult:
     job = draft.job_snapshot
+    content = fill_placeholders(
+        content,
+        name=str(job.get("name") or ""),
+        email=str(job.get("email") or ""),
+        company=str(job.get("company") or ""),
+        title=str(job.get("title") or ""),
+    )
     return check(
         content,
         facts,
         job_title=str(job.get("title") or ""),
         company=str(job.get("company") or ""),
         job_skills=[str(s) for s in job.get("required_skills") or []],
+        job_text=str(job.get("description") or ""),
+        user_name=str(job.get("name") or ""),
     )
 
 

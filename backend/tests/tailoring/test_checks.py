@@ -181,3 +181,91 @@ def test_a_version_stated_in_the_fact_bank_is_accepted():
     facts = [*FACTS[1:], FACTS[0].model_copy(update={"text": "Python 3.12"})]
     line = DraftLine(text="Python 3.12 developer", fact_refs=["F1"], section="Summary")
     assert line_problem(line, facts) is None
+
+
+def _line(text, *refs, section="Experience"):
+    return DraftLine(text=text, fact_refs=list(refs or ["F2"]), section=section)
+
+
+def test_labels_verbs_and_ordinary_words_are_not_names():
+    from app.tailoring.checks import check
+
+    package = DraftContent(
+        resume=[
+            _line("Languages: Python", "F1", section="Skills"),
+            _line("Built and Designed the billing API used by 40 merchant teams"),
+            _line("Built the billing API and Conducted reviews used by 40 merchant teams"),
+            _line("Built the billing API with Partner teams; 40 merchant teams used it"),
+        ],
+        cover_letter=[_line("Built the billing API used by 40 merchant teams")],
+    )
+    result = check(package, FACTS, job_text="You will work with partner teams.")
+    assert result.warnings == []
+
+
+def test_invented_names_numbers_and_leadership_are_still_removed():
+    from app.tailoring.checks import check
+
+    package = DraftContent(
+        resume=[
+            _line("Built the billing API at Google used by 40 merchant teams"),
+            _line("Built the billing API used by 400 merchant teams"),
+            _line("Led the billing API used by 40 merchant teams"),
+            _line("Built the billing API in Django for 40 merchant teams"),
+        ],
+        cover_letter=[_line("Built the billing API used by 40 merchant teams")],
+    )
+    result = check(package, FACTS, job_text="Designed for google-scale.")
+    assert result.content.resume == []
+    joined = " ".join(result.warnings)
+    for reason in ("Google is not", "The number 400", '"led" is not', "Django is not"):
+        assert reason in joined
+
+
+def test_ai_written_as_a_name_in_the_fact_bank_covers_ai():
+    from app.tailoring.checks import check
+
+    facts = [
+        *FACTS,
+        FactSnapshot(
+            ref="F5",
+            id=uuid.uuid4(),
+            kind="experience",
+            group="Acme Corp",
+            text="Built AI evaluation pipelines",
+            in_base_resume=True,
+        ),
+    ]
+    package = DraftContent(
+        resume=[_line("Built AI evaluation pipelines", "F5")],
+        cover_letter=[_line("Built AI evaluation pipelines", "F5")],
+    )
+    assert check(package, facts).warnings == []
+
+
+def test_name_placeholders_are_filled_and_unknown_ones_removed():
+    from app.tailoring.checks import check
+    from app.tailoring.placeholders import fill_placeholders
+
+    package = DraftContent(
+        resume=[_line("Built the billing API used by 40 merchant teams")],
+        cover_letter=[_line("Built the billing API used by 40 merchant teams")],
+        email_body=[
+            _line("I am applying to [Company Name] as [Job Title]."),
+            _line("Best regards, Your Name"),
+            _line("Call me on [Phone Number]."),
+        ],
+    )
+    filled = fill_placeholders(
+        package, name="Asha Rao", email="asha@example.com", company="Initech", title="SRE"
+    )
+    assert [line.text for line in filled.email_body[:2]] == [
+        "I am applying to Initech as SRE.",
+        "Best regards, Asha Rao",
+    ]
+    result = check(filled, FACTS, job_title="SRE", company="Initech", user_name="Asha Rao")
+    assert [line.text for line in result.content.email_body] == [
+        "I am applying to Initech as SRE.",
+        "Best regards, Asha Rao",
+    ]
+    assert result.warnings == ["Removed a email line: It contains the placeholder [Phone Number]"]

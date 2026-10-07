@@ -92,3 +92,20 @@ def test_resume_lines_sit_under_their_employer_headings():
         text.index("Cut report time") < text.index("Globex") < text.index("Ran the data platform")
     )
     assert text.count("Experience") == 1
+
+
+def test_common_ai_characters_print_with_a_fallback():
+    text = "Built full‑stack ✓ APIs ➔ saved ₹ 2 lakh⁠ for 3 teams"
+    data = render_pdf(package(text), "Asha", "asha@example.com")
+    extracted = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(data)).pages)
+    assert "full-stack" in extracted
+    assert "Rs 2 lakh" in extracted
+
+
+def test_an_unprintable_character_is_named_with_its_line():
+    content = package("Python")
+    content.resume.append(DraftLine(text="Shipped the launch 🚀 on time", fact_refs=["F1"]))
+    with pytest.raises(ValidationFailedError) as caught:
+        render_pdf(content, "Asha", "asha@example.com")
+    assert '"🚀" (U+1F680)' in caught.value.message
+    assert 'resume line "Shipped the launch 🚀 on time"' in caught.value.message
