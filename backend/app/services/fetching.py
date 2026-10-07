@@ -420,9 +420,24 @@ class Fetcher:
             source = await self._source_row(session, name)
             if not source.enabled:
                 return SourceOutcome(name, "skipped", "disabled")
+            if not self.adapter_factory(cls, self.http, self.settings).is_configured():
+                # A missing key is a setup choice, not an outage: Source Status says "Not
+                # configured", and Users get no "jobs are delayed" notice for it.
+                source.state, source.degraded_since, source.last_error = (
+                    SourceState.HEALTHY,
+                    None,
+                    None,
+                )
+                await session.commit()
+                return SourceOutcome(name, "skipped", "not configured")
             if cls.standby_for and trigger != MANUAL:
                 main = await self._source_row(session, cls.standby_for)
-                if main.enabled and main.state != SourceState.DEGRADED:
+                main_cls = get_adapter_class(cls.standby_for)
+                main_works = self.adapter_factory(
+                    main_cls, self.http, self.settings
+                ).is_configured()
+                # A main Source without a key delivers nothing either, so its standby runs.
+                if main.enabled and main_works and main.state != SourceState.DEGRADED:
                     await session.commit()
                     return SourceOutcome(name, "skipped", "standing by")
             now = self.clock()
