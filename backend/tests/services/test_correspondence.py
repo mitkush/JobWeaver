@@ -433,14 +433,18 @@ async def test_a_split_rules_out_proposals_through_the_rest_of_either_group(db):
         )
     )
     await db.commit()
-    # Same apply URL as l1 (Exact), and close enough to j1 to be a Medium candidate.
+    # Same apply URL as l1 (Exact); not word-for-word j1's text, but close enough to be a
+    # Medium candidate against it.
     await add(
         "greenhouse",
         posting("g1", title="Backend Engineer II", apply_url="https://acme.dev/apply/1",
-                description=ADVERT + " Payments."),
+                description=ADVERT + " Payments team."),
     )  # fmt: skip
-    await build(dedup_high_title=99).process()
-    assert await job_of(db, "greenhouse", "g1") == await job_of(db, "linkedin", "l1")
+    # High is out of reach, so g1 and j1 can only land in Medium: a Possible Duplicate.
+    await build(dedup_high_title=101).process()
+    g1 = await job_of(db, "greenhouse", "g1")
+    assert g1 == await job_of(db, "linkedin", "l1")
+    assert g1 != await job_of(db, "jsearch", "j1")
     open_pairs = await db.scalar(
         select(func.count()).select_from(MatchPair).where(MatchPair.status == PairStatus.OPEN)
     )

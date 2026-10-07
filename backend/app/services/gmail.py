@@ -1,4 +1,3 @@
-import enum
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -10,17 +9,11 @@ from app.core.errors import GoogleFlowError, JobWeaverError
 from app.core.security import decrypt, encrypt
 from app.models.oauth_credential import OAuthCredential
 from app.models.user import User
+from app.schemas.me import GmailState  # noqa: F401  (re-exported for callers)
 from app.services.google_oauth import GMAIL_COMPOSE_SCOPE, GoogleOAuthClient, GoogleTokens
 
 logger = logging.getLogger(__name__)
 EXPIRES_SOON = timedelta(hours=24)
-
-
-class GmailState(enum.StrEnum):
-    NOT_CONNECTED = "not_connected"
-    CONNECTED = "connected"
-    EXPIRES_SOON = "expires_soon"
-    EXPIRED = "expired"
 
 
 async def _credential(session: AsyncSession, user: User) -> OAuthCredential | None:

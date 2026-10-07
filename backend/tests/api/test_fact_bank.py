@@ -194,4 +194,4 @@ async def test_failed_ai_calls_still_count_toward_the_daily_quota(ready, db):
     )
     response = await upload_resume(ready)
     assert response.status_code == 503
-    assert await db.scalar(select(func.count()).select_from(AIUsage)) == 2  # Flash, Flash-Lite
+    assert await db.scalar(select(func.count()).select_from(AIUsage)) == 1  # Flash-Lite

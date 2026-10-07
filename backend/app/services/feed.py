@@ -233,8 +233,13 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         UserJob.hidden_at.is_not(None) if query.hidden else UserJob.hidden_at.is_(None)
     )
     if query.q:
-        pattern = f"%{query.q.strip()}%"
-        stmt = stmt.where(or_(Job.title.ilike(pattern), Job.company_name.ilike(pattern)))
+        pattern = f"%{_like_literal(query.q.strip())}%"
+        stmt = stmt.where(
+            or_(
+                Job.title.ilike(pattern, escape="\\"),
+                Job.company_name.ilike(pattern, escape="\\"),
+            )
+        )
     if query.work_mode:
         stmt = stmt.where(Job.work_mode == query.work_mode.value)
     if query.source:
@@ -245,10 +250,15 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         stmt = stmt.where(
             text(
                 "EXISTS (SELECT 1 FROM jsonb_array_elements(jobs.locations) AS l "
-                "WHERE l->>'city' ILIKE :loc OR upper(l->>'country') = upper(:loc))"
-            ).bindparams(loc=query.location.strip())
+                "WHERE l->>'city' ILIKE :city ESCAPE '\\' OR upper(l->>'country') = upper(:loc))"
+            ).bindparams(city=_like_literal(query.location.strip()), loc=query.location.strip())
         )
     return stmt
+
+
+def _like_literal(value: str) -> str:
+    """A User's search text matched literally: "%" and "_" are not wildcards."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _section(stmt: Select[tuple[Job, UserJob]], with_email: bool) -> Select[tuple[Job, UserJob]]:

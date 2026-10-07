@@ -98,3 +98,11 @@ def test_contact_email_skips_no_reply_addresses():
 )
 def test_parse_datetime(raw, expected):
     assert parse_datetime(raw, now=NOW) == expected
+
+
+def test_indian_state_codes_are_india_not_us_states():
+    assert parse_location("Pune, IN").country == "IN"  # not Indiana
+    assert parse_location("Chennai, TN").country == "IN"  # not Tennessee
+    assert parse_location("Mumbai, MH").country == "IN"
+    assert parse_location("Indianapolis, IN").country == "US"
+    assert parse_location("Austin, TX").country == "US"

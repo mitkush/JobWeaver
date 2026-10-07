@@ -1,10 +1,17 @@
+import enum
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 from app.models.user import Role
-from app.services.gmail import GmailState
+
+
+class GmailState(enum.StrEnum):
+    NOT_CONNECTED = "not_connected"
+    CONNECTED = "connected"
+    EXPIRES_SOON = "expires_soon"
+    EXPIRED = "expired"
 
 
 class OnboardingStatus(BaseModel):

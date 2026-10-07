@@ -2,7 +2,7 @@
 
 import base64
 from email.message import EmailMessage
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -13,7 +13,7 @@ DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
 
 def compose_url(sender: str, recipient: str, subject: str, body: str) -> str:
     params = urlencode({"view": "cm", "fs": "1", "to": recipient, "su": subject, "body": body})
-    return f"https://mail.google.com/mail/u/{sender}/?{params}"
+    return f"https://mail.google.com/mail/u/{quote(sender, safe='@')}/?{params}"
 
 
 def raw_message(

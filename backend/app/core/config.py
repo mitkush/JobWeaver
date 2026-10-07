@@ -111,6 +111,8 @@ class Settings(BaseSettings):
                 ("CREDENTIALS_ENCRYPTION_KEY", bool(self.credentials_encryption_key)),
                 ("GOOGLE_CLIENT_ID", bool(self.google_client_id)),
                 ("GOOGLE_CLIENT_SECRET", bool(self.google_client_secret)),
+                # Without https the session cookie is sent without Secure.
+                ("PUBLIC_URL (https)", self.public_url.startswith("https://")),
             )
             if not ok
         ]
