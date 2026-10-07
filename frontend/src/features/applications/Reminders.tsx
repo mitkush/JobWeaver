@@ -15,43 +15,48 @@ export function Reminders() {
   const toast = useToast();
   const [open, setOpen] = useState<Reminder | null>(null);
   const items = reminders.data ?? [];
-  if (items.length === 0) return null;
 
   return (
-    <section aria-labelledby="reminders-title" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
-      <h2 id="reminders-title" className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
-        <BellRing className="size-4" aria-hidden />
-        Follow-ups due
-      </h2>
-      <ul className="mt-2 divide-y divide-amber-200 dark:divide-amber-900">
-        {items.map((reminder) => (
-          <li key={reminder.application_id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
-            <span className="text-amber-950 dark:text-amber-50">
-              No update from {reminder.company} for {reminder.days_waiting} days ({reminder.title})
-            </span>
-            <span className="flex gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={dismiss.isPending && dismiss.variables === reminder.application_id}
-                onClick={async () => {
-                  try {
-                    await dismiss.mutateAsync(reminder.application_id);
-                  } catch (error) {
-                    toast("error", (error as Error).message);
-                  }
-                }}
-              >
-                Not now
-              </Button>
-              <Button size="sm" onClick={() => setOpen(reminder)}>
-                Draft a follow-up
-              </Button>
-            </span>
-          </li>
-        ))}
-      </ul>
+    <>
+      {items.length > 0 && (
+        <section aria-labelledby="reminders-title" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <h2 id="reminders-title" className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+            <BellRing className="size-4" aria-hidden />
+            Follow-ups due
+          </h2>
+          <ul className="mt-2 divide-y divide-amber-200 dark:divide-amber-900">
+            {items.map((reminder) => (
+              <li key={reminder.application_id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+                <span className="text-amber-950 dark:text-amber-50">
+                  No update from {reminder.company} for {reminder.days_waiting} days ({reminder.title})
+                </span>
+                <span className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={dismiss.isPending && dismiss.variables === reminder.application_id}
+                    onClick={async () => {
+                      try {
+                        await dismiss.mutateAsync(reminder.application_id);
+                      } catch (error) {
+                        toast("error", (error as Error).message);
+                      }
+                    }}
+                  >
+                    Not now
+                  </Button>
+                  <Button size="sm" onClick={() => setOpen(reminder)}>
+                    Draft a follow-up
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {/* One fixed place in the tree: drafting the last follow-up empties the list, and the
+          dialog may still show the link to Gmail (a blocked tab), so it must not remount. */}
       {open && <FollowUpDialog reminder={open} onClose={() => setOpen(null)} />}
-    </section>
+    </>
   );
 }

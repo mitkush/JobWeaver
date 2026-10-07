@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -157,12 +157,16 @@ it("asks to reconnect Gmail instead of failing", async () => {
 
 it("gives a link when the browser blocks the Gmail tab", async () => {
   vi.mocked(window.open).mockImplementation(() => null);
+  let drafted = false;
   mockFetch({
     "GET /api/applications": () => json([makeApplication()]),
-    "GET /api/reminders": () => json([reminder]),
+    // Drafting the last due follow-up defers its reminder, so the list comes back empty.
+    "GET /api/reminders": () => json(drafted ? [] : [reminder]),
     "GET /api/applications/app-1/follow-up": () => json({ recipient: "jobs@acme.com", subject: "s", body: "b" }),
-    "POST /api/applications/app-1/follow-up": () =>
-      json({ mode: "gmail", url: "https://mail.google.com/mail/u/x/#drafts", message: "Your follow-up is in Gmail Drafts." }),
+    "POST /api/applications/app-1/follow-up": () => {
+      drafted = true;
+      return json({ mode: "gmail", url: "https://mail.google.com/mail/u/x/#drafts", message: "Your follow-up is in Gmail Drafts." });
+    },
   });
   const user = userEvent.setup();
   renderWithApp(<ApplicationsPage />);
@@ -174,6 +178,9 @@ it("gives a link when the browser blocks the Gmail tab", async () => {
     "href",
     "https://mail.google.com/mail/u/x/#drafts",
   );
+  // The reminder list refreshes to empty; the dialog and its link stay.
+  await waitFor(() => expect(screen.queryByText(/No update from Acme/)).not.toBeInTheDocument());
+  expect(screen.getByRole("link", { name: "Open Gmail Drafts" })).toBeInTheDocument();
 });
 
 it("lets the User put a reminder off", async () => {
