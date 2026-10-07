@@ -42,9 +42,12 @@ const reminder = {
   days_waiting: 9,
 };
 
+let tab: { opener: unknown; location: { href: string }; close: ReturnType<typeof vi.fn> };
+
 beforeEach(() => {
   document.cookie = "jw_csrf=t";
-  vi.spyOn(window, "open").mockImplementation(() => null);
+  tab = { opener: window, location: { href: "about:blank" }, close: vi.fn() };
+  vi.spyOn(window, "open").mockImplementation(() => tab as unknown as Window);
 });
 
 it("groups Applications by status and changes a status by hand", async () => {
@@ -99,7 +102,10 @@ it("drafts a follow-up into Gmail after the User reviews it", async () => {
   expect(await screen.findByText("Your follow-up is in Gmail Drafts.")).toBeInTheDocument();
   const post = calls.find((c) => c.method === "POST")!;
   expect(await post.json()).toMatchObject({ recipient: "jobs@acme.com", body: "Edited by me", confirm: true });
-  expect(window.open).toHaveBeenCalledWith("https://mail.google.com/mail/u/x/#drafts", "_blank", "noopener");
+  // The tab is opened during the click, then pointed at Gmail once the draft exists.
+  expect(window.open).toHaveBeenCalledWith("about:blank", "_blank");
+  expect(tab.opener).toBeNull();
+  expect(tab.location.href).toBe("https://mail.google.com/mail/u/x/#drafts");
 });
 
 it("asks again when the follow-up address looks wrong", async () => {
@@ -146,7 +152,28 @@ it("asks to reconnect Gmail instead of failing", async () => {
     "href",
     "/api/gmail/connect?next=%2Fapplications",
   );
-  expect(window.open).not.toHaveBeenCalled();
+  expect(tab.close).toHaveBeenCalled();
+});
+
+it("gives a link when the browser blocks the Gmail tab", async () => {
+  vi.mocked(window.open).mockImplementation(() => null);
+  mockFetch({
+    "GET /api/applications": () => json([makeApplication()]),
+    "GET /api/reminders": () => json([reminder]),
+    "GET /api/applications/app-1/follow-up": () => json({ recipient: "jobs@acme.com", subject: "s", body: "b" }),
+    "POST /api/applications/app-1/follow-up": () =>
+      json({ mode: "gmail", url: "https://mail.google.com/mail/u/x/#drafts", message: "Your follow-up is in Gmail Drafts." }),
+  });
+  const user = userEvent.setup();
+  renderWithApp(<ApplicationsPage />);
+  await user.click(await screen.findByRole("button", { name: "Draft a follow-up" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByLabelText("Message");
+  await user.click(within(dialog).getByRole("button", { name: "Open in Gmail" }));
+  expect(await within(dialog).findByRole("link", { name: "Open Gmail Drafts" })).toHaveAttribute(
+    "href",
+    "https://mail.google.com/mail/u/x/#drafts",
+  );
 });
 
 it("lets the User put a reminder off", async () => {

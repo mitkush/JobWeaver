@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { ApiError, type FollowUp, type Reminder } from "@/api/client";
+import { ApiError, type FollowUp, type FollowUpResult, type Reminder } from "@/api/client";
 import { useFollowUp, useSendFollowUp } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { buttonClasses } from "@/components/ui/button-classes";
@@ -43,21 +43,32 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
   const [warning, setWarning] = useState<string | null>(null);
   const [acceptWarning, setAcceptWarning] = useState(false);
   const [reconnect, setReconnect] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<FollowUpResult | null>(null);
 
   async function submit() {
+    // Open synchronously from the click: after an await the browser may block the tab.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     try {
       const result = await send.mutateAsync({
         id: reminder.application_id,
         body: { recipient, subject, body, confirm: true, confirm_email_warning: acceptWarning },
       });
       if (result.mode === "reconnect") {
+        tab?.close();
         setReconnect(result.url);
         return;
       }
+      if (!tab) {
+        // The follow-up exists (or the compose link is ready); give the User the link.
+        setBlocked(result);
+        return;
+      }
+      tab.location.href = result.url;
       toast("success", result.message);
-      window.open(result.url, "_blank", "noopener");
       onClose();
     } catch (error) {
+      tab?.close();
       if (error instanceof ApiError && error.message.startsWith(WARNING_PREFIX)) {
         setWarning(error.message.slice(WARNING_PREFIX.length));
       } else {
@@ -106,6 +117,19 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
               <input type="checkbox" checked={acceptWarning} onChange={(e) => setAcceptWarning(e.target.checked)} />
               Use this address anyway
             </label>
+          </Alert>
+        )}
+        {blocked && (
+          <Alert
+            tone="success"
+            title="Your browser blocked the new tab"
+            action={
+              <a className={buttonClasses("primary", "sm")} href={blocked.url} target="_blank" rel="noopener noreferrer">
+                {blocked.mode === "gmail" ? "Open Gmail Drafts" : "Open Gmail compose"}
+              </a>
+            }
+          >
+            {blocked.message}
           </Alert>
         )}
         {reconnect && (

@@ -58,3 +58,46 @@ async def test_a_job_only_one_side_applied_to_just_moves(db):
     await applications.move_to_job(db, gone.id, survivor.id)
     await db.commit()
     assert (await db.get(Application, application.id)).job_id == survivor.id
+
+
+async def _two_jobs(db, email: str, key: str):
+    user, client = await signed_in(db, email)
+    await client.aclose()
+    company = Company(name=key, normalized_name=f"{key}-merge")
+    db.add(company)
+    await db.flush()
+    survivor = Job(company_id=company.id, title="SRE", company_name=key)
+    gone = Job(company_id=company.id, title="SRE", company_name=key)
+    db.add_all([survivor, gone])
+    await db.flush()
+    return user, survivor, gone
+
+
+async def test_a_newer_earlier_status_never_wins_a_merge(db):
+    user, survivor, gone = await _two_jobs(db, "order@example.com", "order")
+    then = datetime.now(UTC) - timedelta(days=3)
+    kept = await applications.ensure(db, user, survivor.id, None, then)
+    applications.change_status(db, user, kept, "interview", then)
+    moved = await applications.ensure(db, user, gone.id, None)
+    applications.change_status(db, user, moved, "applied", datetime.now(UTC))
+    kept_id = kept.id
+    await applications.move_to_job(db, gone.id, survivor.id)
+    await db.commit()
+    db.expire_all()
+    row = await db.get(Application, kept_id)
+    # Interview is further along than a newer Applied, and no reminder comes back.
+    assert row.status == "interview" and row.follow_up_after is None
+
+
+async def test_between_final_outcomes_the_newer_wins(db):
+    user, survivor, gone = await _two_jobs(db, "final@example.com", "final")
+    then = datetime.now(UTC) - timedelta(days=3)
+    kept = await applications.ensure(db, user, survivor.id, None, then)
+    applications.change_status(db, user, kept, "offer", then)
+    moved = await applications.ensure(db, user, gone.id, None)
+    applications.change_status(db, user, moved, "rejected", datetime.now(UTC))
+    kept_id = kept.id
+    await applications.move_to_job(db, gone.id, survivor.id)
+    await db.commit()
+    db.expire_all()
+    assert (await db.get(Application, kept_id)).status == "rejected"

@@ -38,6 +38,9 @@ from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 
 S = ApplicationStatus
+# How far along an Application is. Offer and Rejected are both final outcomes, so between
+# those two the more recent change wins.
+PROGRESS = {S.DRAFTED: 0, S.APPLIED: 1, S.REPLIED: 2, S.INTERVIEW: 3, S.OFFER: 4, S.REJECTED: 4}
 
 
 def utcnow() -> datetime:
@@ -139,9 +142,9 @@ async def move_to_job(session: AsyncSession, gone_id: uuid.UUID, survivor_id: uu
         if kept is None:
             gone.job_id = survivor_id
             continue
-        # The further-along Application wins; Drafted never beats a real status.
-        gone_ahead = (gone.status != S.DRAFTED, gone.status_changed_at) > (
-            kept.status != S.DRAFTED,
+        # The further-along Application wins; a newer but earlier status never does.
+        gone_ahead = (PROGRESS[gone.status], gone.status_changed_at) > (
+            PROGRESS[kept.status],
             kept.status_changed_at,
         )
         if gone_ahead:

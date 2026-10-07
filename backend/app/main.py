@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,12 +22,12 @@ from app.api.csrf import CSRFMiddleware
 from app.core.config import get_settings
 from app.core.db import dispose_engine
 from app.core.errors import JobWeaverError, NotFoundError
-from app.core.monitoring import init_error_tracking
+from app.core.monitoring import configure_logging, init_error_tracking
 from app.gateway.factory import build_gateway
 from app.scheduler import start_scheduler, stop_scheduler
 from app.services.drafting import recover_queued, stop_tasks
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+configure_logging()
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 
 
