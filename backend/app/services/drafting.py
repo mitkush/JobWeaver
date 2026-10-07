@@ -3,13 +3,16 @@
 import asyncio
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote, urlencode
 
-from sqlalchemy import select
+import httpx
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.gmail import GmailClient, compose_url, raw_message
+from app.adapters.links import LinkState, check_apply_link
 from app.core.db import get_sessionmaker
 from app.core.errors import (
     ConflictError,
@@ -35,9 +38,11 @@ from app.models import (
     User,
     UserJob,
 )
+from app.models.posting import Posting
 from app.schemas.drafts import DraftOut, HandoffIn, HandoffOut, VersionOut
 from app.services import applications
 from app.services.accounts import ensure_ai_allowed
+from app.services.correspondence import refresh_jobs, source_priorities
 from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
@@ -152,6 +157,58 @@ def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> Ch
         company=str(job.get("company") or ""),
         job_skills=[str(s) for s in job.get("required_skills") or []],
     )
+
+
+MAX_LINKS_CHECKED = 4
+LINK_CLOSED = (
+    "This job's apply link now says the page is not found, so the job looks closed. "
+    "It has been marked closed; choose another job."
+)
+
+
+async def ensure_link_open(
+    session: AsyncSession, user: User, job_id: uuid.UUID, http: httpx.AsyncClient
+) -> None:
+    """Checks the apply link for free before drafting (FR-B10 AC3). A closed link closes
+    its Postings; if that closes the Job, the User is told before any AI work starts."""
+    job = await session.scalar(
+        select(Job)
+        .join(UserJob, UserJob.job_id == Job.id)
+        .where(Job.id == job_id, UserJob.user_id == user.id)
+    )
+    if job is None or job.expired_at is not None:
+        return  # create() reports the missing or closed Job itself
+    # Each open Posting's own link: copies of one advert often differ only by a tracking
+    # parameter, and a Job is closed only when none of its links still works.
+    links = (
+        await session.execute(
+            select(Posting.apply_url)
+            .where(
+                Posting.job_id == job.id,
+                Posting.closed_at.is_(None),
+                Posting.apply_url.is_not(None),
+            )
+            .distinct()
+            .limit(MAX_LINKS_CHECKED)
+        )
+    ).scalars()
+    dead = [url for url in links if await check_apply_link(http, url) == LinkState.CLOSED]
+    if not dead:
+        return
+    await session.execute(
+        update(Posting)
+        .where(
+            Posting.job_id == job.id,
+            Posting.apply_url.in_(dead),
+            Posting.closed_at.is_(None),
+        )
+        .values(closed_at=datetime.now(UTC), closed_reason="link")
+    )
+    await refresh_jobs(session, [job.id], source_priorities())
+    await session.commit()
+    await session.refresh(job)
+    if job.expired_at is not None:
+        raise PreconditionError(LINK_CLOSED)
 
 
 async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:

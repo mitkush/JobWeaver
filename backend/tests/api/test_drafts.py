@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.adapters.gmail import get_gmail_client
 from app.api.deps import get_gateway
@@ -28,6 +28,7 @@ from app.models import (
     GmailHandoff,
     Job,
     OAuthCredential,
+    Posting,
 )
 from app.schemas.drafts import EmailCheck
 from app.services import drafting
@@ -621,3 +622,54 @@ async def test_a_pdf_problem_never_fails_generation(prepared, monkeypatch):
     draft = await generated(prepared)
     assert draft["state"] == "ready"
     assert any(w.startswith("PDF: This PDF font") for w in draft["version"]["warnings"])
+
+
+async def test_a_closed_apply_link_closes_the_job_before_any_ai_work(prepared, db):
+    """FR-B10 AC3: checked for free when the Draft is created."""
+    import httpx
+
+    from app.adapters.links import get_link_http
+
+    _, client, _, _ = prepared
+    link_job = (await client.get("/api/feed?section=link")).json()["items"][0]["job_id"]
+    dead = "https://jobs.acme.dev/backend/1"
+    await db.execute(
+        update(Posting).where(Posting.job_id == uuid.UUID(link_job)).values(apply_url=dead)
+    )
+    await db.execute(update(Job).where(Job.id == uuid.UUID(link_job)).values(apply_url=dead))
+    await db.commit()
+    app.dependency_overrides[get_link_http] = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404))
+    )
+    refused = await client.post("/api/drafts", json={"job_id": link_job})
+    assert refused.status_code == 409
+    assert "looks closed" in refused.json()["error"]["message"]
+    job = await db.get(Job, uuid.UUID(link_job))
+    await db.refresh(job)
+    assert job.expired_at is not None
+    assert (await db.scalars(select(Draft))).all() == []
+    posting = await db.scalar(select(Posting).where(Posting.job_id == uuid.UUID(link_job)))
+    await db.refresh(posting)
+    assert posting.closed_reason == "link"
+
+
+async def test_an_open_or_unreachable_link_never_blocks_a_draft(prepared, db):
+    """Only an explicit 404 or 410 closes a Job; a blocked or slow site is not evidence."""
+    import httpx
+
+    from app.adapters.links import get_link_http
+
+    _, client, job_id, _ = prepared
+    await db.execute(
+        update(Job).where(Job.id == uuid.UUID(job_id)).values(apply_url="https://x.dev/1")
+    )
+    await db.execute(
+        update(Posting)
+        .where(Posting.job_id == uuid.UUID(job_id))
+        .values(apply_url="https://x.dev/1")
+    )
+    await db.commit()
+    app.dependency_overrides[get_link_http] = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(403))
+    )
+    assert (await client.post("/api/drafts", json={"job_id": job_id})).status_code == 202

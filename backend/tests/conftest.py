@@ -49,6 +49,21 @@ async def _schema() -> AsyncIterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _offline_links(monkeypatch) -> None:
+    """Draft creation checks apply links (FR-B10 AC3); tests never touch the network: links
+    answer 200 from a public-looking address unless a test says otherwise."""
+    from app.adapters import links
+
+    async def public(_: str) -> list[str]:
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(links, "resolve_host", public)
+    app.dependency_overrides[links.get_link_http] = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200))
+    )
+
+
+@pytest.fixture(autouse=True)
 async def _clean() -> AsyncIterator[None]:
     yield
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
