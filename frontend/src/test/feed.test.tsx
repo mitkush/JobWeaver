@@ -32,10 +32,10 @@ it("shows cards with skill gaps, source badges and the email section first", asy
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
   const card = (await screen.findByRole("link", { name: "Backend Engineer" })).closest("div.rounded-xl") as HTMLElement;
-  expect(within(card).getByText("Missing:")).toBeInTheDocument();
+  expect(within(card).getByText("Not in your Fact Bank:")).toBeInTheDocument();
   expect(within(card).getByText(/Kubernetes, Go/)).toBeInTheDocument();
   expect(within(card).getByText("Greenhouse")).toBeInTheDocument();
-  expect(screen.getByText("No gaps found")).toBeInTheDocument();
+  expect(screen.getByText("Every required skill is in your Fact Bank")).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: /With email/ })).toHaveAttribute("aria-selected", "true");
   await expectAccessible();
 });
@@ -52,7 +52,7 @@ it("opens the apply-link section when no job has an email", async () => {
   renderWithApp(feedRoutes(), { route: "/feed" });
   expect(await screen.findByRole("link", { name: "Backend Engineer" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: /Apply link only/ })).toHaveAttribute("aria-selected", "true");
-  expect(screen.getByText("Required skills not analysed yet")).toBeInTheDocument();
+  expect(screen.getByText("Skills not analysed yet")).toBeInTheDocument();
   expect(calls.some((c) => queryOf(c).get("section") === "link")).toBe(true);
 });
 
@@ -274,4 +274,44 @@ it("labels a kept job that no longer matches the preferences", async () => {
   renderWithApp(feedRoutes(), { route: "/feed" });
   await screen.findByRole("link", { name: "Backend Engineer" });
   expect(screen.getByText(/No longer matches your Preferences/)).toBeInTheDocument();
+});
+
+it("shows matched skills beside the ones not in the Fact Bank", async () => {
+  mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () =>
+      json(
+        makeFeed([
+          makeCard({
+            title: "Backend Developer",
+            skill_matches: ["Ruby on Rails", "PostgreSQL"],
+            skill_gaps: ["Elasticsearch"],
+            matched_keywords: [{ keyword: "Rails", where: "description", core: true }],
+          }),
+        ]),
+      ),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Developer" });
+  expect(screen.getByText("Matched:").parentElement).toHaveTextContent("Matched: Ruby on Rails, PostgreSQL");
+  expect(screen.getByText("Not in your Fact Bank:").parentElement).toHaveTextContent("Not in your Fact Bank: Elasticsearch");
+  expect(screen.getByText("Your keywords:")).toBeInTheDocument();
+});
+
+it("lists jobs without a description under Needs review", async () => {
+  const calls = mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": (request) => {
+      const review = queryOf(request).get("match") === "review";
+      const page = makeFeed(review ? [makeCard({ title: "Ruby on Rails Developer", match: "review" })] : [makeCard()]);
+      return json({ ...page, counts: { ...page.counts, title_matches: 1, keyword_matches: 0, review_matches: 1 } });
+    },
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.queryByRole("button", { name: /Other titles matching your keywords/ })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /Needs review/ }));
+  await screen.findByRole("link", { name: "Ruby on Rails Developer" });
+  expect(screen.getByText(/the advert has no job description to confirm your Core skills/)).toBeInTheDocument();
+  expect(calls.some((c) => queryOf(c).get("match") === "review")).toBe(true);
 });

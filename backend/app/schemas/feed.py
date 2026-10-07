@@ -12,8 +12,9 @@ class FeedQuery(BaseModel):
 
     section: Literal["email", "link"] = "email"
     # "title": Jobs matching a wanted title (and kept Jobs that no longer match);
-    # "keywords": differently titled Jobs matching the User's core keywords.
-    match: Literal["title", "keywords"] = "title"
+    # "keywords": differently titled Jobs matching the User's core keywords;
+    # "review": title matches whose advert has no description to confirm a Core keyword.
+    match: Literal["title", "keywords", "review"] = "title"
     q: str | None = Field(default=None, max_length=200)
     location: str | None = Field(default=None, max_length=120)
     work_mode: WorkMode | None = None
@@ -56,13 +57,15 @@ class FeedCard(BaseModel):
     apply_url: str | None
     # None until the Job's required skills are extracted; [] means no gaps (FR-D3).
     skill_gaps: list[str] | None
+    # Required skills the Fact Bank shows, same rules as the gaps; None until extracted.
+    skill_matches: list[str] | None = None
     possible_duplicate: bool
     hidden: bool
     draft_id: uuid.UUID | None = None
     application_status: str | None = None
     company_applied: bool = False
     # None: kept for its Draft, Application or hide, but no longer matches Preferences.
-    match: Literal["title", "keywords"] | None = "title"
+    match: Literal["title", "keywords", "review"] | None = "title"
     matched_keywords: list[MatchedKeyword] = Field(default_factory=list)
 
 
@@ -72,6 +75,7 @@ class FeedCounts(BaseModel):
     # Both sections, with the current filters.
     title_matches: int = 0
     keyword_matches: int = 0
+    review_matches: int = 0
 
 
 class FeedOut(BaseModel):
@@ -125,6 +129,7 @@ class JobDetailOut(BaseModel):
     sources: list[SourceBadge]
     required_skills: list[str] | None
     skill_gaps: list[str] | None
+    skill_matches: list[str] | None = None
     hidden: bool
     expired: bool
     postings: list[PostingOut]
@@ -133,7 +138,7 @@ class JobDetailOut(BaseModel):
     application_status: str | None = None
     company_applied: bool = False
     # None when the Job is not in the User's Feed or no longer matches their Preferences.
-    match: Literal["title", "keywords"] | None = None
+    match: Literal["title", "keywords", "review"] | None = None
     matched_keywords: list[MatchedKeyword] = Field(default_factory=list)
 
 

@@ -97,16 +97,33 @@ def mentioned(text: str, terms: Iterable[str]) -> set[str]:
 def keyword_matches(
     rule: KeywordRule, in_requirements: set[str], in_description: set[str]
 ) -> list[KeywordMatch]:
-    """The rule's keywords found in the Job, requirements first, each skill once."""
+    """The rule's keywords the job description's own text names, each skill once. The
+    title never counts: a title can help find an advert, but only the description shows
+    the skill is wanted. Extracted skills are read from the title too, so they never
+    count alone; they only mark a described skill as a stated requirement."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
-        if keyword.canonical in in_requirements:
-            found.append(KeywordMatch(keyword.label, "requirements", keyword.core))
-        elif keyword.canonical in in_description:
-            found.append(KeywordMatch(keyword.label, "description", keyword.core))
+        if keyword.canonical not in in_description:
+            continue
+        where: Where = "requirements" if keyword.canonical in in_requirements else "description"
+        found.append(KeywordMatch(keyword.label, where, keyword.core))
     return found
+
+
+# Shorter than this, a description cannot confirm a skill. Extracted skills do not help:
+# they may come from the title alone.
+MIN_DESCRIPTION_CHARS = 100
+
+
+def has_description(description: str) -> bool:
+    return len(description.strip()) >= MIN_DESCRIPTION_CHARS
+
+
+def has_core(found: Sequence[KeywordMatch]) -> bool:
+    """Core keywords are must-haves: every Job in the Feed names at least one."""
+    return any(m.core for m in found)
 
 
 def qualifies(rule: KeywordRule, found: Sequence[KeywordMatch]) -> bool:
     """At least one core keyword, and at least min_matches distinct keywords in total."""
-    return any(m.core for m in found) and len(found) >= rule.min_matches
+    return has_core(found) and len(found) >= rule.min_matches

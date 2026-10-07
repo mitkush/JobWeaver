@@ -97,3 +97,29 @@ def test_prose_words_need_a_capital_to_count():
     rule = keyword_rule(["Go", "Kafka"], ["Go"], 2)
     assert not qualifies(rule, found(rule, description="Ready to go the extra mile with kafka."))
     assert qualifies(rule, found(rule, description="Services in Go with Kafka."))
+
+
+def test_only_the_job_description_confirms_a_keyword():
+    from app.tailoring.keywords import has_description
+
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
+    description = mentioned("Our monolith runs on PostgreSQL.", rule.terms)
+    # "Ruby on Rails Developer" in the title alone confirms nothing.
+    assert [m.keyword for m in keyword_matches(rule, set(), description)] == ["PostgreSQL"]
+    assert not has_description("Build billing services.")
+    assert has_description("x" * 100)
+
+
+def test_extracted_skills_never_confirm_a_keyword_alone():
+    from app.tailoring.keywords import has_description
+
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 1)
+    # Skill extraction reads the title too: "Rails" from a title is not JD evidence.
+    extracted = {"ruby on rails", "postgresql"}
+    assert keyword_matches(rule, extracted, set()) == []
+    assert not has_description("")
+    described = mentioned("Rails services on PostgreSQL.", rule.terms)
+    assert [(m.keyword, m.where) for m in keyword_matches(rule, extracted, described)] == [
+        ("Rails", "requirements"),
+        ("PostgreSQL", "requirements"),
+    ]
