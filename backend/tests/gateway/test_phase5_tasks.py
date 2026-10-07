@@ -37,3 +37,13 @@ async def test_recorded_adverts():
     result = (await RecordedAIGateway(FIXTURES).extract_adverts(REQUEST)).result
     assert [len(a.jobs) for a in result.adverts] == [2, 1, 0]
     assert result.adverts[2].is_job_advert is False
+
+
+def test_gemini_flash_is_reserved_for_drafts_and_draft_chat():
+    """FR-G4 AC1 and COSTS.md: Flash's small daily quota goes to Draft generation and
+    Draft Chat only; every other task starts on Flash-Lite."""
+    from app.gateway.routing import GEMINI_FLASH
+
+    for task, routes in ROUTING_TABLE.items():
+        uses_flash = any(r.model == GEMINI_FLASH for r in routes)
+        assert uses_flash == (task in {"tailor_draft", "revise_draft"}), task
