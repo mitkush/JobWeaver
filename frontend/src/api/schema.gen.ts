@@ -399,6 +399,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/preferences/title-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Title Suggestions
+         * @description Related titles to offer; only the ones the User adds are ever searched (FR-A3).
+         */
+        get: operations["title_suggestions_api_preferences_title_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ai-usage": {
         parameters: {
             query?: never;
@@ -1377,6 +1397,13 @@ export interface components {
              * @default false
              */
             company_applied?: boolean;
+            /**
+             * Match
+             * @default title
+             */
+            match?: ("title" | "keywords") | null;
+            /** Matched Keywords */
+            matched_keywords?: components["schemas"]["MatchedKeyword"][];
         };
         /** FeedCounts */
         FeedCounts: {
@@ -1384,6 +1411,16 @@ export interface components {
             with_email: number;
             /** Apply Link Only */
             apply_link_only: number;
+            /**
+             * Title Matches
+             * @default 0
+             */
+            title_matches?: number;
+            /**
+             * Keyword Matches
+             * @default 0
+             */
+            keyword_matches?: number;
         };
         /** FeedOut */
         FeedOut: {
@@ -1582,6 +1619,10 @@ export interface components {
              * @default false
              */
             company_applied?: boolean;
+            /** Match */
+            match?: ("title" | "keywords") | null;
+            /** Matched Keywords */
+            matched_keywords?: components["schemas"]["MatchedKeyword"][];
         };
         /**
          * JobRef
@@ -1605,6 +1646,18 @@ export interface components {
              * @default false
              */
             remote?: boolean;
+        };
+        /** MatchedKeyword */
+        MatchedKeyword: {
+            /** Keyword */
+            keyword: string;
+            /**
+             * Where
+             * @enum {string}
+             */
+            where: "requirements" | "description";
+            /** Core */
+            core: boolean;
         };
         /** MeOut */
         MeOut: {
@@ -1732,6 +1785,18 @@ export interface components {
             titles: string[];
             /** Keywords */
             keywords?: string[];
+            /** Core Keywords */
+            core_keywords?: string[];
+            /**
+             * Keyword Min Matches
+             * @default 2
+             */
+            keyword_min_matches?: number;
+            /**
+             * Search Keywords
+             * @default false
+             */
+            search_keywords?: boolean;
             /** Locations */
             locations?: components["schemas"]["PreferenceLocation"][];
             /** Work Modes */
@@ -1743,6 +1808,18 @@ export interface components {
             titles: string[];
             /** Keywords */
             keywords?: string[];
+            /** Core Keywords */
+            core_keywords?: string[];
+            /**
+             * Keyword Min Matches
+             * @default 2
+             */
+            keyword_min_matches?: number;
+            /**
+             * Search Keywords
+             * @default false
+             */
+            search_keywords?: boolean;
             /** Locations */
             locations?: components["schemas"]["PreferenceLocation"][];
             /** Work Modes */
@@ -1900,6 +1977,13 @@ export interface components {
             kind: components["schemas"]["DocumentKind"];
             /** Text */
             text: string;
+        };
+        /** TitleSuggestionsOut */
+        TitleSuggestionsOut: {
+            /** Titles */
+            titles: string[];
+            /** Searches Per Title */
+            searches_per_title: number;
         };
         /** UploadResult */
         UploadResult: {
@@ -2803,6 +2887,39 @@ export interface operations {
             };
         };
     };
+    title_suggestions_api_preferences_title_suggestions_get: {
+        parameters: {
+            query: {
+                titles: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleSuggestionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_usage_summary_api_admin_ai_usage_get: {
         parameters: {
             query?: never;
@@ -3103,6 +3220,7 @@ export interface operations {
         parameters: {
             query?: {
                 section?: "email" | "link";
+                match?: "title" | "keywords";
                 q?: string | null;
                 location?: string | null;
                 work_mode?: components["schemas"]["WorkMode"] | null;

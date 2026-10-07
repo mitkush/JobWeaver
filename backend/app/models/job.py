@@ -108,3 +108,10 @@ class UserJob(Base):
     user_id: Mapped[uuid.UUID] = user_fk()
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Why the Job is in this Feed: "title" or "keywords". None when it no longer matches
+    # the Preferences but stays because the User hid it, drafted for it or applied.
+    match_kind: Mapped[str | None] = mapped_column(String(16), default="title")
+    # For keyword matches: [{"keyword", "where": "requirements" | "description", "core"}]
+    matched_keywords: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )

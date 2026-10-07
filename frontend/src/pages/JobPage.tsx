@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/toast-context";
 import { formatLocation, workModeLabel } from "@/features/feed/format";
 import { PossibleDuplicateCard } from "@/features/feed/PossibleDuplicateCard";
 import { PostingRow } from "@/features/feed/PostingRow";
+import { MatchReason } from "@/features/feed/MatchReason";
 import { SkillGaps } from "@/features/feed/SkillGaps";
 import { fromNow } from "@/lib/time";
 import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
@@ -226,6 +227,7 @@ export function JobPage() {
           <Card>
             <CardHeader title="Skills" description="Required by the job, compared with your Fact Bank." />
             <CardBody className="space-y-3">
+              <MatchReason match={data.match} matched_keywords={data.matched_keywords} />
               <SkillGaps gaps={data.skill_gaps} />
               {data.required_skills && data.required_skills.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5" aria-label="Required skills">

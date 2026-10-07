@@ -11,6 +11,7 @@ export function feedQuery(params: URLSearchParams, section: "email" | "link"): F
   const mode = params.get("work_mode");
   return {
     section,
+    match: feedMatch(params),
     q: params.get("q") || undefined,
     location: params.get("location") || undefined,
     work_mode: mode === "onsite" || mode === "hybrid" || mode === "remote" ? mode : undefined,
@@ -20,6 +21,10 @@ export function feedQuery(params: URLSearchParams, section: "email" | "link"): F
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   };
+}
+
+export function feedMatch(params: URLSearchParams): "title" | "keywords" {
+  return params.get("match") === "keywords" ? "keywords" : "title";
 }
 
 export function hasFilters(params: URLSearchParams): boolean {

@@ -794,3 +794,17 @@ async def test_a_standby_covers_a_main_source_that_has_no_key(db, fetcher, stand
     outcomes = {o.source: o for o in await fetcher.run_all()}
     assert outcomes["fake-search"].message == "not configured"
     assert len(standby.windows) == 2
+
+
+def test_core_keywords_are_searched_only_when_the_user_chose_it():
+    pref = Preference(
+        titles=["Backend Engineer"],
+        keywords=["Ruby on Rails", "PostgreSQL"],
+        core_keywords=["Ruby on Rails"],
+        locations=[{"city": "Pune", "country": "IN"}],
+        work_modes=["onsite"],
+    )
+    assert [q.keywords for q in queries_from_preferences([pref])] == ["Backend Engineer"]
+    pref.search_keywords = True
+    keys = sorted(q.keywords for q in queries_from_preferences([pref]))
+    assert keys == ["Backend Engineer", "Ruby on Rails"]

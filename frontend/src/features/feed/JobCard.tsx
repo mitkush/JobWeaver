@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/toast-context";
 import { fromNow } from "@/lib/time";
 
 import { formatLocation, workModeLabel } from "./format";
+import { MatchReason } from "./MatchReason";
 import { SkillGaps } from "./SkillGaps";
 import { SourceBadges } from "./SourceBadges";
 import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
@@ -75,6 +76,7 @@ export function JobCard({ job }: { job: FeedCard }) {
       </div>
 
       <div className="mt-3 space-y-2">
+        <MatchReason match={job.match} matched_keywords={job.matched_keywords} />
         <SkillGaps gaps={job.skill_gaps} />
         <SourceBadges sources={job.sources} />
         {job.company_applied && <p className="text-xs text-amber-700 dark:text-amber-300">Already applied to this Company</p>}

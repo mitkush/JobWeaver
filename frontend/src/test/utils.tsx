@@ -90,7 +90,7 @@ export function makeFeed(items: FeedCard[] = [], overrides: Partial<FeedPage> = 
   return {
     items,
     total: items.length,
-    counts: { with_email: withEmail, apply_link_only: items.length - withEmail },
+    counts: { with_email: withEmail, apply_link_only: items.length - withEmail, title_matches: items.length, keyword_matches: 0 },
     last_updated_at: null,
     sources: [
       { name: "linkedin", label: "LinkedIn (Bright Data)" },

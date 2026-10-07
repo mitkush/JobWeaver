@@ -5,9 +5,11 @@ scoped by user_id; nothing a User does to their Feed changes another User's (ADR
 
 import uuid
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text
+from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +36,15 @@ from app.schemas.feed import (
     PostingOut,
     SourceBadge,
 )
-from app.tailoring.skills import UserSkills, skill_gaps, user_skills
+from app.tailoring.keywords import (
+    KeywordMatch,
+    KeywordRule,
+    keyword_matches,
+    keyword_rule,
+    mentioned,
+    qualifies,
+)
+from app.tailoring.skills import UserSkills, canonical_skill, skill_gaps, user_skills
 
 LINK_CHUNK = 1000
 
@@ -46,6 +56,12 @@ _JOINED: dict[tuple[str, str], str] = {
     ("front", "end"): "frontend",
     ("full", "stack"): "fullstack",
     ("machine", "learning"): "ml",
+    ("server", "side"): "backend",
+    ("site", "reliability"): "sre",
+    ("quality", "assurance"): "qa",
+    ("artificial", "intelligence"): "ai",
+    # "Software Development Engineer" = "Software Engineer" = "SDE"
+    ("development", "engineer"): "engineer",
 }
 # Spellings that name the same role word ("Backend Developer" = "Backend Engineer").
 _TITLE_WORDS: dict[str, tuple[str, ...]] = {
@@ -53,6 +69,10 @@ _TITLE_WORDS: dict[str, tuple[str, ...]] = {
     "dev": ("engineer",),
     "programmer": ("engineer",),
     "engg": ("engineer",),
+    "eng": ("engineer",),
+    "serverside": ("backend",),
+    "ui": ("frontend",),
+    "sre": ("sre", "engineer"),
     "sde": ("software", "engineer"),
     "swe": ("software", "engineer"),
     "sr": ("senior",),
@@ -122,6 +142,16 @@ def location_matches(
     return False
 
 
+def place_matches(
+    locations: Sequence[dict[str, object]], work_mode: str | None, preference: Preference
+) -> bool:
+    """Places and work mode, which every Feed entry must match, by title or keywords."""
+    modes = preference.work_modes or []
+    if work_mode and modes and work_mode not in modes:
+        return False
+    return location_matches(locations, work_mode, preference.locations or [], modes)
+
+
 def job_matches(
     title: str,
     locations: Sequence[dict[str, object]],
@@ -129,84 +159,171 @@ def job_matches(
     preference: Preference,
 ) -> bool:
     """Title, places and work mode (FR-D1). Keywords never narrow the Feed."""
-    modes = preference.work_modes or []
-    if work_mode and modes and work_mode not in modes:
-        return False
-    return title_matches(title, preference.titles or []) and location_matches(
-        locations, work_mode, preference.locations or [], modes
+    return place_matches(locations, work_mode, preference) and title_matches(
+        title, preference.titles or []
     )
+
+
+def rule_of(preference: Preference) -> KeywordRule | None:
+    return keyword_rule(
+        preference.keywords or [],
+        preference.core_keywords or [],
+        preference.keyword_min_matches or 2,
+    )
+
+
+@dataclass(frozen=True)
+class FeedMatch:
+    kind: str  # "title" | "keywords"
+    keywords: tuple[KeywordMatch, ...] = ()
+
+    def columns(self) -> dict[str, object]:
+        return {"match_kind": self.kind, "matched_keywords": [m.as_dict() for m in self.keywords]}
+
+
+TITLE_MATCH = FeedMatch("title")
 
 
 # --- Linking --------------------------------------------------------------------------------
 
 
 async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None = None):  # noqa: ANN202
-    query = select(Job.id, Job.title, Job.locations, Job.work_mode).where(Job.expired_at.is_(None))
+    query = select(
+        Job.id,
+        Job.title,
+        Job.locations,
+        Job.work_mode,
+        Job.required_skills,
+        Job.primary_posting_id,
+    ).where(Job.expired_at.is_(None))
     if job_ids is not None:
         query = query.where(Job.id.in_(list(job_ids)))
     return (await session.execute(query)).all()
 
 
+async def _matches(
+    session: AsyncSession, jobs: Sequence[Any], preferences: Sequence[Preference]
+) -> dict[uuid.UUID, dict[uuid.UUID, FeedMatch]]:
+    """User id -> Job id -> why that Job is in the User's Feed.
+
+    A title match wins; a differently titled Job in a wanted place is checked against the
+    User's keywords. Descriptions are read only for those Jobs, a chunk at a time, and each
+    is scanned once for every User's keywords together."""
+    result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
+    rules = {p.user_id: rule_of(p) for p in preferences}
+    pending: dict[uuid.UUID, list[tuple[uuid.UUID, KeywordRule]]] = {}
+    for preference in preferences:
+        rule = rules[preference.user_id]
+        for job in jobs:
+            if not place_matches(job.locations, job.work_mode, preference):
+                continue
+            if title_matches(job.title, preference.titles or []):
+                result[preference.user_id][job.id] = TITLE_MATCH
+            elif rule is not None:
+                pending.setdefault(job.id, []).append((preference.user_id, rule))
+    if not pending:
+        return result
+    terms = frozenset().union(*(r.terms for r in rules.values() if r is not None))
+    by_id = {job.id: job for job in jobs}
+    ids = list(pending)
+    for start in range(0, len(ids), LINK_CHUNK):
+        chunk = [by_id[i] for i in ids[start : start + LINK_CHUNK]]
+        posting_ids = [j.primary_posting_id for j in chunk if j.primary_posting_id]
+        descriptions = dict(
+            (
+                await session.execute(
+                    select(Posting.id, Posting.description).where(Posting.id.in_(posting_ids))
+                )
+            ).all()
+        )
+        for job in chunk:
+            required = list(job.required_skills or [])
+            in_requirements = mentioned(", ".join(required), terms) | {
+                canonical_skill(s) for s in required
+            }
+            in_description = mentioned(descriptions.get(job.primary_posting_id) or "", terms)
+            for user_id, rule in pending[job.id]:
+                found = keyword_matches(rule, in_requirements, in_description)
+                if qualifies(rule, found):
+                    result[user_id][job.id] = FeedMatch("keywords", tuple(found))
+    return result
+
+
 async def _apply_links(
     session: AsyncSession,
     user_id: uuid.UUID,
-    matching: set[uuid.UUID],
+    matching: dict[uuid.UUID, FeedMatch],
     considered: set[uuid.UUID] | None,
 ) -> None:
-    """Adds matching Jobs; removes considered Jobs that no longer match, unless the User
-    hid them (their choice is kept if the Job comes back) or has a Draft or Application
-    for them: those stay reachable from the tracker after the Job closes or Preferences
-    change."""
-    rows = [{"id": uuid.uuid4(), "user_id": user_id, "job_id": j} for j in matching]
-    # Three parameters per row; chunks stay far below asyncpg's 32,767 per statement.
+    """Adds matching Jobs and refreshes why each is there; removes considered Jobs that no
+    longer match, unless the User hid them (their choice is kept if the Job comes back) or
+    has a Draft or Application for them: those stay reachable from the tracker after the
+    Job closes or Preferences change, marked as no longer matching."""
+    rows = [
+        {"id": uuid.uuid4(), "user_id": user_id, "job_id": job_id, **match.columns()}
+        for job_id, match in matching.items()
+    ]
+    # Five parameters per row; chunks stay far below asyncpg's 32,767 per statement.
     for start in range(0, len(rows), LINK_CHUNK):
+        stmt = insert(UserJob).values(rows[start : start + LINK_CHUNK])
         await session.execute(
-            insert(UserJob)
-            .values(rows[start : start + LINK_CHUNK])
-            .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
+            stmt.on_conflict_do_update(
+                index_elements=["user_id", "job_id"],
+                set_={
+                    "match_kind": stmt.excluded.match_kind,
+                    "matched_keywords": stmt.excluded.matched_keywords,
+                },
+                # Unchanged links are not rewritten on every sync.
+                where=or_(
+                    UserJob.match_kind.is_distinct_from(stmt.excluded.match_kind),
+                    UserJob.matched_keywords != stmt.excluded.matched_keywords,
+                ),
+            )
         )
-    stale = delete(UserJob).where(
+    gone = [
         UserJob.user_id == user_id,
-        UserJob.hidden_at.is_(None),
-        ~among(UserJob.job_id, matching),
-        ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
-        ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
-    )
+        ~among(UserJob.job_id, set(matching)),
+    ]
     if considered is not None:
-        stale = stale.where(UserJob.job_id.in_(considered))
-    await session.execute(stale)
+        gone.append(UserJob.job_id.in_(considered))
+    await session.execute(
+        delete(UserJob).where(
+            *gone,
+            UserJob.hidden_at.is_(None),
+            ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
+            ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
+        )
+    )
+    await session.execute(
+        update(UserJob)
+        .where(*gone, UserJob.match_kind.is_not(None))
+        .values(match_kind=None, matched_keywords=[])
+    )
 
 
 async def sync_user_feed(session: AsyncSession, user_id: uuid.UUID) -> int:
     """Rebuilds one User's Feed from their current Preferences. Returns its size."""
     preference = await session.scalar(select(Preference).where(Preference.user_id == user_id))
-    jobs = await _open_jobs(session)
-    matching = (
-        {j.id for j in jobs if job_matches(j.title, j.locations, j.work_mode, preference)}
-        if preference
-        else set()
-    )
+    matching: dict[uuid.UUID, FeedMatch] = {}
+    if preference:
+        matching = (await _matches(session, await _open_jobs(session), [preference]))[user_id]
     await _apply_links(session, user_id, matching, None)
     return len(matching)
 
 
 async def sync_all_feeds(session: AsyncSession) -> None:
     jobs = await _open_jobs(session)
-    for preference in (await session.execute(select(Preference))).scalars():
-        matching = {
-            j.id for j in jobs if job_matches(j.title, j.locations, j.work_mode, preference)
-        }
-        await _apply_links(session, preference.user_id, matching, None)
+    preferences = list((await session.execute(select(Preference))).scalars())
+    for user_id, matching in (await _matches(session, jobs, preferences)).items():
+        await _apply_links(session, user_id, matching, None)
 
 
 async def sync_job_for_all(session: AsyncSession, job_id: uuid.UUID) -> None:
     """After a merge or split, links one Job for every User it now matches."""
     jobs = await _open_jobs(session, [job_id])
-    for preference in (await session.execute(select(Preference))).scalars():
-        matching = {
-            j.id for j in jobs if job_matches(j.title, j.locations, j.work_mode, preference)
-        }
-        await _apply_links(session, preference.user_id, matching, {job_id})
+    preferences = list((await session.execute(select(Preference))).scalars())
+    for user_id, matching in (await _matches(session, jobs, preferences)).items():
+        await _apply_links(session, user_id, matching, {job_id})
 
 
 # --- Reading the Feed -------------------------------------------------------------------------
@@ -259,6 +376,13 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
 def _like_literal(value: str) -> str:
     """A User's search text matched literally: "%" and "_" are not wildcards."""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _match(stmt: Select[tuple[Job, UserJob]], kind: str) -> Select[tuple[Job, UserJob]]:
+    """Jobs that no longer match stay with the title matches, where the User found them."""
+    if kind == "keywords":
+        return stmt.where(UserJob.match_kind == "keywords")
+    return stmt.where(or_(UserJob.match_kind.is_(None), UserJob.match_kind != "keywords"))
 
 
 def _section(stmt: Select[tuple[Job, UserJob]], with_email: bool) -> Select[tuple[Job, UserJob]]:
@@ -344,10 +468,13 @@ async def list_feed(
     session: AsyncSession, user: User, query: FeedQuery, now: datetime | None = None
 ) -> FeedOut:
     now = now or datetime.now(UTC)
-    base = _filtered(user, query, now)
+    filtered = _filtered(user, query, now)
+    base = _match(filtered, query.match)
     counts = FeedCounts(
         with_email=await _count(session, _section(base, True)),
         apply_link_only=await _count(session, _section(base, False)),
+        title_matches=await _count(session, _match(filtered, "title")),
+        keyword_matches=await _count(session, _match(filtered, "keywords")),
     )
     stmt = (
         _section(base, query.section == "email")
@@ -381,6 +508,8 @@ async def list_feed(
             draft_id=draft_ids.get(job.id),
             application_status=application_states.get(job.id),
             company_applied=job.id in applied_companies,
+            match=link.match_kind,
+            matched_keywords=link.matched_keywords or [],
         )
         for job, link in rows
     ]
@@ -515,6 +644,8 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         draft_id=draft_ids.get(job.id),
         application_status=application_states.get(job.id),
         company_applied=job.id in applied_companies,
+        match=link.match_kind,
+        matched_keywords=link.matched_keywords or [],
     )
 
 

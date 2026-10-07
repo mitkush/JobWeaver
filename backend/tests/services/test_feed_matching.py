@@ -131,3 +131,22 @@ def test_typed_city_aliases_match_normalised_job_cities():
     gurugram = [{"city": "Gurugram", "country": "IN", "remote": False}]
     assert location_matches(gurugram, "onsite", [{"city": "gurgaon", "country": "IN"}], ["onsite"])
     assert not location_matches(job, "hybrid", [{"city": "Pune", "country": "IN"}], ["hybrid"])
+
+
+@pytest.mark.parametrize(
+    ("job", "wanted", "ok"),
+    [
+        ("Server-side Engineer", ["Backend Developer"], True),
+        ("Back-end Engineer", ["Backend Developer"], True),
+        ("UI Engineer", ["Frontend Developer"], True),
+        ("Software Development Engineer II", ["SDE"], True),
+        ("SDE", ["Software Development Engineer"], True),
+        ("Site Reliability Engineer", ["SRE"], True),
+        ("SRE", ["Site Reliability Engineer"], True),
+        # Different titles stay different: those are for suggestions and keywords.
+        ("Software Engineer - Payments", ["Backend Developer"], False),
+        ("Platform Engineer", ["DevOps Engineer"], False),
+    ],
+)
+def test_title_families(job, wanted, ok):
+    assert title_matches(job, wanted) is ok
