@@ -222,6 +222,17 @@ async def has_rejection(
     return found is not None
 
 
+async def _groups_rejected(session: AsyncSession, a: uuid.UUID, b: uuid.UUID) -> bool:
+    """True when a Rejected Pair stands between the Jobs of Postings a and b, by any of their
+    Postings, not only these two (the check merge_jobs makes)."""
+    job_a, job_b = await _job_of(session, a), await _job_of(session, b)
+    if job_a is None or job_b is None or job_a == job_b:
+        return False
+    return await has_rejection(
+        session, await _posting_ids(session, job_a), await _posting_ids(session, job_b)
+    )
+
+
 async def merge_jobs(
     session: AsyncSession, a_id: uuid.UUID, b_id: uuid.UUID, priorities: dict[str, int]
 ) -> uuid.UUID | None:
@@ -415,6 +426,8 @@ class Correspondence:
                     continue
                 handled.add(key)
                 reason = exact_reason(_view(posting), _view(other))
+                if reason is not None and await _groups_rejected(session, posting.id, other.id):
+                    continue  # a User split these Jobs: never group them, never propose them
                 if reason is not None:
                     session.add(
                         MatchPair(
@@ -501,6 +514,9 @@ class Correspondence:
                 if (await self._known_pairs(session, a)) & {key}:
                     continue
                 if await _job_of(session, a) == await _job_of(session, b):
+                    continue
+                if await _groups_rejected(session, a, b):
+                    # Confirming would be refused, so the pair is never proposed (FR-C3).
                     continue
                 similarity = await session.scalar(
                     text(
@@ -860,5 +876,8 @@ async def split_posting(
     await session.flush()
     priorities = source_priorities()
     await refresh_jobs(session, [job_id, new_job.id], priorities)
-    await feed.sync_job_for_all(session, new_job.id)
+    # Both sides changed: the old Job may no longer match Users who matched only through
+    # the Posting that left it, and the new one may match Users the old one did not.
+    for changed in (job_id, new_job.id):
+        await feed.sync_job_for_all(session, changed)
     return new_job.id

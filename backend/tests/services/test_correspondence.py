@@ -415,3 +415,33 @@ async def test_an_edited_advert_is_embedded_and_compared_again(db):
     await add("remotive", posting("r1", title="Backend Engineer III", description=ADVERT))
     report = await build(dedup_high_title=99).process()
     assert report.embedded == 2  # j1 again, plus the new r1
+
+
+async def test_a_split_rules_out_proposals_through_the_rest_of_either_group(db):
+    """After "Not the same Job", a newcomer grouped with one side must not be proposed as a
+    Possible Duplicate of the other: Confirm would be refused (FR-C3)."""
+    await add("linkedin", posting("l1", apply_url="https://acme.dev/apply/1"))
+    await add(
+        "jsearch", posting("j1", title="Backend Engineer II", description=ADVERT + " Payments.")
+    )
+    await build(dedup_high_title=99).process()
+    pair = await db.scalar(select(MatchPair))
+    await db.execute(update(MatchPair).values(status=PairStatus.REJECTED))
+    db.add(
+        RejectedPair(
+            posting_a_id=pair.posting_a_id, posting_b_id=pair.posting_b_id, reason="not_same"
+        )
+    )
+    await db.commit()
+    # Same apply URL as l1 (Exact), and close enough to j1 to be a Medium candidate.
+    await add(
+        "greenhouse",
+        posting("g1", title="Backend Engineer II", apply_url="https://acme.dev/apply/1",
+                description=ADVERT + " Payments."),
+    )  # fmt: skip
+    await build(dedup_high_title=99).process()
+    assert await job_of(db, "greenhouse", "g1") == await job_of(db, "linkedin", "l1")
+    open_pairs = await db.scalar(
+        select(func.count()).select_from(MatchPair).where(MatchPair.status == PairStatus.OPEN)
+    )
+    assert open_pairs == 0
