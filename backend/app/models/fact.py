@@ -46,3 +46,16 @@ class Fact(Base):
     # Set once the user changes an AI fact, so a re-parse never overwrites it (FR-A2 AC3).
     edited: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DismissedFact(Base):
+    """Text the User removed from their Fact Bank (deleted, merged away, or edited from the
+    AI's wording). A re-parse never brings it back (FR-A2 AC3). Text only, never values
+    from other Users; deleted with the Fact Bank."""
+
+    __tablename__ = "dismissed_facts"
+    __table_args__ = (Index("idx_dismissed_facts_user_text", "user_id", "text_key", unique=True),)
+
+    user_id: Mapped[uuid.UUID] = user_fk()
+    # Lower-cased, whitespace-collapsed Fact text.
+    text_key: Mapped[str] = mapped_column(Text)

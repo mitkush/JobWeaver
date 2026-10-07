@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -10,7 +11,7 @@ from app.documents.extract import extract_text
 from app.gateway.base import BaseAIGateway
 from app.gateway.schemas import DocumentInput, ParseDocumentsRequest
 from app.models.document import Document, DocumentKind
-from app.models.fact import Fact, FactOrigin
+from app.models.fact import DismissedFact, Fact, FactOrigin
 from app.models.user import User
 from app.schemas.facts import FactBankChanges, FactCreate, FactMerge, FactUpdate
 from app.services.accounts import ensure_ai_allowed
@@ -18,6 +19,26 @@ from app.services.accounts import ensure_ai_allowed
 
 def _norm(text: str) -> str:
     return " ".join(text.lower().split())
+
+
+async def _dismiss(session: AsyncSession, user: User, *texts: str) -> None:
+    """Remembers text the User took out, so a re-parse does not add it back."""
+    for key in {_norm(text) for text in texts if text.strip()}:
+        await session.execute(
+            insert(DismissedFact)
+            .values(id=uuid.uuid4(), user_id=user.id, text_key=key)
+            .on_conflict_do_nothing(index_elements=["user_id", "text_key"])
+        )
+
+
+async def _dismissed(session: AsyncSession, user: User) -> set[str]:
+    return set(
+        (
+            await session.execute(
+                select(DismissedFact.text_key).where(DismissedFact.user_id == user.id)
+            )
+        ).scalars()
+    )
 
 
 async def list_documents(session: AsyncSession, user: User) -> list[Document]:
@@ -84,7 +105,8 @@ async def rebuild_fact_bank(
     replaceable = [f for f in facts if f.origin == FactOrigin.AI and not f.edited]
     kept = [f for f in facts if f not in replaceable]
     old_texts = {_norm(f.text): f.text for f in replaceable}
-    kept_texts = {_norm(f.text) for f in kept}
+    # Kept Facts and anything the User deleted, merged or reworded never come back.
+    kept_texts = {_norm(f.text) for f in kept} | await _dismissed(session, user)
 
     for fact in replaceable:
         await session.delete(fact)
@@ -143,6 +165,8 @@ async def update_fact(
     session: AsyncSession, user: User, fact_id: uuid.UUID, data: FactUpdate
 ) -> Fact:
     fact = await _owned_fact(session, user, fact_id)
+    if data.text is not None and _norm(data.text) != _norm(fact.text):
+        await _dismiss(session, user, fact.text)  # the AI's wording must not return beside it
     for field, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
         setattr(fact, field, value.strip() if isinstance(value, str) else value)
     fact.edited = True
@@ -151,7 +175,9 @@ async def update_fact(
 
 
 async def delete_fact(session: AsyncSession, user: User, fact_id: uuid.UUID) -> None:
-    await session.delete(await _owned_fact(session, user, fact_id))
+    fact = await _owned_fact(session, user, fact_id)
+    await _dismiss(session, user, fact.text)
+    await session.delete(fact)
     await session.flush()
 
 
@@ -171,6 +197,9 @@ async def merge_facts(session: AsyncSession, user: User, data: FactMerge) -> Fac
         edited=True,
         position=first.position,
     )
+    await _dismiss(
+        session, user, *(fact.text for fact in facts if _norm(fact.text) != _norm(merged.text))
+    )
     for fact in facts:
         await session.delete(fact)
     session.add(merged)
@@ -187,6 +216,7 @@ async def mark_reviewed(session: AsyncSession, user: User) -> None:
 
 async def delete_fact_bank(session: AsyncSession, user: User) -> None:
     await session.execute(delete(Fact).where(Fact.user_id == user.id))
+    await session.execute(delete(DismissedFact).where(DismissedFact.user_id == user.id))
     await session.execute(delete(Document).where(Document.user_id == user.id))
     user.fact_bank_reviewed_at = None
     await session.flush()
