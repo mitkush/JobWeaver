@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
@@ -39,6 +40,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+# Seconds within which a 503 must arrive for the provider to be retried.
+BUSY_RETRY_WITHIN = 5.0
+
+
 def route_of(route: Route) -> tuple[str, str]:
     return route.provider, route.model
 
@@ -54,12 +59,14 @@ class LiveAIGateway(BaseAIGateway):
         ledger: UsageLedger,
         busy_retry_delay: float = 2.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.clients = clients
         self.ledger = ledger
         # A 503 "high demand" from a free model usually clears within seconds.
         self.busy_retry_delay = busy_retry_delay
         self.sleep = sleep
+        self.clock = clock
 
     async def tailor_draft(self, request: TailorDraftRequest) -> GatewayResponse[DraftResult]:
         return await self._run(
@@ -158,11 +165,16 @@ class LiveAIGateway(BaseAIGateway):
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
                 continue
             try:
+                started = self.clock()
                 try:
                     completion = await client.complete_json(
                         route.model, system, user, route.max_output_tokens
                     )
                 except ProviderBusy as exc:
+                    # Only a quick refusal is retried: a slow one would spend the time the
+                    # next provider needs within the caller's deadline (60 s for a Draft).
+                    if self.clock() - started > BUSY_RETRY_WITHIN:
+                        raise
                     logger.info("AI route %s/%s busy, retrying once: %s", *route_of(route), exc)
                     await self.sleep(self.busy_retry_delay)
                     completion = await client.complete_json(

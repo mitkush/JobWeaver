@@ -146,3 +146,26 @@ async def test_failures_log_each_providers_own_reason(db, caplog):
     with pytest.raises(GatewayError, match="unavailable for free"):
         await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
     assert "openrouter returned HTTP 404: This model is unavailable for free" in caplog.text
+
+
+async def test_a_slow_busy_answer_falls_through_without_a_retry(db):
+    from app.core.errors import ProviderBusy
+
+    now = [0.0]
+
+    class SlowBusy(FakeClient):
+        async def complete_json(self, model, system, user, max_output_tokens):
+            now[0] += 35  # the 503 took 35 s: a retry would eat the next provider's time
+            return await super().complete_json(model, system, user, max_output_tokens)
+
+    gemini = SlowBusy("gemini", [ProviderBusy("gemini is overloaded (HTTP 503)"), GOOD])
+    groq = FakeClient("groq", [GOOD])
+    gateway = LiveAIGateway(
+        {"gemini": gemini, "groq": groq},
+        UsageLedger(get_sessionmaker()),
+        sleep=no_sleep,
+        clock=lambda: now[0],
+    )
+    response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+    assert response.provider == "groq"
+    assert len(gemini.calls) == 1
