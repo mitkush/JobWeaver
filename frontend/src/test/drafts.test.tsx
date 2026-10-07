@@ -200,9 +200,9 @@ it("shows why a PDF cannot be made instead of starting a broken download", async
   stubObjectUrls(createObjectURL);
   const user = userEvent.setup();
   await screen.findByLabelText("Draft line 1");
-  await user.click(screen.getByRole("button", { name: "Resume PDF" }));
+  await user.click(screen.getByRole("button", { name: "Download Resume PDF" }));
   expect(await screen.findByText(/The PDF cannot show "🚀"/)).toBeInTheDocument();
-  expect(screen.getByText("The PDF was not downloaded")).toBeInTheDocument();
+  expect(screen.getByText("The PDF could not be made")).toBeInTheDocument();
   expect(createObjectURL).not.toHaveBeenCalled();
 });
 
@@ -221,9 +221,39 @@ it("saves a PDF under the server's file name", async () => {
   });
   const user = userEvent.setup();
   await screen.findByLabelText("Draft line 1");
-  await user.click(screen.getByRole("button", { name: "Cover Letter PDF" }));
+  await user.click(screen.getByRole("button", { name: "Download Cover Letter PDF" }));
   await waitFor(() => expect(clicked).toEqual(["Asha_Acme_Backend_Engineer_Cover_Letter.pdf"]));
   expect(calls.some((c) => new URL(c.url).searchParams.get("kind") === "cover_letter")).toBe(true);
-  expect(screen.queryByText("The PDF was not downloaded")).not.toBeInTheDocument();
+  expect(screen.queryByText("The PDF could not be made")).not.toBeInTheDocument();
+  click.mockRestore();
+});
+
+it("previews the exact PDF in the page and downloads it from the preview", async () => {
+  const calls = setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () =>
+      new Response("%PDF-1.7", {
+        headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename*=UTF-8''Asha_Acme_Backend_Engineer.pdf" },
+      }),
+  });
+  stubObjectUrls(() => "blob:resume-preview");
+  const clicked: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    clicked.push(this.download);
+  });
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.selectOptions(screen.getByLabelText("PDF layout"), "compact");
+  await user.click(screen.getByRole("button", { name: "Preview Resume" }));
+  const dialog = await screen.findByRole("dialog", { name: "Resume preview · Compact" });
+  expect(within(dialog).getByTitle("Resume preview · Compact")).toHaveAttribute("src", "blob:resume-preview");
+  expect(within(dialog).getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", "blob:resume-preview");
+  const pdfCall = calls.find((c) => new URL(c.url).pathname.endsWith("/pdf"))!;
+  expect(new URL(pdfCall.url).searchParams.get("template")).toBe("compact");
+  // Downloading from the preview saves the same file without asking the server again.
+  await user.click(within(dialog).getByRole("button", { name: "Download" }));
+  expect(clicked).toEqual(["Asha_Acme_Backend_Engineer.pdf"]);
+  expect(calls.filter((c) => new URL(c.url).pathname.endsWith("/pdf"))).toHaveLength(1);
+  await user.click(within(dialog).getByRole("button", { name: "Close preview" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click.mockRestore();
 });
