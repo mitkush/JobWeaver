@@ -29,10 +29,11 @@ export function KeywordSettings({ value, onChange }: { value: KeywordValue; onCh
     <fieldset className="-mt-3 space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
       <legend className="px-1 text-sm font-medium text-slate-800 dark:text-slate-200">Must-have skills</legend>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Mark the skills you want to be hired for as Core. Every job in your Feed must then name at least one Core
-        keyword in its title or description, including jobs that match your titles. Jobs with other titles also
-        appear, in a separate section, when they name a Core keyword and {value.keyword_min_matches} of your keywords
-        in total. With no Core keyword, your titles alone decide.
+        Mark the skills you want to be hired for as Core. Every job in your Feed must then have a job description
+        that names at least one Core keyword, including jobs that match your titles; a job title alone never
+        counts. Jobs with other titles also appear, in a separate section, when their description names a Core
+        keyword and {value.keyword_min_matches} of your keywords in total. Title matches with no description are
+        listed under Needs review. With no Core keyword, your titles alone decide.
       </p>
       <ul className="flex flex-wrap gap-2" aria-label="Core keywords">
         {value.keywords.map((keyword) => {

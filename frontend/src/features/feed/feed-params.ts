@@ -23,8 +23,11 @@ export function feedQuery(params: URLSearchParams, section: "email" | "link"): F
   };
 }
 
-export function feedMatch(params: URLSearchParams): "title" | "keywords" {
-  return params.get("match") === "keywords" ? "keywords" : "title";
+export type FeedMatch = "title" | "keywords" | "review";
+
+export function feedMatch(params: URLSearchParams): FeedMatch {
+  const match = params.get("match");
+  return match === "keywords" || match === "review" ? match : "title";
 }
 
 export function hasFilters(params: URLSearchParams): boolean {

@@ -99,12 +99,13 @@ def test_prose_words_need_a_capital_to_count():
     assert qualifies(rule, found(rule, description="Services in Go with Kafka."))
 
 
-def test_a_keyword_counts_once_from_the_title_or_the_description():
+def test_only_the_job_description_confirms_a_keyword():
+    from app.tailoring.keywords import has_description
+
     rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
-    title = mentioned("Ruby on Rails Developer", rule.terms)
-    description = mentioned("Rails monolith on PostgreSQL.", rule.terms)
-    matches = keyword_matches(rule, set(), description, title)
-    assert [(m.keyword, m.where) for m in matches] == [
-        ("Rails", "title"),
-        ("PostgreSQL", "description"),
-    ]
+    description = mentioned("Our monolith runs on PostgreSQL.", rule.terms)
+    # "Ruby on Rails Developer" in the title alone confirms nothing.
+    assert [m.keyword for m in keyword_matches(rule, set(), description)] == ["PostgreSQL"]
+    assert not has_description("Build billing services.", [])
+    assert has_description("", ["Ruby on Rails"])
+    assert has_description("x" * 100, [])

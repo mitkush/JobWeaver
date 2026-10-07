@@ -134,6 +134,7 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
         "apply_link_only": 1,
         "title_matches": 2,
         "keyword_matches": 0,
+        "review_matches": 0,
     }
     [card] = body["items"]
     assert card["title"] == "Backend Engineer"
@@ -526,7 +527,10 @@ async def test_another_users_keywords_never_change_my_keyword_matches(alice, bob
         posting(
             "k3",
             title="Software Engineer - Billing",
-            description="Rails developer wanted. postgresql experience required. Bengaluru.",
+            description=(
+                "Rails developer wanted for our billing platform. postgresql experience "
+                "required. Hybrid in our Bengaluru office."
+            ),
         ),
     )
     await process()
@@ -546,7 +550,7 @@ async def test_another_users_keywords_never_change_my_keyword_matches(alice, bob
     assert matched(after)[0][1] == {"Rails", "PostgreSQL"}
 
 
-async def test_core_keywords_are_must_haves_for_title_matches_too(alice):
+async def test_core_keywords_are_must_haves_confirmed_by_the_job_description(alice):
     _, client = alice
     await add(
         "linkedin",
@@ -554,19 +558,28 @@ async def test_core_keywords_are_must_haves_for_title_matches_too(alice):
             "j1",
             title="Backend Developer (Java)",
             company="SAP",
-            description="Java, Spring Boot and PostgreSQL services. Bengaluru office.",
+            description="Java, Spring Boot and PostgreSQL services for our finance and "
+            "procurement teams. Hybrid in the Bengaluru office.",
         ),
         posting(
             "j2",
             title="Backend Developer",
             company="Shopify",
-            description="Our monolith runs on Ruby on Rails with PostgreSQL. Bengaluru.",
+            description="Our monolith runs on Ruby on Rails with PostgreSQL, and you will "
+            "own the checkout services. Bengaluru.",
         ),
         posting(
             "j3",
             title="Ruby on Rails Developer",
             company="Freshworks",
-            description="Build billing services. Bengaluru office.",
+            description="Build billing services. Bengaluru.",
+        ),
+        posting(
+            "j4",
+            title="Ruby on Rails Developer",
+            company="Zoho",
+            description="A strong Java role in our Bengaluru office, building payment "
+            "services on Spring Boot for enterprise customers.",
         ),
     )
     await process()
@@ -579,19 +592,23 @@ async def test_core_keywords_are_must_haves_for_title_matches_too(alice):
         "work_modes": ["hybrid", "onsite"],
     }
     assert (await client.put("/api/preferences", json=prefs)).status_code == 200
-    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
-    found = {
-        c["company"]: [(k["keyword"], k["where"]) for k in c["matched_keywords"]] for c in cards
+
+    async def feed(match):
+        params = {"section": "link", "match": match}
+        return (await client.get("/api/feed", params=params)).json()
+
+    main = await feed("title")
+    # SAP names no Core keyword; Zoho's title says Rails but its description does not.
+    assert {c["company"]: [k["keyword"] for k in c["matched_keywords"]] for c in main["items"]} == {
+        "Shopify": ["Rails", "PostgreSQL"]
     }
-    # The Java job matches a title but names no Core keyword, so it is left out.
-    assert found == {
-        "Shopify": [("Rails", "description"), ("PostgreSQL", "description")],
-        "Freshworks": [("Rails", "title")],
-    }
-    assert {c["match"] for c in cards} == {"title"}
+    review = await feed("review")
+    # Freshworks' advert is too short to confirm anything: shown apart, not as a match.
+    assert [(c["company"], c["match"]) for c in review["items"]] == [("Freshworks", "review")]
+    assert main["counts"]["review_matches"] == 1
 
     # Without a Core keyword, titles alone decide again.
     prefs["core_keywords"] = []
     await client.put("/api/preferences", json=prefs)
-    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
-    assert {c["company"] for c in cards} == {"SAP", "Shopify", "Freshworks"}
+    companies = {c["company"] for c in (await feed("title"))["items"]}
+    assert companies == {"SAP", "Shopify", "Freshworks", "Zoho"}

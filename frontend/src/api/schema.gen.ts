@@ -1384,6 +1384,8 @@ export interface components {
             apply_url: string | null;
             /** Skill Gaps */
             skill_gaps: string[] | null;
+            /** Skill Matches */
+            skill_matches?: string[] | null;
             /** Possible Duplicate */
             possible_duplicate: boolean;
             /** Hidden */
@@ -1401,7 +1403,7 @@ export interface components {
              * Match
              * @default title
              */
-            match?: ("title" | "keywords") | null;
+            match?: ("title" | "keywords" | "review") | null;
             /** Matched Keywords */
             matched_keywords?: components["schemas"]["MatchedKeyword"][];
         };
@@ -1421,6 +1423,11 @@ export interface components {
              * @default 0
              */
             keyword_matches?: number;
+            /**
+             * Review Matches
+             * @default 0
+             */
+            review_matches?: number;
         };
         /** FeedOut */
         FeedOut: {
@@ -1602,6 +1609,8 @@ export interface components {
             required_skills: string[] | null;
             /** Skill Gaps */
             skill_gaps: string[] | null;
+            /** Skill Matches */
+            skill_matches?: string[] | null;
             /** Hidden */
             hidden: boolean;
             /** Expired */
@@ -1620,7 +1629,7 @@ export interface components {
              */
             company_applied?: boolean;
             /** Match */
-            match?: ("title" | "keywords") | null;
+            match?: ("title" | "keywords" | "review") | null;
             /** Matched Keywords */
             matched_keywords?: components["schemas"]["MatchedKeyword"][];
         };
@@ -1655,7 +1664,7 @@ export interface components {
              * Where
              * @enum {string}
              */
-            where: "requirements" | "title" | "description";
+            where: "requirements" | "description";
             /** Core */
             core: boolean;
         };
@@ -3220,7 +3229,7 @@ export interface operations {
         parameters: {
             query?: {
                 section?: "email" | "link";
-                match?: "title" | "keywords";
+                match?: "title" | "keywords" | "review";
                 q?: string | null;
                 location?: string | null;
                 work_mode?: components["schemas"]["WorkMode"] | null;

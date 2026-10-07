@@ -15,6 +15,14 @@ export function MatchReason({ match, matched_keywords: keywords = [] }: Props) {
       </p>
     );
   }
+  if (match === "review") {
+    return (
+      <p className="flex items-center gap-1.5 text-sm text-amber-800 dark:text-amber-300">
+        <Info className="size-4" aria-hidden />
+        Needs review: the advert has no job description to confirm your Core skills. Check it before drafting.
+      </p>
+    );
+  }
   if (!keywords.length) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400">

@@ -228,7 +228,7 @@ export function JobPage() {
             <CardHeader title="Skills" description="Required by the job, compared with your Fact Bank." />
             <CardBody className="space-y-3">
               <MatchReason match={data.match} matched_keywords={data.matched_keywords} />
-              <SkillGaps gaps={data.skill_gaps} />
+              <SkillGaps gaps={data.skill_gaps} matches={data.skill_matches} />
               {data.required_skills && data.required_skills.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5" aria-label="Required skills">
                   {data.required_skills.map((skill) => {

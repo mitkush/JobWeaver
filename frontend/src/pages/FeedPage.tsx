@@ -10,7 +10,7 @@ import { buttonClasses } from "@/components/ui/button-classes";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
 import { FeedFilters } from "@/features/feed/FeedFilters";
-import { clearFilters, feedMatch, feedQuery, hasFilters, PAGE_SIZE, withParam } from "@/features/feed/feed-params";
+import { clearFilters, feedMatch, feedQuery, hasFilters, PAGE_SIZE, withParam, type FeedMatch } from "@/features/feed/feed-params";
 import { Reminders } from "@/features/applications/Reminders";
 import { JobCard } from "@/features/feed/JobCard";
 import { cn } from "@/lib/cn";
@@ -60,37 +60,41 @@ function SectionTabs({
   );
 }
 
-type Match = "title" | "keywords";
+type Match = FeedMatch;
 
-/** Title matches, or differently titled Jobs that match the User's core keywords. */
+/** Title matches, differently titled Jobs that match the User's core keywords, and title
+ * matches whose advert has no description to confirm a Core keyword. */
 function MatchSwitch({
   match,
   counts,
   onSelect,
 }: {
   match: Match;
-  counts: { title_matches?: number; keyword_matches?: number } | undefined;
+  counts: { title_matches?: number; keyword_matches?: number; review_matches?: number } | undefined;
   onSelect: (match: Match) => void;
 }) {
-  if (match === "title" && !counts?.keyword_matches) return null;
+  if (match === "title" && !counts?.keyword_matches && !counts?.review_matches) return null;
   const options: { id: Match; label: string; count?: number }[] = [
     { id: "title", label: "Your titles", count: counts?.title_matches },
     { id: "keywords", label: "Other titles matching your keywords", count: counts?.keyword_matches },
+    { id: "review", label: "Needs review", count: counts?.review_matches },
   ];
   return (
     <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Which jobs">
-      {options.map((option) => (
-        <Button
-          key={option.id}
-          size="sm"
-          variant={match === option.id ? "primary" : "secondary"}
-          aria-pressed={match === option.id}
-          onClick={() => onSelect(option.id)}
-        >
-          {option.label}
-          {option.count !== undefined && <span className="ml-1 opacity-80">({option.count})</span>}
-        </Button>
-      ))}
+      {options
+        .filter((option) => option.id === "title" || option.id === match || option.count)
+        .map((option) => (
+          <Button
+            key={option.id}
+            size="sm"
+            variant={match === option.id ? "primary" : "secondary"}
+            aria-pressed={match === option.id}
+            onClick={() => onSelect(option.id)}
+          >
+            {option.label}
+            {option.count !== undefined && <span className="ml-1 opacity-80">({option.count})</span>}
+          </Button>
+        ))}
     </div>
   );
 }
@@ -114,7 +118,8 @@ export function FeedPage() {
   const page = Math.max(1, Number(params.get("page")) || 1);
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const match = feedMatch(params);
-  const nothingAtAll = counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) === 0;
+  const nothingAtAll =
+    counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) + (counts.review_matches ?? 0) === 0;
 
   return (
     <>
@@ -146,7 +151,7 @@ export function FeedPage() {
       <MatchSwitch
         match={match}
         counts={counts}
-        onSelect={(next) => setParams(withParam(params, "match", next === "keywords" ? next : null))}
+        onSelect={(next) => setParams(withParam(params, "match", next === "title" ? null : next))}
       />
       <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
 
@@ -199,7 +204,9 @@ export function FeedPage() {
         )
       ) : data && data.items.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-          {match === "keywords"
+          {match === "review"
+            ? "No jobs waiting for review here."
+            : match === "keywords"
             ? section === "email"
               ? "No differently titled jobs with a contact email here."
               : "No differently titled apply-link-only jobs here."

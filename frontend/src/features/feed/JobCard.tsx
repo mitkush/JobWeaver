@@ -77,7 +77,7 @@ export function JobCard({ job }: { job: FeedCard }) {
 
       <div className="mt-3 space-y-2">
         <MatchReason match={job.match} matched_keywords={job.matched_keywords} />
-        <SkillGaps gaps={job.skill_gaps} />
+        <SkillGaps gaps={job.skill_gaps} matches={job.skill_matches} />
         <SourceBadges sources={job.sources} />
         {job.company_applied && <p className="text-xs text-amber-700 dark:text-amber-300">Already applied to this Company</p>}
         {job.application_status && <Badge>{statusLabel(job.application_status)}</Badge>}

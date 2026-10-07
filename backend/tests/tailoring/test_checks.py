@@ -269,3 +269,12 @@ def test_name_placeholders_are_filled_and_unknown_ones_removed():
         "Best regards, Asha Rao",
     ]
     assert result.warnings == ["Removed a email line: It contains the placeholder [Phone Number]"]
+
+
+def test_skill_matches_and_gaps_split_required_skills_with_aliases():
+    from app.tailoring.skills import skill_gaps, skill_matches, user_skills
+
+    skills = user_skills(["Ruby on Rails, Postgres, Redis"], ["Built REST APIs in Rails"])
+    required = ["RoR", "PostgreSQL", "Redis", "REST APIs", "Elasticsearch", "Kubernetes"]
+    assert skill_matches(required, skills) == ["RoR", "PostgreSQL", "Redis", "REST APIs"]
+    assert skill_gaps(required, skills) == ["Elasticsearch", "Kubernetes"]

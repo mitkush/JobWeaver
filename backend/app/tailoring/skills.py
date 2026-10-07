@@ -170,6 +170,21 @@ def all_spellings() -> dict[str, str]:
     return {**{name: name for name in _ALIASES}, **_CANONICAL}
 
 
+def skill_matches(required: Iterable[str], skills: UserSkills) -> list[str]:
+    """Required skills the User's Facts show (Rails = RoR = Ruby on Rails), in the Job's
+    order, each named once: the other half of skill_gaps."""
+    matched: list[str] = []
+    seen: set[str] = set()
+    for name in required:
+        canonical = canonical_skill(name)
+        if not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        if canonical in skills.canonical or _mentioned(canonical, skills.text, skills.raw):
+            matched.append(name.strip())
+    return matched
+
+
 def skill_gaps(required: Iterable[str], skills: UserSkills) -> list[str]:
     """Required skills the User does not show, in the Job's order, each named once."""
     gaps: list[str] = []

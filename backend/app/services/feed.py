@@ -40,12 +40,19 @@ from app.tailoring.keywords import (
     KeywordMatch,
     KeywordRule,
     has_core,
+    has_description,
     keyword_matches,
     keyword_rule,
     mentioned,
     qualifies,
 )
-from app.tailoring.skills import UserSkills, canonical_skill, skill_gaps, user_skills
+from app.tailoring.skills import (
+    UserSkills,
+    canonical_skill,
+    skill_gaps,
+    skill_matches,
+    user_skills,
+)
 
 LINK_CHUNK = 1000
 
@@ -176,7 +183,7 @@ def rule_of(preference: Preference) -> KeywordRule | None:
 
 @dataclass(frozen=True)
 class FeedMatch:
-    kind: str  # "title" | "keywords"
+    kind: str  # "title" | "keywords" | "review"
     keywords: tuple[KeywordMatch, ...] = ()
 
     def columns(self) -> dict[str, object]:
@@ -184,6 +191,8 @@ class FeedMatch:
 
 
 TITLE_MATCH = FeedMatch("title")
+# A title match whose advert has no usable description: nothing can confirm a Core skill.
+REVIEW_MATCH = FeedMatch("review")
 
 
 # --- Linking --------------------------------------------------------------------------------
@@ -210,10 +219,13 @@ async def _matches(
 
     Every Job must be in a wanted place and work mode. Then:
     - no Core keyword: a title match is enough;
-    - with Core keywords (must-have skills): a title match must also name one of them,
-      and a differently titled Job must name one plus keyword_min_matches keywords. A
-      keyword counts once, whether it is in the title, the job description or the skills
-      extracted from it.
+    - with Core keywords (must-have skills), only the job description counts (its text
+      and the skills extracted from it; never the title):
+      - a title match whose description names a Core keyword: "title";
+      - a title match without a usable description: "review", shown apart, never as a
+        confirmed match;
+      - a differently titled Job whose description names a Core keyword and
+        keyword_min_matches keywords in total: "keywords".
     Descriptions are read only for Jobs that need a keyword check, a chunk at a time."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
     rules = {p.user_id: rule_of(p) for p in preferences}
@@ -251,12 +263,14 @@ async def _matches(
                 canonical_skill(s) for s in required
             }
             in_description = mentioned(descriptions.get(job.primary_posting_id) or "", terms)
-            in_title = mentioned(job.title, terms)
+            described = has_description(descriptions.get(job.primary_posting_id) or "", required)
             for user_id, rule, titled in pending[job.id]:
-                found = keyword_matches(rule, in_requirements, in_description, in_title)
-                if titled and has_core(found):
+                found = keyword_matches(rule, in_requirements, in_description)
+                if titled and not described:
+                    result[user_id][job.id] = REVIEW_MATCH
+                elif titled and has_core(found):
                     result[user_id][job.id] = FeedMatch("title", tuple(found))
-                elif not titled and qualifies(rule, found):
+                elif not titled and described and qualifies(rule, found):
                     result[user_id][job.id] = FeedMatch("keywords", tuple(found))
     return result
 
@@ -392,9 +406,9 @@ def _like_literal(value: str) -> str:
 
 def _match(stmt: Select[tuple[Job, UserJob]], kind: str) -> Select[tuple[Job, UserJob]]:
     """Jobs that no longer match stay with the title matches, where the User found them."""
-    if kind == "keywords":
-        return stmt.where(UserJob.match_kind == "keywords")
-    return stmt.where(or_(UserJob.match_kind.is_(None), UserJob.match_kind != "keywords"))
+    if kind in ("keywords", "review"):
+        return stmt.where(UserJob.match_kind == kind)
+    return stmt.where(or_(UserJob.match_kind.is_(None), UserJob.match_kind == "title"))
 
 
 def _section(stmt: Select[tuple[Job, UserJob]], with_email: bool) -> Select[tuple[Job, UserJob]]:
@@ -487,6 +501,7 @@ async def list_feed(
         apply_link_only=await _count(session, _section(base, False)),
         title_matches=await _count(session, _match(filtered, "title")),
         keyword_matches=await _count(session, _match(filtered, "keywords")),
+        review_matches=await _count(session, _match(filtered, "review")),
     )
     stmt = (
         _section(base, query.section == "email")
@@ -515,6 +530,9 @@ async def list_feed(
             skill_gaps=None
             if job.required_skills is None
             else skill_gaps(job.required_skills, skills),
+            skill_matches=None
+            if job.required_skills is None
+            else skill_matches(job.required_skills, skills),
             possible_duplicate=job.id in duplicates,
             hidden=link.hidden_at is not None,
             draft_id=draft_ids.get(job.id),
@@ -649,6 +667,9 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         sources=[SourceBadge(name=s, label=labels.get(s, s)) for s in job.sources],
         required_skills=job.required_skills,
         skill_gaps=None if job.required_skills is None else skill_gaps(job.required_skills, skills),
+        skill_matches=None
+        if job.required_skills is None
+        else skill_matches(job.required_skills, skills),
         hidden=link.hidden_at is not None,
         expired=job.expired_at is not None,
         postings=[_posting_out(p, labels, job.primary_posting_id) for p in postings],

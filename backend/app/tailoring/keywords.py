@@ -17,7 +17,7 @@ from typing import Literal
 
 from app.tailoring.skills import PROSE_WORDS, canonical_skill, spellings
 
-Where = Literal["requirements", "title", "description"]
+Where = Literal["requirements", "description"]
 
 
 @dataclass(frozen=True)
@@ -95,25 +95,26 @@ def mentioned(text: str, terms: Iterable[str]) -> set[str]:
 
 
 def keyword_matches(
-    rule: KeywordRule,
-    in_requirements: set[str],
-    in_description: set[str],
-    in_title: set[str] | None = None,
+    rule: KeywordRule, in_requirements: set[str], in_description: set[str]
 ) -> list[KeywordMatch]:
-    """The rule's keywords found in the Job's title or job description, each skill once:
-    the skills extracted from the description first, then the title, then its text."""
+    """The rule's keywords the job description confirms, each skill once: the skills
+    extracted from it first, then its text. The title never counts: a title can help
+    find an advert, but only the description shows the skill is wanted."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
-        where: Where | None = None
         if keyword.canonical in in_requirements:
-            where = "requirements"
-        elif in_title and keyword.canonical in in_title:
-            where = "title"
+            found.append(KeywordMatch(keyword.label, "requirements", keyword.core))
         elif keyword.canonical in in_description:
-            where = "description"
-        if where:
-            found.append(KeywordMatch(keyword.label, where, keyword.core))
+            found.append(KeywordMatch(keyword.label, "description", keyword.core))
     return found
+
+
+# Shorter than this, with no extracted skills, a description cannot confirm a skill.
+MIN_DESCRIPTION_CHARS = 100
+
+
+def has_description(description: str, required_skills: Sequence[str]) -> bool:
+    return bool(required_skills) or len(description.strip()) >= MIN_DESCRIPTION_CHARS
 
 
 def has_core(found: Sequence[KeywordMatch]) -> bool:
