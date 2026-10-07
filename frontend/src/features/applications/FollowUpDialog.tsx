@@ -85,7 +85,8 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
       confirmLabel="Open in Gmail"
       tone="primary"
       loading={send.isPending}
-      confirmDisabled={!ready || (warning !== null && !acceptWarning)}
+      // Once the follow-up exists (blocked tab), a second click would create a duplicate.
+      confirmDisabled={!ready || blocked !== null || (warning !== null && !acceptWarning)}
       onConfirm={() => void submit()}
       onCancel={onClose}
     >

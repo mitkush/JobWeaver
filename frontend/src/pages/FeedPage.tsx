@@ -1,4 +1,5 @@
 import { Inbox, Mail, SearchX } from "lucide-react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { useFeed, useNotices } from "@/api/hooks";
@@ -60,6 +61,9 @@ function SectionTabs({
 }
 
 export function FeedPage() {
+  // Clearing from the empty state also resets the filter boxes, whose typed text would
+  // otherwise be applied again after the typing pause.
+  const [filtersKey, setFiltersKey] = useState(0);
   const [params, setParams] = useSearchParams();
   const notices = useNotices();
   const explicit = params.get("section");
@@ -102,7 +106,7 @@ export function FeedPage() {
           {feed.error.message}
         </Alert>
       )}
-      <FeedFilters params={params} onChange={setParams} sources={data?.sources ?? []} />
+      <FeedFilters key={filtersKey} params={params} onChange={setParams} sources={data?.sources ?? []} />
       <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
 
       {feed.isPending ? (
@@ -112,7 +116,13 @@ export function FeedPage() {
           icon={SearchX}
           title="No jobs match these filters"
           action={
-            <Button variant="secondary" onClick={() => setParams(clearFilters(params))}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setParams(clearFilters(params));
+                setFiltersKey((k) => k + 1);
+              }}
+            >
               Clear filters
             </Button>
           }

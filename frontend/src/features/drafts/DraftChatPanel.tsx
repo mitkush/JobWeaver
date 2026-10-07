@@ -7,10 +7,10 @@ import { Textarea } from "@/components/ui/field";
 
 import type { Version } from "./api";
 
-export function DraftChatPanel({ versions, busy, dirty, onChat, onUndo, error }: {
+export function DraftChatPanel({ versions, currentVersion, busy, dirty, onChat, onUndo, error }: {
   versions: Version[]; busy: boolean; dirty: boolean;
   onChat: (message: string, overwriteManual: boolean) => Promise<boolean>;
-  onUndo: (number: number) => void; error?: string;
+  onUndo: (number: number) => void; error?: string; currentVersion: number;
 }) {
   const [message, setMessage] = useState("");
   const [overwrite, setOverwrite] = useState(false);
@@ -25,7 +25,7 @@ export function DraftChatPanel({ versions, busy, dirty, onChat, onUndo, error }:
         <summary className="cursor-pointer text-base font-semibold">Draft Chat</summary>
         <p className="mt-2 text-xs text-slate-500">Ask for changes using your Fact Bank. Each change creates a version you can undo.</p>
         <div role="log" className="my-4 max-h-80 space-y-3 overflow-auto" aria-label="Draft Chat history">
-          {versions.filter((version) => version.source === "chat").slice().reverse().map((version) => <div key={version.number} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950"><p className="whitespace-pre-wrap">{version.message}</p><Button size="sm" variant="ghost" disabled={busy || dirty} onClick={() => onUndo(version.number - 1)}>Undo version {version.number}</Button></div>)}
+          {versions.filter((version) => version.source === "chat").slice().reverse().map((version) => <div key={version.number} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950"><p className="whitespace-pre-wrap">{version.message}</p>{/* Undo only the latest change: undoing an older one would also drop everything after it. Older versions are restored from Diff and versions. */}{version.number === currentVersion && <Button size="sm" variant="ghost" disabled={busy || dirty} onClick={() => onUndo(version.number - 1)}>Undo this change</Button>}</div>)}
         </div>
         {error && <Alert tone="error">{error}</Alert>}
         {dirty && <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">Save your edits before using Draft Chat.</p>}

@@ -15,6 +15,7 @@ import { pdfHref, useDraft, useDraftActions, useDraftDiff, useVersions, type Con
 import { DraftChatPanel } from "@/features/drafts/DraftChatPanel";
 import { DraftEditor } from "@/features/drafts/DraftEditor";
 import { statusLabel } from "@/features/applications/status";
+import { movedIndexes } from "@/lib/order";
 
 const PARTS: { value: Part; label: string }[] = [
   { value: "resume", label: "Tailored Resume" },
@@ -144,6 +145,9 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const selected = versions.data?.find((version) => String(version.number) === compare);
   const oldLines = selected?.content[part] ?? [];
   const prior = new Map(oldLines.map((line) => [line.id, line.text]));
+  const oldIndex = new Map(oldLines.map((line, i) => [line.id, i]));
+  const keptLines = (content[part] ?? []).map((line, i) => [i, oldIndex.get(line.id)] as const).filter((entry): entry is readonly [number, number] => entry[1] !== undefined);
+  const movedLines = new Set([...movedIndexes(keptLines.map(([, old]) => old))].map((j) => keptLines[j]![0]));
   return (
     <div className="space-y-5">
       <Link to={`/jobs/${draft.job_id}`} className="text-sm text-brand-700 dark:text-brand-200">← Back to Job</Link>
@@ -173,14 +177,14 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
               {diff.isError && <Alert tone="error">{diff.error.message}</Alert>}
               {diff.data?.map((line, i) => <div key={i} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{DIFF_LABELS[line.kind]}</Badge><p className="mt-2">{line.text}</p>{line.kind === "rewritten" && <p className="mt-1 text-xs text-slate-500">Before: {line.before?.join(" · ")}</p>}<p className="mt-1 text-xs text-slate-500">Trace: {line.fact_refs.join(", ")}</p></div>)}
             </> : selected && <>
-              {(content[part] ?? []).map((line, index) => <div key={line.id ?? index} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{!prior.has(line.id) ? "Added" : prior.get(line.id) !== line.text ? "Rewritten" : oldLines[index]?.id !== line.id ? "Reordered" : "Unchanged"}</Badge><p className="mt-1">{line.text}</p>{prior.get(line.id) !== line.text && prior.has(line.id) && <p className="text-xs text-slate-500">Before: {prior.get(line.id)}</p>}</div>)}
+              {(content[part] ?? []).map((line, index) => <div key={line.id ?? index} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{!prior.has(line.id) ? "Added" : prior.get(line.id) !== line.text ? "Rewritten" : movedLines.has(index) ? "Reordered" : "Unchanged"}</Badge><p className="mt-1">{line.text}</p>{prior.get(line.id) !== line.text && prior.has(line.id) && <p className="text-xs text-slate-500">Before: {prior.get(line.id)}</p>}</div>)}
               {oldLines.filter((line) => !(content[part] ?? []).some((entry) => entry.id === line.id)).map((line, index) => <p key={line.id ?? index} className="text-sm"><Badge>Removed</Badge> {line.text}</p>)}
               <Button variant="secondary" disabled={busy || dirty || stale} onClick={() => void restore(selected.number)}>Restore version {selected.number}</Button>
             </>}
           </section>}
         </Card>
         <div className="min-w-0 space-y-4">
-          <DraftChatPanel versions={versions.data ?? []} busy={busy} dirty={dirty || stale} onChat={chat} onUndo={(number) => void restore(number)} error={chatError} />
+          <DraftChatPanel versions={versions.data ?? []} currentVersion={draft.current_version} busy={busy} dirty={dirty || stale} onChat={chat} onUndo={(number) => void restore(number)} error={chatError} />
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
             <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
