@@ -106,6 +106,20 @@ def test_only_the_job_description_confirms_a_keyword():
     description = mentioned("Our monolith runs on PostgreSQL.", rule.terms)
     # "Ruby on Rails Developer" in the title alone confirms nothing.
     assert [m.keyword for m in keyword_matches(rule, set(), description)] == ["PostgreSQL"]
-    assert not has_description("Build billing services.", [])
-    assert has_description("", ["Ruby on Rails"])
-    assert has_description("x" * 100, [])
+    assert not has_description("Build billing services.")
+    assert has_description("x" * 100)
+
+
+def test_extracted_skills_never_confirm_a_keyword_alone():
+    from app.tailoring.keywords import has_description
+
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 1)
+    # Skill extraction reads the title too: "Rails" from a title is not JD evidence.
+    extracted = {"ruby on rails", "postgresql"}
+    assert keyword_matches(rule, extracted, set()) == []
+    assert not has_description("")
+    described = mentioned("Rails services on PostgreSQL.", rule.terms)
+    assert [(m.keyword, m.where) for m in keyword_matches(rule, extracted, described)] == [
+        ("Rails", "requirements"),
+        ("PostgreSQL", "requirements"),
+    ]

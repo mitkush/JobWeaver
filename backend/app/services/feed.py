@@ -219,8 +219,8 @@ async def _matches(
 
     Every Job must be in a wanted place and work mode. Then:
     - no Core keyword: a title match is enough;
-    - with Core keywords (must-have skills), only the job description counts (its text
-      and the skills extracted from it; never the title):
+    - with Core keywords (must-have skills), only the job description's own text counts
+      (never the title, nor skills extracted from it alone, which may come from the title):
       - a title match whose description names a Core keyword: "title";
       - a title match without a usable description: "review", shown apart, never as a
         confirmed match;
@@ -263,7 +263,7 @@ async def _matches(
                 canonical_skill(s) for s in required
             }
             in_description = mentioned(descriptions.get(job.primary_posting_id) or "", terms)
-            described = has_description(descriptions.get(job.primary_posting_id) or "", required)
+            described = has_description(descriptions.get(job.primary_posting_id) or "")
             for user_id, rule, titled in pending[job.id]:
                 found = keyword_matches(rule, in_requirements, in_description)
                 if titled and not described:
@@ -346,10 +346,18 @@ async def sync_all_feeds(session: AsyncSession) -> None:
 
 async def sync_job_for_all(session: AsyncSession, job_id: uuid.UUID) -> None:
     """After a merge or split, links one Job for every User it now matches."""
-    jobs = await _open_jobs(session, [job_id])
+    await sync_jobs_for_all(session, {job_id})
+
+
+async def sync_jobs_for_all(session: AsyncSession, job_ids: set[uuid.UUID]) -> None:
+    """Rechecks some Jobs for every User, e.g. once their required skills are extracted,
+    so each match reason is current without waiting for the next Fetch Run."""
+    if not job_ids:
+        return
+    jobs = await _open_jobs(session, job_ids)
     preferences = list((await session.execute(select(Preference))).scalars())
     for user_id, matching in (await _matches(session, jobs, preferences)).items():
-        await _apply_links(session, user_id, matching, {job_id})
+        await _apply_links(session, user_id, matching, job_ids)
 
 
 # --- Reading the Feed -------------------------------------------------------------------------

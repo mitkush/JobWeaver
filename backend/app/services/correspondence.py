@@ -659,6 +659,7 @@ class Correspondence:
         """Required skills, extracted once per Job (ADR-0010). Only Jobs that are in some
         User's Feed: nobody looks at the others, so they would only spend quota."""
         size = self.settings.skills_batch_size
+        extracted: set[uuid.UUID] = set()
         async with self.sessionmaker() as session:
             jobs = list(
                 (
@@ -709,7 +710,11 @@ class Correspondence:
                     job.required_skills = clean_skills(skills)
                     job.skills_extracted_at = now
                     report.skills_extracted += 1
+                    extracted.add(job.id)
                 await session.commit()
+            # Match reasons name stated requirements; refresh them now, not next run.
+            await feed.sync_jobs_for_all(session, extracted)
+            await session.commit()
 
 
 _MODES = {"remote": WorkMode.REMOTE, "hybrid": WorkMode.HYBRID, "onsite": WorkMode.ONSITE}

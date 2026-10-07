@@ -445,10 +445,11 @@ async def test_differently_titled_jobs_matching_core_keywords_get_their_own_sect
     [card] = body["items"]
     assert card["title"] == "Software Engineer - Payments"
     assert card["match"] == "keywords"
-    # "Rails" and "Ruby on Rails" are one skill; guardrails is not Rails.
+    # "Rails" and "Ruby on Rails" are one skill; guardrails is not Rails. Skill extraction
+    # ran after the sync and listed PostgreSQL, so that match now reads as a requirement.
     assert card["matched_keywords"] == [
         {"keyword": "Rails", "where": "description", "core": True},
-        {"keyword": "PostgreSQL", "where": "description", "core": False},
+        {"keyword": "PostgreSQL", "where": "requirements", "core": False},
     ]
     detail = (await client.get(f"/api/jobs/{card['job_id']}")).json()
     assert detail["match"] == "keywords"
@@ -612,3 +613,29 @@ async def test_core_keywords_are_must_haves_confirmed_by_the_job_description(ali
     await client.put("/api/preferences", json=prefs)
     companies = {c["company"] for c in (await feed("title"))["items"]}
     assert companies == {"SAP", "Shopify", "Freshworks", "Zoho"}
+
+
+async def test_a_title_only_rails_job_stays_under_review_even_with_extracted_skills(alice, db):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("t1", title="Ruby on Rails Developer", company="Freshworks", description=""),
+    )
+    await process()
+    await db.execute(update(Job).values(required_skills=["Ruby on Rails"]))
+    await db.commit()
+    prefs = {
+        "titles": ["Ruby on Rails Developer"],
+        "keywords": ["Rails"],
+        "core_keywords": ["Rails"],
+        "keyword_min_matches": 1,
+        "locations": [{"city": "Bengaluru", "country": "IN"}],
+        "work_modes": ["hybrid", "onsite"],
+    }
+    await client.put("/api/preferences", json=prefs)
+    params = {"section": "link", "match": "review"}
+    [card] = (await client.get("/api/feed", params=params)).json()["items"]
+    assert (card["company"], card["match"]) == ("Freshworks", "review")
+    assert card["matched_keywords"] == []
+    title = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert title["items"] == []

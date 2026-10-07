@@ -97,24 +97,26 @@ def mentioned(text: str, terms: Iterable[str]) -> set[str]:
 def keyword_matches(
     rule: KeywordRule, in_requirements: set[str], in_description: set[str]
 ) -> list[KeywordMatch]:
-    """The rule's keywords the job description confirms, each skill once: the skills
-    extracted from it first, then its text. The title never counts: a title can help
-    find an advert, but only the description shows the skill is wanted."""
+    """The rule's keywords the job description's own text names, each skill once. The
+    title never counts: a title can help find an advert, but only the description shows
+    the skill is wanted. Extracted skills are read from the title too, so they never
+    count alone; they only mark a described skill as a stated requirement."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
-        if keyword.canonical in in_requirements:
-            found.append(KeywordMatch(keyword.label, "requirements", keyword.core))
-        elif keyword.canonical in in_description:
-            found.append(KeywordMatch(keyword.label, "description", keyword.core))
+        if keyword.canonical not in in_description:
+            continue
+        where: Where = "requirements" if keyword.canonical in in_requirements else "description"
+        found.append(KeywordMatch(keyword.label, where, keyword.core))
     return found
 
 
-# Shorter than this, with no extracted skills, a description cannot confirm a skill.
+# Shorter than this, a description cannot confirm a skill. Extracted skills do not help:
+# they may come from the title alone.
 MIN_DESCRIPTION_CHARS = 100
 
 
-def has_description(description: str, required_skills: Sequence[str]) -> bool:
-    return bool(required_skills) or len(description.strip()) >= MIN_DESCRIPTION_CHARS
+def has_description(description: str) -> bool:
+    return len(description.strip()) >= MIN_DESCRIPTION_CHARS
 
 
 def has_core(found: Sequence[KeywordMatch]) -> bool:
