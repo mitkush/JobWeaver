@@ -673,3 +673,25 @@ async def test_an_open_or_unreachable_link_never_blocks_a_draft(prepared, db):
         transport=httpx.MockTransport(lambda request: httpx.Response(403))
     )
     assert (await client.post("/api/drafts", json={"job_id": job_id})).status_code == 202
+
+
+async def test_moving_a_line_protects_it_like_an_edit(prepared):
+    """FR-E6: reordering or moving a line to another section is the User's edit."""
+    draft = await generated(prepared)
+    _, client, _, _ = prepared
+    content = draft["version"]["content"]
+    assert len(content["resume"]) >= 2
+    content["resume"] = [content["resume"][-1], *content["resume"][:-1]]
+    first = content["resume"][0]
+    content["resume"][1]["section"] = (
+        "Projects" if content["resume"][1]["section"] != "Projects" else "Summary"
+    )
+    saved = await client.put(
+        f"/api/drafts/{draft['id']}", json={"expected_version": 1, "content": content}
+    )
+    assert saved.status_code in (200, 204), saved.text
+    lines = (await client.get(f"/api/drafts/{draft['id']}")).json()["version"]["content"]["resume"]
+    by_id = {line["id"]: line for line in lines}
+    assert by_id[first["id"]]["manual"] is True
+    assert by_id[content["resume"][1]["id"]]["manual"] is True
+    assert all(not by_id[line["id"]]["manual"] for line in content["resume"][2:])

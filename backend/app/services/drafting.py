@@ -48,6 +48,7 @@ from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
 from app.tailoring.content import DraftContent, FactSnapshot
+from app.tailoring.diff import moved
 from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
@@ -476,12 +477,24 @@ async def save(
         for line in getattr(DraftContent.model_validate(previous.content), part)
     }
     edited = content.model_copy(deep=True)
+    old_position = {
+        line.id: i
+        for part in ("resume", "cover_letter", "email_body")
+        for i, line in enumerate(getattr(DraftContent.model_validate(previous.content), part))
+    }
     for part in ("resume", "cover_letter", "email_body"):
-        for line in getattr(edited, part):
+        lines = getattr(edited, part)
+        kept = [i for i, line in enumerate(lines) if line.id in old_position]
+        # A line the User moved, or moved to another section, is their edit too (FR-E6):
+        # Draft Chat keeps it where they put it.
+        shifted = {kept[j] for j in moved([old_position[lines[i].id] for i in kept])}
+        for i, line in enumerate(lines):
             if (
                 line.id not in old
                 or line.text != old[line.id].text
                 or line.fact_refs != old[line.id].fact_refs
+                or line.section != old[line.id].section
+                or i in shifted
             ):
                 line.manual = True
             else:
