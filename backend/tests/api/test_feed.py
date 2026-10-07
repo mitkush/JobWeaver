@@ -544,3 +544,54 @@ async def test_another_users_keywords_never_change_my_keyword_matches(alice, bob
     assert [c["title"] for c in before] == ["Software Engineer - Billing"]
     assert matched(after) == matched(before)
     assert matched(after)[0][1] == {"Rails", "PostgreSQL"}
+
+
+async def test_core_keywords_are_must_haves_for_title_matches_too(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting(
+            "j1",
+            title="Backend Developer (Java)",
+            company="SAP",
+            description="Java, Spring Boot and PostgreSQL services. Bengaluru office.",
+        ),
+        posting(
+            "j2",
+            title="Backend Developer",
+            company="Shopify",
+            description="Our monolith runs on Ruby on Rails with PostgreSQL. Bengaluru.",
+        ),
+        posting(
+            "j3",
+            title="Ruby on Rails Developer",
+            company="Freshworks",
+            description="Build billing services. Bengaluru office.",
+        ),
+    )
+    await process()
+    prefs = {
+        "titles": ["Backend Developer", "Ruby on Rails Developer"],
+        "keywords": ["Rails", "PostgreSQL"],
+        "core_keywords": ["Rails"],
+        "keyword_min_matches": 2,
+        "locations": [{"city": "Bengaluru", "country": "IN"}],
+        "work_modes": ["hybrid", "onsite"],
+    }
+    assert (await client.put("/api/preferences", json=prefs)).status_code == 200
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    found = {
+        c["company"]: [(k["keyword"], k["where"]) for k in c["matched_keywords"]] for c in cards
+    }
+    # The Java job matches a title but names no Core keyword, so it is left out.
+    assert found == {
+        "Shopify": [("Rails", "description"), ("PostgreSQL", "description")],
+        "Freshworks": [("Rails", "title")],
+    }
+    assert {c["match"] for c in cards} == {"title"}
+
+    # Without a Core keyword, titles alone decide again.
+    prefs["core_keywords"] = []
+    await client.put("/api/preferences", json=prefs)
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert {c["company"] for c in cards} == {"SAP", "Shopify", "Freshworks"}

@@ -150,3 +150,8 @@ def test_typed_city_aliases_match_normalised_job_cities():
 )
 def test_title_families(job, wanted, ok):
     assert title_matches(job, wanted) is ok
+
+
+def test_ror_titles_match_ruby_on_rails():
+    assert title_matches("RoR Developer", ["Ruby on Rails"])
+    assert title_matches("Senior Ruby on Rails Engineer", ["RoR Developer"])

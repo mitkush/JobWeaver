@@ -275,3 +275,15 @@ it("labels a kept job that no longer matches the preferences", async () => {
   await screen.findByRole("link", { name: "Backend Engineer" });
   expect(screen.getByText(/No longer matches your Preferences/)).toBeInTheDocument();
 });
+
+it("shows which Core keyword a title match names", async () => {
+  mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () =>
+      json(makeFeed([makeCard({ title: "Ruby on Rails Developer", matched_keywords: [{ keyword: "Rails", where: "title", core: true }] })])),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Ruby on Rails Developer" });
+  expect(screen.getByText("Your keywords:")).toBeInTheDocument();
+  expect(screen.getByRole("list", { name: "Matched keywords" })).toHaveTextContent("Railsin title");
+});

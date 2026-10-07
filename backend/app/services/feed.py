@@ -39,6 +39,7 @@ from app.schemas.feed import (
 from app.tailoring.keywords import (
     KeywordMatch,
     KeywordRule,
+    has_core,
     keyword_matches,
     keyword_rule,
     mentioned,
@@ -73,6 +74,7 @@ _TITLE_WORDS: dict[str, tuple[str, ...]] = {
     "serverside": ("backend",),
     "ui": ("frontend",),
     "sre": ("sre", "engineer"),
+    "ror": ("ruby", "on", "rails"),
     "sde": ("software", "engineer"),
     "swe": ("software", "engineer"),
     "sr": ("senior",),
@@ -206,21 +208,28 @@ async def _matches(
 ) -> dict[uuid.UUID, dict[uuid.UUID, FeedMatch]]:
     """User id -> Job id -> why that Job is in the User's Feed.
 
-    A title match wins; a differently titled Job in a wanted place is checked against the
-    User's keywords. Descriptions are read only for those Jobs, a chunk at a time, and each
-    is scanned once for every User's keywords together."""
+    Every Job must be in a wanted place and work mode. Then:
+    - no Core keyword: a title match is enough;
+    - with Core keywords (must-have skills): a title match must also name one of them,
+      and a differently titled Job must name one plus keyword_min_matches keywords. A
+      keyword counts once, whether it is in the title, the job description or the skills
+      extracted from it.
+    Descriptions are read only for Jobs that need a keyword check, a chunk at a time."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
     rules = {p.user_id: rule_of(p) for p in preferences}
-    pending: dict[uuid.UUID, list[tuple[uuid.UUID, KeywordRule]]] = {}
+    # Job id -> (user id, rule, whether the title matched) for each keyword check.
+    pending: dict[uuid.UUID, list[tuple[uuid.UUID, KeywordRule, bool]]] = {}
     for preference in preferences:
         rule = rules[preference.user_id]
         for job in jobs:
             if not place_matches(job.locations, job.work_mode, preference):
                 continue
-            if title_matches(job.title, preference.titles or []):
-                result[preference.user_id][job.id] = TITLE_MATCH
-            elif rule is not None:
-                pending.setdefault(job.id, []).append((preference.user_id, rule))
+            titled = title_matches(job.title, preference.titles or [])
+            if rule is None:
+                if titled:
+                    result[preference.user_id][job.id] = TITLE_MATCH
+                continue
+            pending.setdefault(job.id, []).append((preference.user_id, rule, titled))
     if not pending:
         return result
     terms = frozenset().union(*(r.terms for r in rules.values() if r is not None))
@@ -242,9 +251,12 @@ async def _matches(
                 canonical_skill(s) for s in required
             }
             in_description = mentioned(descriptions.get(job.primary_posting_id) or "", terms)
-            for user_id, rule in pending[job.id]:
-                found = keyword_matches(rule, in_requirements, in_description)
-                if qualifies(rule, found):
+            in_title = mentioned(job.title, terms)
+            for user_id, rule, titled in pending[job.id]:
+                found = keyword_matches(rule, in_requirements, in_description, in_title)
+                if titled and has_core(found):
+                    result[user_id][job.id] = FeedMatch("title", tuple(found))
+                elif not titled and qualifies(rule, found):
                     result[user_id][job.id] = FeedMatch("keywords", tuple(found))
     return result
 

@@ -17,7 +17,7 @@ from typing import Literal
 
 from app.tailoring.skills import PROSE_WORDS, canonical_skill, spellings
 
-Where = Literal["requirements", "description"]
+Where = Literal["requirements", "title", "description"]
 
 
 @dataclass(frozen=True)
@@ -95,18 +95,32 @@ def mentioned(text: str, terms: Iterable[str]) -> set[str]:
 
 
 def keyword_matches(
-    rule: KeywordRule, in_requirements: set[str], in_description: set[str]
+    rule: KeywordRule,
+    in_requirements: set[str],
+    in_description: set[str],
+    in_title: set[str] | None = None,
 ) -> list[KeywordMatch]:
-    """The rule's keywords found in the Job, requirements first, each skill once."""
+    """The rule's keywords found in the Job's title or job description, each skill once:
+    the skills extracted from the description first, then the title, then its text."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
+        where: Where | None = None
         if keyword.canonical in in_requirements:
-            found.append(KeywordMatch(keyword.label, "requirements", keyword.core))
+            where = "requirements"
+        elif in_title and keyword.canonical in in_title:
+            where = "title"
         elif keyword.canonical in in_description:
-            found.append(KeywordMatch(keyword.label, "description", keyword.core))
+            where = "description"
+        if where:
+            found.append(KeywordMatch(keyword.label, where, keyword.core))
     return found
+
+
+def has_core(found: Sequence[KeywordMatch]) -> bool:
+    """Core keywords are must-haves: every Job in the Feed names at least one."""
+    return any(m.core for m in found)
 
 
 def qualifies(rule: KeywordRule, found: Sequence[KeywordMatch]) -> bool:
     """At least one core keyword, and at least min_matches distinct keywords in total."""
-    return any(m.core for m in found) and len(found) >= rule.min_matches
+    return has_core(found) and len(found) >= rule.min_matches

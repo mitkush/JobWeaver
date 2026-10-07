@@ -97,3 +97,14 @@ def test_prose_words_need_a_capital_to_count():
     rule = keyword_rule(["Go", "Kafka"], ["Go"], 2)
     assert not qualifies(rule, found(rule, description="Ready to go the extra mile with kafka."))
     assert qualifies(rule, found(rule, description="Services in Go with Kafka."))
+
+
+def test_a_keyword_counts_once_from_the_title_or_the_description():
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
+    title = mentioned("Ruby on Rails Developer", rule.terms)
+    description = mentioned("Rails monolith on PostgreSQL.", rule.terms)
+    matches = keyword_matches(rule, set(), description, title)
+    assert [(m.keyword, m.where) for m in matches] == [
+        ("Rails", "title"),
+        ("PostgreSQL", "description"),
+    ]

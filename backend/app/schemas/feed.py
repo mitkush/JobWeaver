@@ -39,7 +39,7 @@ class SourceBadge(BaseModel):
 
 class MatchedKeyword(BaseModel):
     keyword: str
-    where: Literal["requirements", "description"]
+    where: Literal["requirements", "title", "description"]
     core: bool
 
 

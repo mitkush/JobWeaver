@@ -1655,7 +1655,7 @@ export interface components {
              * Where
              * @enum {string}
              */
-            where: "requirements" | "description";
+            where: "requirements" | "title" | "description";
             /** Core */
             core: boolean;
         };
