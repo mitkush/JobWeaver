@@ -33,6 +33,8 @@ class MeOut(BaseModel):
     country: str | None
     onboarding: OnboardingStatus
     gmail: GmailStatus
+    # Days an Application may stay Applied before a Follow-up Reminder (FR-F2).
+    follow_up_days: int
 
 
 class CountryIn(BaseModel):

@@ -8,3 +8,12 @@ export function PageSpinner({ label = "Loading" }: { label?: string }) {
     </div>
   );
 }
+
+export function Spinner({ label = "Loading" }: { label?: string }) {
+  return (
+    <span className="flex items-center gap-2 text-sm text-slate-500" role="status">
+      <Loader2 className="size-4 animate-spin" aria-hidden />
+      {label}
+    </span>
+  );
+}

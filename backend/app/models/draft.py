@@ -43,16 +43,62 @@ class DraftVersion(Base):
     message: Mapped[str] = mapped_column(Text, default="")
 
 
+class ApplicationStatus:
+    """FR-F1. Changed by hand, except Drafted (first hand-off) and Applied (Mark as applied)."""
+
+    DRAFTED = "drafted"
+    APPLIED = "applied"
+    REPLIED = "replied"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    ALL = (DRAFTED, APPLIED, REPLIED, INTERVIEW, OFFER, REJECTED)
+
+
 class Application(Base):
+    """One per User and Job: the tracker card (FR-F1)."""
+
     __tablename__ = "applications"
-    __table_args__ = (Index("idx_applications_user_job", "user_id", "job_id"),)
+    __table_args__ = (Index("idx_applications_user_job", "user_id", "job_id", unique=True),)
 
     user_id: Mapped[uuid.UUID] = user_fk()
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="RESTRICT"))
+    # The Draft last used for this Job.
     draft_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("drafts.id", ondelete="SET NULL"))
-    status: Mapped[str] = mapped_column(String(24), default="drafted")
-    gmail_draft_id: Mapped[str | None] = mapped_column(String(255))
-    # A hand-off is bound to a version and recipient; retrying it reuses the result.
-    version: Mapped[int] = mapped_column(Integer)
-    recipient: Mapped[str | None] = mapped_column(String(320))
+    status: Mapped[str] = mapped_column(String(24), default=ApplicationStatus.DRAFTED)
+    # When the User first applied; stays set through later statuses (FR-D5).
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # A Follow-up Reminder is due from here while the status is Applied (FR-F2).
+    follow_up_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ApplicationEvent(Base):
+    """Timestamped status history (FR-F1); created_at is when the status changed."""
+
+    __tablename__ = "application_events"
+    __table_args__ = (Index("idx_application_events_user_app", "user_id", "application_id"),)
+
+    user_id: Mapped[uuid.UUID] = user_fk()
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE")
+    )
+    status: Mapped[str] = mapped_column(String(24))
+
+
+class GmailHandoff(Base):
+    """One Gmail draft created for an Application or a follow-up. Retrying the same
+    version and recipient reuses it instead of creating a second Gmail draft."""
+
+    __tablename__ = "gmail_handoffs"
+    __table_args__ = (Index("idx_gmail_handoffs_user_app", "user_id", "application_id"),)
+
+    user_id: Mapped[uuid.UUID] = user_fk()
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(16), default="application")  # | "follow_up"
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("drafts.id", ondelete="SET NULL"))
+    version: Mapped[int | None] = mapped_column(Integer)
+    recipient: Mapped[str] = mapped_column(String(320))
+    gmail_draft_id: Mapped[str | None] = mapped_column(String(255))

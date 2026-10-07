@@ -17,14 +17,20 @@ def compose_url(sender: str, recipient: str, subject: str, body: str) -> str:
 
 
 def raw_message(
-    sender: str, recipient: str, subject: str, body: str, pdf: bytes, filename: str
+    sender: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    pdf: bytes | None = None,
+    filename: str | None = None,
 ) -> str:
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
-    message.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
+    if pdf is not None:  # follow-up emails carry no attachment
+        message.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
     return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
 
 

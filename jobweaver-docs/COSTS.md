@@ -56,7 +56,7 @@
 | Scheduler | APScheduler in-process | Free | Fallback: free external cron calling a protected endpoint |
 | Google OAuth (the only sign-in, plus Gmail) | Google Cloud project, testing mode, External user type | Free; **up to 100 test users**; Google shows an "unverified app" warning to test users | **Refresh tokens and consents expire 7 days after consent** for Gmail scopes; re-login reminder (ADR-0006) |
 | Gmail API | `gmail.compose` | Free | **Restricted** scope: a public launch needs Google verification plus an annual third-party security assessment (CASA). `gmail.send` is only "sensitive" (no assessment) but cannot create drafts (ADR-0006, ADR-0012) |
-| Error tracking | A free error-tracking tier (e.g. Sentry developer plan) *(unconfirmed)* | Limited events/month | Optional |
+| Error tracking | Sentry developer plan, set with `SENTRY_DSN` *(event allowance unconfirmed)* | Limited events/month; errors only, no performance tracing | Optional; off without a DSN. Reports are scrubbed of request bodies, cookies, headers and local variables (FR-G3) |
 | Code and CI | GitHub + GitHub Actions | Free for public repos; monthly minutes for private *(unconfirmed)* | Recorded AI mode keeps CI at $0 |
 | Domain | Host-provided subdomain | Free | A custom domain is a cost and is out of V1 |
 

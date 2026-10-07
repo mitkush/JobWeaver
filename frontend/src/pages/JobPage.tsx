@@ -18,6 +18,7 @@ import { PostingRow } from "@/features/feed/PostingRow";
 import { SkillGaps } from "@/features/feed/SkillGaps";
 import { fromNow } from "@/lib/time";
 import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
+import { statusLabel } from "@/features/applications/status";
 
 function BackToFeed() {
   return (
@@ -117,7 +118,11 @@ export function JobPage() {
   return (
     <>
       <BackToFeed />
-      {data.company_applied && <Alert tone="warning" className="mb-4">Already applied to this Company. You can still create a Draft for this Job.</Alert>}
+      {data.company_applied && (
+        <Alert tone="warning" className="mb-4">
+          Already applied to this Company (<Link to={`/companies/${data.company_id}`} className="underline">see your Applications there</Link>). You can still create a Draft for this Job.
+        </Alert>
+      )}
       {data.expired && (
         <Alert tone="warning" className="mb-4">
           This job is no longer listed by any source.
@@ -128,7 +133,9 @@ export function JobPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{data.title}</h1>
           <p className="mt-1 flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
             <Building2 className="size-4" aria-hidden />
-            {data.company}
+            <Link to={`/companies/${data.company_id}`} className="hover:underline" title="Your Applications to this Company">
+              {data.company}
+            </Link>
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
             {places.length > 0 && <MapPin className="size-3.5" aria-hidden />}
@@ -136,7 +143,7 @@ export function JobPage() {
               <Badge key={place}>{place}</Badge>
             ))}
             {mode && <Badge>{mode}</Badge>}
-            {data.application_status && <Badge>{data.application_status === "applied" ? "Applied" : "Drafted"}</Badge>}
+            {data.application_status && <Badge>{statusLabel(data.application_status)}</Badge>}
             {data.posted_at && <span>Posted {fromNow(data.posted_at)}</span>}
           </div>
           {data.contact_email && (

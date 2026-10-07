@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote, urlencode
 
@@ -31,11 +30,13 @@ from app.models import (
     Draft,
     DraftVersion,
     Fact,
+    GmailHandoff,
     Job,
     User,
     UserJob,
 )
 from app.schemas.drafts import DraftOut, HandoffIn, HandoffOut, VersionOut
+from app.services import applications
 from app.services.accounts import ensure_ai_allowed
 from app.services.email_check import check_recipient
 from app.services.gmail import access_token
@@ -348,13 +349,9 @@ async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> Draf
     draft = await owned_draft(session, user, draft_id)
     current = await version(session, draft) if draft.current_version else None
     status = await session.scalar(
-        select(Application.status)
-        .where(
-            Application.user_id == user.id,
-            Application.draft_id == draft.id,
+        select(Application.status).where(
+            Application.user_id == user.id, Application.job_id == draft.job_id
         )
-        .order_by(Application.created_at.desc(), Application.id.desc())
-        .limit(1)
     )
     job = draft.job_snapshot
     return DraftOut(
@@ -569,15 +566,18 @@ async def handoff(
         f"Dear hiring team,\n\n{text}\n\nPlease find my resume attached.\n\n{job['name']}"
     )
     attachment = filename(str(job["name"]), str(job["company"]), str(job["title"]))
+    application = await applications.ensure(session, user, draft.job_id, draft.id)
     existing = await session.scalar(
-        select(Application)
+        select(GmailHandoff)
         .where(
-            Application.user_id == user.id,
-            Application.draft_id == draft.id,
-            Application.version == draft.current_version,
-            Application.recipient == recipient,
+            GmailHandoff.user_id == user.id,
+            GmailHandoff.application_id == application.id,
+            GmailHandoff.kind == "application",
+            GmailHandoff.draft_id == draft.id,
+            GmailHandoff.version == draft.current_version,
+            GmailHandoff.recipient == recipient,
         )
-        .order_by(Application.created_at.desc())
+        .order_by(GmailHandoff.created_at.desc())
         .limit(1)
     )
     url = compose_url(user.email, recipient, subject, message_body)
@@ -603,13 +603,13 @@ async def handoff(
         except JobWeaverError:
             gmail_id = None
         if existing is None:
-            existing = Application(
+            existing = GmailHandoff(
                 user_id=user.id,
-                job_id=draft.job_id,
+                application_id=application.id,
+                kind="application",
                 draft_id=draft.id,
                 version=draft.current_version,
                 recipient=recipient,
-                status="drafted",
             )
             session.add(existing)
         existing.gmail_draft_id = gmail_id
@@ -621,7 +621,7 @@ async def handoff(
         mode=mode,
         url=url,
         attachment_name=attachment,
-        application_id=existing.id,
+        application_id=application.id,
         message=(
             "Your Gmail draft includes the resume PDF. Review it in Gmail before sending."
             if mode == "gmail"
@@ -635,23 +635,4 @@ async def mark_applied(
 ) -> None:
     draft = await owned_draft(session, user, draft_id, lock=True)
     ready(draft, expected)
-    application = await session.scalar(
-        select(Application)
-        .where(
-            Application.user_id == user.id,
-            Application.draft_id == draft.id,
-        )
-        .order_by(Application.created_at.desc(), Application.id.desc())
-        .limit(1)
-    )
-    if application is None:
-        application = Application(
-            user_id=user.id,
-            job_id=draft.job_id,
-            draft_id=draft.id,
-            version=draft.current_version,
-            status="applied",
-        )
-        session.add(application)
-    application.status = "applied"
-    application.applied_at = application.applied_at or datetime.now(UTC)
+    await applications.mark_applied(session, user, draft.job_id, draft.id)

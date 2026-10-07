@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { vi } from "vitest";
+import axe from "axe-core";
+import { expect, vi } from "vitest";
 
 import type { FeedCard, FeedPage, Me } from "@/api/client";
 import { ToastProvider } from "@/components/ui/toast";
@@ -46,6 +47,7 @@ export function makeMe(overrides: Partial<Me["onboarding"]> = {}): Me {
     name: "Asha",
     picture_url: null,
     role: "user",
+    follow_up_days: 7,
     country: "IN",
     gmail: { state: "not_connected", expires_at: null },
     onboarding: {
@@ -96,4 +98,17 @@ export function makeFeed(items: FeedCard[] = [], overrides: Partial<FeedPage> = 
     ],
     ...overrides,
   };
+}
+
+/** WCAG 2.1 AA checks with axe-core (PRD section 7). Colour contrast needs a real browser,
+ * and pages here render without the app shell's landmarks, so those two rules are off. */
+export async function expectAccessible(root: Element = document.body) {
+  const results = await axe.run(root, {
+    runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"] },
+    rules: { "color-contrast": { enabled: false }, region: { enabled: false } },
+  });
+  const found = results.violations.map(
+    (v) => `${v.id} (${v.impact}): ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`,
+  );
+  expect(found).toEqual([]);
 }

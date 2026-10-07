@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Fact } from "@/api/client";
 import { FactBankEditor } from "@/features/fact-bank/FactBankEditor";
 
-import { json, mockFetch, renderWithApp } from "./utils";
+import { json, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,12 +27,13 @@ const FACTS = [
   fact("3", "Built the billing API", { kind: "experience", group: "Acme" }),
 ];
 
-it("groups Facts by kind and marks portfolio-only Facts", () => {
+it("groups Facts by kind and marks portfolio-only Facts", async () => {
   renderWithApp(<FactBankEditor facts={FACTS} />);
   const skills = screen.getByRole("region", { name: /Skills/ });
   expect(within(skills).getByText("Kafka")).toBeInTheDocument();
   expect(within(skills).getByText("Not in your resume")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: /Experience/ })).toHaveTextContent("Acme");
+  await expectAccessible();
 });
 
 it("merges selected Facts after confirmation", async () => {

@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 
 const NAV = [
   { to: "/feed", label: "Feed" },
+  { to: "/applications", label: "Applications" },
   { to: "/fact-bank", label: "Fact Bank" },
   { to: "/preferences", label: "Preferences" },
   { to: "/settings", label: "Settings" },

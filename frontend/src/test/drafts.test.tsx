@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { DraftPage, DraftWorkspace } from "@/pages/DraftPage";
 import type { Draft, Version } from "@/features/drafts/api";
 
-import { json, mockFetch, renderWithApp } from "./utils";
+import { json, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -89,6 +89,7 @@ it("shows the source Fact and the Base Resume diff", async () => {
   expect(screen.getByText(/F1 · skill/)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Show diff and versions" }));
   expect(await screen.findByText("Added from portfolio")).toBeInTheDocument();
+  await expectAccessible();
 });
 
 it("adds a Fact from the Fact Bank with its trace", async () => {
@@ -149,6 +150,7 @@ it("names recipient and attachment and requires a separate email-warning confirm
   expect(await calls.find((r) => r.url.endsWith("/handoff"))?.json()).toMatchObject({ confirm: true, confirm_email_warning: true, recipient: "jobs@acme.com" });
   expect(open).toHaveBeenCalled();
   open.mockRestore();
+  await expectAccessible();
 });
 
 it("keeps local edits when a newer server version appears", async () => {

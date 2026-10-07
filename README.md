@@ -2,7 +2,7 @@
 
 AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates across sites, shows skill gaps, and prepares a truthful tailored resume, cover letter and email for any job, which you review and send yourself from Gmail.
 
-**Status:** Phases 0 to 5 are built: Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection, account deletion, daily job fetching from LinkedIn (Bright Data, with Apify as a standby), Naukri, JSearch (with SerpApi as a standby), Adzuna, company boards on Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee and Workday, the remote boards Remotive, Remote OK, We Work Remotely, Himalayas, Jobicy and Working Nomads, and Hacker News "Who is hiring" (AI-extracted), with source health and budgets on the admin Sources page, duplicates grouped into one Job per opening (with Possible Duplicates to confirm), and a personal Feed with Skill Gaps, filters and the Correspondence view. Draft packages add Fact-backed tailoring, inline edits, Draft Chat, immutable versions, resume diffs, selectable PDF downloads, Gmail draft hand-off and marking applications as applied (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
+**Status:** Phases 0 to 6 are built (V1 complete): Google sign-in, onboarding, Fact Bank from your documents, preferences, Gmail connection, account deletion, daily job fetching from LinkedIn (Bright Data, with Apify as a standby), Naukri, JSearch (with SerpApi as a standby), Adzuna, company boards on Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee and Workday, the remote boards Remotive, Remote OK, We Work Remotely, Himalayas, Jobicy and Working Nomads, and Hacker News "Who is hiring" (AI-extracted), with source health and budgets on the admin Sources page, duplicates grouped into one Job per opening (with Possible Duplicates to confirm), and a personal Feed with Skill Gaps, filters and the Correspondence view. Draft packages add Fact-backed tailoring, inline edits, Draft Chat, immutable versions, resume diffs, selectable PDF downloads, Gmail draft hand-off and marking applications as applied. The Applications tracker keeps each status change, suggests follow-ups and shows your history per Company (see the [release plan](jobweaver-docs/PRD.md#12-release-plan-build-order)).
 
 ## Docs
 - [PRD](jobweaver-docs/PRD.md) - what V1 does, requirements, architecture, release plan
@@ -49,6 +49,13 @@ Recorded AI fixtures exercise unsupported skills and fabricated metrics. Truthfu
 - **Hacker News:** comments from "Who is hiring" threads are stored as they are, then read by the AI (Gemini Flash-Lite first) into Postings. Links and emails are kept only if they appear in the comment itself. While AI is unavailable the comments wait in a queue.
 - **Unverified field names:** the build environment could not reach any job site. Every Phase 5 adapter is tested against payloads shaped like each provider's documentation or other projects' code. Before relying on a source, check its first real run under **Recent runs**.
 
+## Applications (Phase 6)
+
+- **Tracker:** **Applications** lists one Application per Job, grouped Drafted, Applied, Replied, Interview, Offer, Rejected. Change a status with its menu. Every change is kept with its time under **History**. Opening a Draft in Gmail creates the Application, and **Mark as applied** moves it to Applied. Mark as applied never moves a later status back.
+- **Follow-up Reminders:** an Application still Applied after 7 days shows a reminder on the Feed and Applications pages. Change the wait under **Settings**. **Draft a follow-up** opens an editable email built from the Job, the Company and the date you applied, so it contains nothing invented and uses no AI quota. It goes to your Gmail Drafts without an attachment and is never sent. **Not now** hides the reminder for another period.
+- **Company history:** select a Company name on a Job or an Application to see every Application you made there.
+- **Admin:** the Sources page also shows AI calls today against each provider's free quota, and the last week by task.
+
 ## Checks
 
 ```bash
@@ -67,4 +74,5 @@ Backend tests need a Postgres database `jobweaver_test` (user/password `jobweave
 4. **Keep warm:** add an [UptimeRobot](https://uptimerobot.com) HTTP monitor on `https://<your-app>/health` every 5 minutes. `/health` never touches the database, so Neon can still sleep.
 5. **AI keys:** add `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` and `OPENROUTER_API_KEY`. Any missing provider is skipped by the fallback chain.
 6. **Job source keys:** add `BRIGHTDATA_API_KEY` (LinkedIn), `RAPIDAPI_KEY` (JSearch), `APIFY_TOKEN` (Naukri and the LinkedIn standby), `SERPAPI_KEY` (the JSearch standby) and `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Do not attach a payment method to any of these accounts (zero budget). Any missing key just shows that source as "Not configured". The daily fetch runs at 01:17 UTC; check the admin **Sources** page after the first run.
-7. **Cron fallback (optional):** if the host ever sleeps through the daily run, add a free cron job (e.g. cron-job.org) that sends `POST https://<your-app>/api/internal/fetch` with header `X-Cron-Secret: <INTERNAL_CRON_SECRET>` once a day.
+7. **Error reporting (optional):** create a free [Sentry](https://sentry.io) project and set `SENTRY_DSN`. Only exception types, stack traces, routes and log templates are sent: error messages, request bodies, cookies, headers and local variables are stripped first, because a database error can quote a resume or a Draft. Server logs show database errors as their type and SQL only.
+8. **Cron fallback (optional):** if the host ever sleeps through the daily run, add a free cron job (e.g. cron-job.org) that sends `POST https://<your-app>/api/internal/fetch` with header `X-Cron-Secret: <INTERNAL_CRON_SECRET>` once a day.

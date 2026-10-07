@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/toast-context";
 import { pdfHref, useDraft, useDraftActions, useDraftDiff, useVersions, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
 import { DraftChatPanel } from "@/features/drafts/DraftChatPanel";
 import { DraftEditor } from "@/features/drafts/DraftEditor";
+import { statusLabel } from "@/features/applications/status";
 
 const PARTS: { value: Part; label: string }[] = [
   { value: "resume", label: "Tailored Resume" },
@@ -60,6 +61,8 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const dirty = JSON.stringify(content) !== JSON.stringify(current.content);
   const busy = actions.save.isPending || actions.chat.isPending || actions.restore.isPending || outwardBusy;
   const hasEmail = Boolean(draft.job.contact_email);
+  // Applied or any later status: Mark as applied has nothing left to do.
+  const applied = Boolean(draft.application_status && draft.application_status !== "drafted");
   const stale = current.number !== draft.current_version;
 
   useEffect(() => {
@@ -144,7 +147,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       <Link to={`/jobs/${draft.job_id}`} className="text-sm text-brand-700 dark:text-brand-200">← Back to Job</Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-semibold">Draft · {String(draft.job.company ?? "")}</h1><p className="mt-1 text-slate-600 dark:text-slate-400">{String(draft.job.title ?? "")}</p></div>
-        <div className="flex items-center gap-2"><Badge>Version {current.number}</Badge>{draft.application_status && <Badge>{draft.application_status === "applied" ? "Applied" : "Drafted"}</Badge>}</div>
+        <div className="flex items-center gap-2"><Badge>Version {current.number}</Badge>{draft.application_status && <Badge>{statusLabel(draft.application_status)}</Badge>}</div>
       </div>
       {error && <Alert tone="error">{error}</Alert>}
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
@@ -184,10 +187,10 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
               <Field label="Recipient" htmlFor="draft-recipient"><Input id="draft-recipient" type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} /></Field>
               <Button className="w-full" disabled={dirty || stale || busy || !recipient.trim()} loading={outwardBusy} onClick={() => void prepareHandoff()}>Open in Gmail</Button>
             </> : draft.job.apply_url ? <a className={buttonClasses("primary") + " w-full"} href={String(draft.job.apply_url)} target="_blank" rel="noreferrer noopener">Open apply link</a> : <p className="text-sm text-slate-500">This Job has no apply link.</p>}
-            <Button className="w-full" variant={hasEmail ? "secondary" : "primary"} disabled={busy || dirty || stale || draft.application_status === "applied"} loading={actions.applied.isPending} onClick={async () => {
+            <Button className="w-full" variant={hasEmail ? "secondary" : "primary"} disabled={busy || dirty || stale || applied} loading={actions.applied.isPending} onClick={async () => {
               try { await actions.applied.mutateAsync(current.number); toast("success", "Marked as applied"); }
               catch (failure) { setError((failure as Error).message); }
-            }}>{draft.application_status === "applied" ? "Applied" : "Mark as applied"}</Button>
+            }}>{applied ? statusLabel(draft.application_status!) : "Mark as applied"}</Button>
             <p className="text-xs text-slate-500">{hasEmail ? "You review and send from Gmail. JobWeaver only creates a draft." : "Download your PDFs, apply on the company site, then mark this Job as applied."}</p>
           </Card>
         </div>

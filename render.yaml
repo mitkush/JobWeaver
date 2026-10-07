@@ -50,3 +50,5 @@ services:
         sync: false
       - key: INTERNAL_CRON_SECRET
         generateValue: true
+      - key: SENTRY_DSN
+        sync: false

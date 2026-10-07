@@ -47,12 +47,12 @@ from app.gateway.schemas import (
     ExtractSkillsRequest,
     JobAdvert,
 )
-from app.models.draft import Application, Draft
+from app.models.draft import Draft
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.posting import Company, Posting
 from app.models.raw_advert import RawAdvert
 from app.models.user import User
-from app.services import feed
+from app.services import applications, feed
 from app.services.fetching import save_postings
 
 logger = logging.getLogger(__name__)
@@ -257,10 +257,9 @@ async def merge_jobs(
     if survivor.required_skills is None and gone.required_skills is not None:
         survivor.required_skills = gone.required_skills
         survivor.skills_extracted_at = gone.skills_extracted_at
-    for model in (Draft, Application):
-        await session.execute(
-            update(model).where(model.job_id == gone.id).values(job_id=survivor.id)
-        )
+    await session.execute(update(Draft).where(Draft.job_id == gone.id).values(job_id=survivor.id))
+    # One Application per User and Job: two become one, keeping both histories.
+    await applications.move_to_job(session, gone.id, survivor.id)
     await session.delete(gone)
     await session.flush()
     await refresh_jobs(session, [survivor.id], priorities)

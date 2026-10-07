@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PreferencesForm } from "@/features/preferences/PreferencesForm";
 import { validatePreferences } from "@/features/preferences/validate";
 
-import { json, mockFetch, renderWithApp } from "./utils";
+import { json, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,6 +44,7 @@ it("saves titles, locations and work modes", async () => {
     locations: [{ country: "IN", city: "Bengaluru" }],
     work_modes: ["remote"],
   });
+  await expectAccessible();
 });
 
 it("saves global WFH preferences without choosing a country", async () => {

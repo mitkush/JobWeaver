@@ -13,6 +13,7 @@ import { formatLocation, workModeLabel } from "./format";
 import { SkillGaps } from "./SkillGaps";
 import { SourceBadges } from "./SourceBadges";
 import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
+import { statusLabel } from "@/features/applications/status";
 
 export function JobCard({ job }: { job: FeedCard }) {
   const setHidden = useSetHidden();
@@ -77,7 +78,7 @@ export function JobCard({ job }: { job: FeedCard }) {
         <SkillGaps gaps={job.skill_gaps} />
         <SourceBadges sources={job.sources} />
         {job.company_applied && <p className="text-xs text-amber-700 dark:text-amber-300">Already applied to this Company</p>}
-        {job.application_status && <Badge>{job.application_status === "applied" ? "Applied" : "Drafted"}</Badge>}
+        {job.application_status && <Badge>{statusLabel(job.application_status)}</Badge>}
         <CreateDraftButton jobId={job.job_id} draftId={job.draft_id} />
       </div>
     </Card>

@@ -2,13 +2,13 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import type { Me } from "@/api/client";
-import { useDeleteAccount, useSetCountry } from "@/api/hooks";
+import { useDeleteAccount, useSetCountry, useSetFollowUpDays } from "@/api/hooks";
 import { PageHeader } from "@/app/AppShell";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, Select } from "@/components/ui/field";
+import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast-context";
 import { GmailCard } from "@/features/gmail/GmailCard";
 import { CompanyBoards } from "@/features/sources/CompanyBoards";
@@ -20,6 +20,10 @@ export function SettingsPage({ me }: { me: Me }) {
   const [country, setCountry] = useState(me.country ?? "IN");
   const [confirm, setConfirm] = useState(false);
   const saveCountry = useSetCountry();
+  const [followUpDays, setFollowUpDays] = useState(String(me.follow_up_days));
+  const saveFollowUpDays = useSetFollowUpDays();
+  const days = Number(followUpDays);
+  const daysValid = Number.isInteger(days) && days >= 1 && days <= 60;
   const deleteAccount = useDeleteAccount();
   const navigate = useNavigate();
   const toast = useToast();
@@ -73,10 +77,47 @@ export function SettingsPage({ me }: { me: Me }) {
           </CardBody>
         </Card>
 
+        <Card>
+          <CardHeader
+            title="Follow-up reminders"
+            description="When an Application stays Applied this long, JobWeaver suggests a follow-up email."
+          />
+          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <Field label="Days to wait" htmlFor="settings-follow-up" hint="Between 1 and 60. Applies to Applications marked Applied from now on.">
+              <Input
+                id="settings-follow-up"
+                type="number"
+                min={1}
+                max={60}
+                inputMode="numeric"
+                value={followUpDays}
+                onChange={(e) => setFollowUpDays(e.target.value)}
+                aria-invalid={!daysValid}
+                className="sm:w-32"
+              />
+            </Field>
+            <Button
+              variant="secondary"
+              disabled={!daysValid || days === me.follow_up_days}
+              loading={saveFollowUpDays.isPending}
+              onClick={async () => {
+                try {
+                  await saveFollowUpDays.mutateAsync(days);
+                  toast("success", "Follow-up reminder saved");
+                } catch (error) {
+                  toast("error", (error as Error).message);
+                }
+              }}
+            >
+              Save
+            </Button>
+          </CardBody>
+        </Card>
+
         <Card className="border-red-200 dark:border-red-900/60">
           <CardHeader
             title="Delete account"
-            description="Removes your documents, Fact Bank, preferences and Gmail connection. This cannot be undone."
+            description="Removes your documents, Fact Bank, preferences, Drafts, Applications and Gmail connection. This cannot be undone."
             action={
               <Button variant="danger" onClick={() => setConfirm(true)}>
                 Delete account

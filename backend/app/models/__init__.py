@@ -3,7 +3,14 @@
 from app.models.ai_usage import AIUsage
 from app.models.base import Base
 from app.models.document import Document, DocumentKind
-from app.models.draft import Application, Draft, DraftVersion
+from app.models.draft import (
+    Application,
+    ApplicationEvent,
+    ApplicationStatus,
+    Draft,
+    DraftVersion,
+    GmailHandoff,
+)
 from app.models.fact import Fact, FactKind, FactOrigin
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
@@ -17,6 +24,9 @@ from app.models.user import Role, User
 
 __all__ = [
     "Application",
+    "ApplicationEvent",
+    "ApplicationStatus",
+    "GmailHandoff",
     "Draft",
     "DraftVersion",
     "AIUsage",
