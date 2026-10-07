@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 
 import { DraftPage, DraftWorkspace } from "@/pages/DraftPage";
 import type { Draft, Version } from "@/features/drafts/api";
@@ -178,4 +178,52 @@ it("shows apply-link downloads and records Applied after the user's action", asy
   expect(screen.queryByRole("button", { name: "Open in Gmail" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Mark as applied" }));
   expect(await screen.findByRole("button", { name: "Applied" })).toBeDisabled();
+});
+
+// jsdom has no object URLs; the real ones are restored after each test.
+function stubObjectUrls(create: () => string) {
+  const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  URL.createObjectURL = create;
+  URL.revokeObjectURL = vi.fn();
+  onTestFinished(() => {
+    URL.createObjectURL = original.create;
+    URL.revokeObjectURL = original.revoke;
+  });
+}
+
+it("shows why a PDF cannot be made instead of starting a broken download", async () => {
+  const message = 'The PDF cannot show "🚀" (U+1F680) in the resume line "Shipped 🚀". Remove or replace that character.';
+  setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () => json({ error: { code: "validation_failed", message } }, 422),
+  });
+  const createObjectURL = vi.fn(() => "blob:pdf");
+  stubObjectUrls(createObjectURL);
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByRole("button", { name: "Resume PDF" }));
+  expect(await screen.findByText(/The PDF cannot show "🚀"/)).toBeInTheDocument();
+  expect(screen.getByText("The PDF was not downloaded")).toBeInTheDocument();
+  expect(createObjectURL).not.toHaveBeenCalled();
+});
+
+it("saves a PDF under the server's file name", async () => {
+  const calls = setup(makeDraft(), {
+    "GET /api/drafts/draft-1/pdf": () =>
+      new Response("%PDF-1.7", {
+        headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename*=UTF-8''Asha_Acme_Backend_Engineer_Cover_Letter.pdf" },
+      }),
+  });
+  const createObjectURL = vi.fn(() => "blob:pdf");
+  stubObjectUrls(createObjectURL);
+  const clicked: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    clicked.push(this.download);
+  });
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByRole("button", { name: "Cover Letter PDF" }));
+  await waitFor(() => expect(clicked).toEqual(["Asha_Acme_Backend_Engineer_Cover_Letter.pdf"]));
+  expect(calls.some((c) => new URL(c.url).searchParams.get("kind") === "cover_letter")).toBe(true);
+  expect(screen.queryByText("The PDF was not downloaded")).not.toBeInTheDocument();
+  click.mockRestore();
 });

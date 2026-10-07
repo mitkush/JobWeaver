@@ -101,6 +101,29 @@ export async function unwrap<T>(
   return data as T;
 }
 
+/** Fetches a file and saves it under the server's name. A refusal (e.g. a character the
+ * PDF cannot show) is thrown as an ApiError for the page to display, instead of the
+ * browser saving the error as a broken download. */
+export async function downloadFile(url: string, fallbackName: string): Promise<void> {
+  const response = await fetch(url, { credentials: "same-origin" });
+  if (!response.ok) throw toApiError(response.status, await response.json().catch(() => null));
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const name = encoded ? decodeURIComponent(encoded) : fallbackName;
+  const href = URL.createObjectURL(await response.blob());
+  try {
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+  } finally {
+    // Revoked after the click has handed the file to the browser.
+    setTimeout(() => URL.revokeObjectURL(href), 0);
+  }
+}
+
 export async function uploadDocument(kind: DocumentKind, file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("kind", kind);

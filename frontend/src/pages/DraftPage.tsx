@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
-import { api, unwrap, type Schemas } from "@/api/client";
+import { api, downloadFile, unwrap, type Schemas } from "@/api/client";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,9 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const [chosenTemplate, setTemplate] = useState<"standard" | "compact" | null>(null);
   const template = chosenTemplate ?? draft.template ?? "standard";
   const [error, setError] = useState<string | null>(null);
+  // Shown beside the PDF buttons, where the User clicked, not at the top of the page.
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<"resume" | "cover_letter" | null>(null);
   const [chatError, setChatError] = useState<string | undefined>();
   const [outwardBusy, setOutwardBusy] = useState(false);
   const [loadLatestConfirm, setLoadLatestConfirm] = useState(false);
@@ -112,6 +115,20 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
     } catch (failure) { setError((failure as Error).message); }
     finally { setOutwardBusy(false); }
   }
+  async function downloadPdf(kind: "resume" | "cover_letter") {
+    if (!current) return;
+    setDownloadError(null);
+    setDownloading(kind);
+    const fallback = kind === "cover_letter" ? draft.attachment_name.replace(/\.pdf$/, "_Cover_Letter.pdf") : draft.attachment_name;
+    try {
+      await downloadFile(pdfHref(draft.id, kind, current.number, template), fallback);
+    } catch (failure) {
+      setDownloadError((failure as Error).message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   async function openGmail() {
     setOutwardBusy(true);
     setHandoffConfirm(false);
@@ -132,10 +149,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       }
       if (tab) tab.location.href = result.url;
       if (result.mode === "fallback") {
-        const link = document.createElement("a");
-        link.href = pdfHref(draft.id, "resume", current.number, template);
-        link.download = draft.attachment_name;
-        link.click();
+        await downloadFile(pdfHref(draft.id, "resume", current.number, template), draft.attachment_name);
       }
       await actions.refresh();
     } catch (failure) { tab?.close(); setError((failure as Error).message); }
@@ -159,7 +173,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
       {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></Alert>}
       {resumePrompt && <Alert tone="info">Gmail connection returned. Review the recipient and confirm to resume the hand-off.<Button variant="ghost" onClick={() => { setRecipient(sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? recipient); }}>Restore recipient</Button></Alert>}
-      {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <a className="underline" href={pdfHref(draft.id, "resume", current.number, template)} download>Download resume PDF</a></>}</Alert>}
+      {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <button type="button" className="underline" onClick={() => void downloadPdf("resume")}>Download resume PDF</button></>}</Alert>}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Card className="min-w-0 space-y-5 p-4 sm:p-6">
@@ -188,7 +202,8 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
             <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
-            {!dirty && !stale ? <div className="flex flex-wrap gap-2"><a className={buttonClasses("secondary", "sm")} href={pdfHref(draft.id, "resume", current.number, template)} download>Resume PDF</a><a className={buttonClasses("secondary", "sm")} href={pdfHref(draft.id, "cover_letter", current.number, template)} download>Cover Letter PDF</a></div> : <p className="text-xs text-slate-500">Save your edits to download PDFs.</p>}
+            {!dirty && !stale ? <div className="flex flex-wrap gap-2"><Button variant="secondary" size="sm" loading={downloading === "resume"} disabled={downloading !== null} onClick={() => void downloadPdf("resume")}>Resume PDF</Button><Button variant="secondary" size="sm" loading={downloading === "cover_letter"} disabled={downloading !== null} onClick={() => void downloadPdf("cover_letter")}>Cover Letter PDF</Button></div> : <p className="text-xs text-slate-500">Save your edits to download PDFs.</p>}
+            {downloadError && <Alert tone="error" title="The PDF was not downloaded">{downloadError}</Alert>}
             {hasEmail ? <>
               <Field label="Recipient" htmlFor="draft-recipient"><Input id="draft-recipient" type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} /></Field>
               <Button className="w-full" disabled={dirty || stale || busy || !recipient.trim()} loading={outwardBusy} onClick={() => void prepareHandoff()}>Open in Gmail</Button>
