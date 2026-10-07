@@ -104,3 +104,45 @@ async def test_timeouts_and_non_json_replies_fall_through_to_the_next_provider(d
     assert response.provider == "openrouter"
     errors = (await db.execute(select(AIUsage).where(AIUsage.outcome == "error"))).scalars()
     assert {u.provider for u in errors} == {"gemini", "groq"}
+
+
+async def no_sleep(_: float) -> None:
+    return None
+
+
+async def test_a_busy_provider_is_retried_once_before_falling_through(db):
+    from app.core.errors import ProviderBusy
+
+    gemini = FakeClient("gemini", [ProviderBusy("gemini is overloaded (HTTP 503)"), GOOD])
+    gateway = LiveAIGateway({"gemini": gemini}, UsageLedger(get_sessionmaker()), sleep=no_sleep)
+    response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+    assert response.provider == "gemini"
+    assert len(gemini.calls) == 2
+
+    busy = ProviderBusy("gemini is overloaded (HTTP 503)")
+    gemini = FakeClient("gemini", [busy, busy])
+    groq = FakeClient("groq", [GOOD])
+    gateway = LiveAIGateway(
+        {"gemini": gemini, "groq": groq}, UsageLedger(get_sessionmaker()), sleep=no_sleep
+    )
+    response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+    assert response.provider == "groq"
+    assert len(gemini.calls) == 2
+
+
+async def test_failures_log_each_providers_own_reason(db, caplog):
+    import httpx
+
+    from app.gateway.providers import OpenAICompatibleClient
+
+    def gone(request):
+        message = "This model is unavailable for free. The paid version is available now"
+        return httpx.Response(404, json={"error": {"message": message, "code": 404}})
+
+    client = OpenAICompatibleClient(
+        "openrouter", "https://or.test", "k", httpx.AsyncClient(transport=httpx.MockTransport(gone))
+    )
+    gateway = LiveAIGateway({"openrouter": client}, UsageLedger(get_sessionmaker()))
+    with pytest.raises(GatewayError, match="unavailable for free"):
+        await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+    assert "openrouter returned HTTP 404: This model is unavailable for free" in caplog.text

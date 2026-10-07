@@ -352,7 +352,10 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             await session.commit()
         except _Unverified:
             await _fail(session, draft_id, user_id, NOTHING_VERIFIED)
-        except (GatewayError, TimeoutError):
+        except (GatewayError, TimeoutError) as exc:
+            # The User sees "busy"; the log keeps every provider's own reason.
+            reason = exc.message if isinstance(exc, GatewayError) else "timed out after 60s"
+            logger.warning("Draft %s generation failed: %s", draft_id, reason)
             await _fail(session, draft_id, user_id, AI_BUSY)
         except JobWeaverError as exc:
             # Notice, region or Fact Bank preconditions: their message says what to do.

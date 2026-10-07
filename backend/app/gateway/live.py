@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import math
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from pydantic import BaseModel
 
-from app.core.errors import GatewayError
+from app.core.errors import GatewayError, ProviderBusy
 from app.gateway import prompts
 from app.gateway.base import BaseAIGateway
 from app.gateway.parsing import parse_output
@@ -16,6 +18,7 @@ from app.gateway.routing import (
     EMBEDDING_DIMENSIONS,
     GEMINI_EMBEDDING,
     ROUTING_TABLE,
+    Route,
 )
 from app.gateway.schemas import (
     DraftResult,
@@ -36,14 +39,27 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+def route_of(route: Route) -> tuple[str, str]:
+    return route.provider, route.model
+
+
 class LiveAIGateway(BaseAIGateway):
     """Tries each route of a task in order; skips routes without a key or over quota."""
 
     embedding_model = GEMINI_EMBEDDING
 
-    def __init__(self, clients: dict[str, ProviderClient], ledger: UsageLedger) -> None:
+    def __init__(
+        self,
+        clients: dict[str, ProviderClient],
+        ledger: UsageLedger,
+        busy_retry_delay: float = 2.0,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         self.clients = clients
         self.ledger = ledger
+        # A 503 "high demand" from a free model usually clears within seconds.
+        self.busy_retry_delay = busy_retry_delay
+        self.sleep = sleep
 
     async def tailor_draft(self, request: TailorDraftRequest) -> GatewayResponse[DraftResult]:
         return await self._run(
@@ -142,13 +158,24 @@ class LiveAIGateway(BaseAIGateway):
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
                 continue
             try:
-                completion = await client.complete_json(
-                    route.model, system, user, route.max_output_tokens
-                )
+                try:
+                    completion = await client.complete_json(
+                        route.model, system, user, route.max_output_tokens
+                    )
+                except ProviderBusy as exc:
+                    logger.info("AI route %s/%s busy, retrying once: %s", *route_of(route), exc)
+                    await self.sleep(self.busy_retry_delay)
+                    completion = await client.complete_json(
+                        route.model, system, user, route.max_output_tokens
+                    )
                 result = parse_output(completion.text, result_type)
             except GatewayError as exc:
                 logger.warning(
-                    "AI route %s/%s failed for %s: %s", route.provider, route.model, task, exc.code
+                    "AI route %s/%s failed for %s: %s",
+                    route.provider,
+                    route.model,
+                    task,
+                    exc.message,
                 )
                 await self.ledger.record(
                     user_id=user_id,
