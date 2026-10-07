@@ -128,6 +128,27 @@ it("asks again when the follow-up address looks wrong", async () => {
   expect(await posts[1]!.json()).toMatchObject({ confirm_email_warning: true });
 });
 
+it("asks to reconnect Gmail instead of failing", async () => {
+  mockFetch({
+    "GET /api/applications": () => json([makeApplication()]),
+    "GET /api/reminders": () => json([reminder]),
+    "GET /api/applications/app-1/follow-up": () => json({ recipient: "jobs@acme.com", subject: "s", body: "b" }),
+    "POST /api/applications/app-1/follow-up": () =>
+      json({ mode: "reconnect", url: "/api/gmail/connect?next=%2Fapplications", message: "Connect Gmail again." }),
+  });
+  const user = userEvent.setup();
+  renderWithApp(<ApplicationsPage />);
+  await user.click(await screen.findByRole("button", { name: "Draft a follow-up" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByLabelText("Message");
+  await user.click(within(dialog).getByRole("button", { name: "Open in Gmail" }));
+  expect(await within(dialog).findByRole("link", { name: "Reconnect Gmail" })).toHaveAttribute(
+    "href",
+    "/api/gmail/connect?next=%2Fapplications",
+  );
+  expect(window.open).not.toHaveBeenCalled();
+});
+
 it("lets the User put a reminder off", async () => {
   const calls = mockFetch({
     "GET /api/applications": () => json([makeApplication()]),

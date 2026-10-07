@@ -7,7 +7,7 @@ in Gmail and nothing is ever sent (ADR-0006)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -350,7 +350,12 @@ async def send_follow_up_to_gmail(
         mode = "gmail"
         url = f"https://mail.google.com/mail/u/{quote(user.email, safe='')}/#drafts"
     except GoogleFlowError:
-        raise
+        # Gmail access ended: nothing is recorded and the reminder stays until it works.
+        return FollowUpResult(
+            mode="reconnect",
+            url="/api/gmail/connect?" + urlencode({"next": "/applications"}),
+            message="Connect Gmail again, then draft the follow-up again.",
+        )
     except JobWeaverError:
         gmail_id = None
     session.add(

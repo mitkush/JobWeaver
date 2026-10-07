@@ -114,11 +114,11 @@ Creating a real draft in the User's Gmail, with the Tailored Resume attached, fr
 
 ## Application
 
-A User's record of applying to a Job, with a status: **Drafted -> Applied -> Replied -> Interview -> Offer** or **Rejected**. Updated by the User; JobWeaver does not read Gmail replies.
+A User's record of applying to a Job, one per User and Job, with a status: **Drafted -> Applied -> Replied -> Interview -> Offer** or **Rejected**. Every status change is kept with its time. Updated by the User; JobWeaver does not read Gmail replies.
 
 ## Follow-up Reminder
 
-An in-app reminder when an Application has had no status change for N days. A reminder only; nothing is sent.
+An in-app reminder when an Application has stayed **Applied** for N days (default 7, set per User), with a one-click follow-up email placed in Gmail Drafts. A reminder only; nothing is sent.
 
 ## AI Gateway
 

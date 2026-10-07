@@ -64,7 +64,7 @@ class FollowUpIn(BaseModel):
 
 
 class FollowUpResult(BaseModel):
-    mode: str  # "gmail" | "fallback"
+    mode: str  # "gmail" | "fallback" | "reconnect"
     url: str
     message: str
 

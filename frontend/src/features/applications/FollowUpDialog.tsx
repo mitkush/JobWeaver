@@ -8,7 +8,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
-import { gmailConnectHref } from "@/features/gmail/links";
 
 const WARNING_PREFIX = "Confirm the email warning before continuing: ";
 
@@ -43,7 +42,7 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
   const [body, setBody] = useState(template.body);
   const [warning, setWarning] = useState<string | null>(null);
   const [acceptWarning, setAcceptWarning] = useState(false);
-  const [reconnect, setReconnect] = useState(false);
+  const [reconnect, setReconnect] = useState<string | null>(null);
 
   async function submit() {
     try {
@@ -51,14 +50,16 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
         id: reminder.application_id,
         body: { recipient, subject, body, confirm: true, confirm_email_warning: acceptWarning },
       });
+      if (result.mode === "reconnect") {
+        setReconnect(result.url);
+        return;
+      }
       toast("success", result.message);
       window.open(result.url, "_blank", "noopener");
       onClose();
     } catch (error) {
       if (error instanceof ApiError && error.message.startsWith(WARNING_PREFIX)) {
         setWarning(error.message.slice(WARNING_PREFIX.length));
-      } else if (error instanceof ApiError && error.code === "gmail_expired") {
-        setReconnect(true);
       } else {
         toast("error", (error as Error).message);
       }
@@ -111,7 +112,7 @@ function FollowUpForm({ reminder, template, onClose }: { reminder: Reminder; tem
           <Alert
             tone="warning"
             action={
-              <a className={buttonClasses("secondary", "sm")} href={gmailConnectHref("/applications")}>
+              <a className={buttonClasses("secondary", "sm")} href={reconnect}>
                 Reconnect Gmail
               </a>
             }

@@ -125,6 +125,27 @@ async def test_follow_up_reminder_drafts_a_template_email_without_attachment(
     assert (await client.get("/api/applications")).json()[0]["status"] == "applied"
 
 
+async def test_expired_gmail_asks_to_reconnect_and_keeps_the_reminder(
+    prepared,  # noqa: F811
+    db,
+    ok_recipient,
+):
+    _, client, _, _ = prepared
+    _, item = await applied(prepared)
+    await db.execute(
+        update(Application).values(follow_up_after=datetime.now(UTC) - timedelta(minutes=1))
+    )
+    await db.commit()
+    # No Gmail connection at all: the same path as access that has ended.
+    body = {"recipient": "jobs@acme.com", "subject": "s", "body": "b", "confirm": True}
+    result = await client.post(f"/api/applications/{item['id']}/follow-up", json=body)
+    assert result.status_code == 200
+    assert result.json()["mode"] == "reconnect"
+    assert result.json()["url"].startswith("/api/gmail/connect?next=")
+    assert len((await client.get("/api/reminders")).json()) == 1
+    assert await db.scalar(select(GmailHandoff).where(GmailHandoff.kind == "follow_up")) is None
+
+
 async def test_reminders_can_be_dismissed_and_follow_ups_need_applied(prepared, db):  # noqa: F811
     _, client, _, _ = prepared
     _, item = await applied(prepared)

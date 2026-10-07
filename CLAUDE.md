@@ -1,6 +1,6 @@
 # JobWeaver
 
-Phases 0 to 5 are built (backend in `backend/`, frontend in `frontend/`; see README for commands). Product concept is captured in `prd-prompt.md` (discovery brief) and `jobweaver-docs/` (PRD, glossary, ADRs, costs). Read `jobweaver-docs/CONTEXT.md` and use its vocabulary exactly; never contradict an ADR in `jobweaver-docs/docs/adr/` silently - if a task needs to break one, stop and say so.
+Phases 0 to 6 are built (V1 complete) (backend in `backend/`, frontend in `frontend/`; see README for commands). Product concept is captured in `prd-prompt.md` (discovery brief) and `jobweaver-docs/` (PRD, glossary, ADRs, costs). Read `jobweaver-docs/CONTEXT.md` and use its vocabulary exactly; never contradict an ADR in `jobweaver-docs/docs/adr/` silently - if a task needs to break one, stop and say so.
 
 ## PRD workflow
 1. **Discovery (interactive session):** user describes the concept; Claude challenges weak spots and locks key decisions - problem & target user, solution, differentiation vs. existing tools (LinkedIn, Indeed, Naukri…), goal (portfolio/learning vs. side project vs. business), constraints (stack, timeline, team).

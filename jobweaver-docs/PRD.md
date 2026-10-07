@@ -370,8 +370,9 @@ Dependency direction: `api -> services -> (adapters | dedup | gateway | document
 | `rejected_pairs` | shared | Pairs marked "Not the same Job"; apply to everyone (FR-C3) |
 | `user_jobs` | user | Feed membership, seen, hidden |
 | `drafts`, `draft_versions` | user | Draft content per version, PDFs, trace links to `facts` |
-| `applications` | user | Status history per Job |
-| `reminders` | user | Follow-up Reminders |
+| `applications` | user | One per User and Job: status, applied date, when a Follow-up Reminder is due |
+| `application_events` | user | Timestamped status history (FR-F1) |
+| `gmail_handoffs` | user | Gmail drafts created for an Application or a follow-up |
 | `ai_usage` | user | Per-call AI accounting |
 
 ## 11. Technology Stack
