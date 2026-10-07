@@ -2,7 +2,6 @@
 list of countries, so global and other-country searches are skipped at no cost. Its
 descriptions are snippets of about 500 characters; the full advert is behind the link."""
 
-import math
 from typing import Any
 
 from app.adapters.base import (
@@ -53,7 +52,7 @@ class AdzunaAdapter(WindowedSourceAdapter):
             "app_key": self.settings.adzuna_app_key,
             # Adzuna has no remote filter; the word has to appear in the advert.
             "what": f"{query.keywords} remote" if loc and loc.remote else query.keywords,
-            "max_days_old": max(math.ceil(window.hours / 24), 1),
+            "max_days_old": next(d for d in range(1, 10_000) if window.within_days(d)),
             "results_per_page": PAGE,
             "sort_by": "date",
             "content-type": "application/json",

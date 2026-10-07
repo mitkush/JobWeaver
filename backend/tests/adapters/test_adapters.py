@@ -249,3 +249,19 @@ async def test_jsearch_counts_failed_requests_that_reached_rapidapi():
         with pytest.raises(SourceRateLimited) as error:
             await JSearchAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
     assert error.value.credits_used == 0
+
+
+def test_daily_windows_with_drift_keep_the_one_day_filters():
+    """A daily window is 24 h plus the 2 h overlap plus drift; it must never be billed as
+    "Past week" (Bright Data charges per record)."""
+    from app.adapters.naukri_apify import freshness_for
+    from app.adapters.serpapi import date_chip_for
+
+    drifted = FetchWindow(since=NOW - timedelta(hours=26, minutes=40), until=NOW)
+    assert time_range_for(drifted) == "Past 24 hours"
+    assert date_posted_for(drifted) == "today"
+    assert date_chip_for(drifted) == "date_posted:today"
+    assert freshness_for(drifted) == "1"
+    # A missed day still widens the filter.
+    two_days = FetchWindow(since=NOW - timedelta(hours=50), until=NOW)
+    assert time_range_for(two_days) == "Past week"

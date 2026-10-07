@@ -133,7 +133,7 @@ class TestAdzuna:
             result = await AdzunaAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
         assert seen[0].url.path == "/v1/api/jobs/in/search/1"
         assert seen[0].url.params["where"] == "Bengaluru"
-        assert seen[0].url.params["max_days_old"] == "2"
+        assert seen[0].url.params["max_days_old"] == "1"  # a daily window with overlap
         # Fewer than a full page: no second request.
         assert result.credits_used == 1 and len(seen) == 1
         job = result.postings[0]

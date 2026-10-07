@@ -758,3 +758,26 @@ async def test_pending_adverts_are_stored_once_and_reopened_when_edited(db, fetc
         assert row.extracted_at is None and row.text.endswith("now remote")
     finally:
         FakeSearch.per_query = True
+
+
+async def test_every_search_in_a_run_ends_its_window_at_the_run_start(db, fetcher, clock):
+    """Slow searches must not push later ones past a 24 h window the next day."""
+    await add_preferences(db)  # two queries: hybrid and remote
+
+    class SlowSearch(FakeSearch):
+        async def fetch_window(self, query, window):
+            clock.now += timedelta(minutes=40)  # each search takes a while
+            return await super().fetch_window(query, window)
+
+    registry._REGISTRY["fake-search"] = SlowSearch
+    try:
+        await fetcher.run_source("fake-search")
+        assert {w.until for _, w in FakeSearch.windows} == {START}
+        FakeSearch.windows.clear()
+        clock.now = START + timedelta(days=1)
+        day_two = clock.now
+        await fetcher.run_source("fake-search")
+        assert all(w.until == day_two for _, w in FakeSearch.windows)
+        assert all(w.within_days(1) for _, w in FakeSearch.windows)
+    finally:
+        registry._REGISTRY["fake-search"] = FakeSearch

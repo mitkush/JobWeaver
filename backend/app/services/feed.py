@@ -11,6 +11,7 @@ from sqlalchemy import Select, and_, any_, delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.normalize import normalize_city
 from app.adapters.registry import registered_adapters
 from app.core.db import among
 from app.core.errors import NotFoundError
@@ -83,6 +84,12 @@ def title_matches(job_title: str, wanted: Sequence[str]) -> bool:
     return any(want and want <= have for want in (title_words(t) for t in wanted))
 
 
+def _city_key(value: object) -> str:
+    """Compared the way Jobs store cities, so "Bangalore" matches "Bengaluru" even for
+    Preferences saved before cities were normalised."""
+    return (normalize_city(str(value)) or "").lower() if value else ""
+
+
 def location_matches(
     job_locations: Sequence[dict[str, object]],
     job_work_mode: str | None,
@@ -99,14 +106,14 @@ def location_matches(
     if not job_locations:
         return True  # unknown place: shown rather than silently missed
     for location in job_locations:
-        city = str(location.get("city") or "").lower()
+        city = _city_key(location.get("city"))
         country = str(location.get("country") or "").upper()
         remote = job_work_mode == "remote" or bool(location.get("remote"))
         if not country and not city:
             return True
         for place in wanted:
             want_country = str(place.get("country") or "").upper()
-            want_city = str(place.get("city") or "").lower()
+            want_city = _city_key(place.get("city"))
             if country and country != want_country:
                 continue
             if want_city and city and city != want_city and not remote:

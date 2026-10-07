@@ -49,7 +49,7 @@ class FounditAdapter(WindowedSourceAdapter):
             "sort": 1,  # newest first
             "limit": PAGE,
             "start": 0,
-            "jobFreshness": max(int(window.hours // 24) + 1, 1),
+            "jobFreshness": next(d for d in range(1, 10_000) if window.within_days(d)),
         }
         if loc and loc.city and not loc.remote:
             params["locations"] = loc.city

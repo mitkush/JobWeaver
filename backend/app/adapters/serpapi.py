@@ -27,13 +27,9 @@ _NO_RESULTS = "hasn't returned any results"
 
 
 def date_chip_for(window: FetchWindow) -> str:
-    hours = window.hours
-    if hours <= 26:
-        return "date_posted:today"
-    if hours <= 74:
-        return "date_posted:3days"
-    if hours <= 7 * 24 + 2:
-        return "date_posted:week"
+    for days, value in ((1, "today"), (3, "3days"), (7, "week")):
+        if window.within_days(days):
+            return f"date_posted:{value}"
     return "date_posted:month"
 
 

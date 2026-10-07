@@ -43,12 +43,11 @@ def _first(record: dict[str, Any], *keys: str) -> Any:
 
 def time_range_for(window: FetchWindow) -> str:
     """Smallest LinkedIn filter that reaches back to the window start (FR-B3 AC1)."""
-    hours = window.hours
-    if hours <= 26:
+    if window.within_days(1):
         return "Past 24 hours"
-    if hours <= 7 * 24 + 2:
+    if window.within_days(7):
         return "Past week"
-    if hours <= 31 * 24:
+    if window.within_days(31):
         return "Past month"
     return "Any time"
 

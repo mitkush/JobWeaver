@@ -505,6 +505,9 @@ class Fetcher:
         else:
             queries = [None]
         family = family_of(type(adapter))
+        # Every search in this run ends its window at the run's start, not when its turn
+        # comes: otherwise slow searches before it push each day's window past 24 hours.
+        started = self.clock()
         for query in queries:
             await self._check_budget(session, adapter)
             key = query.key if query else "all"
@@ -523,21 +526,21 @@ class Fetcher:
             # A main Source and its standby continue from whichever searched last.
             last_until = max((m.last_until for m in marks), default=None)
             if last_until is None:
-                since = now - timedelta(days=self.settings.backfill_days)
+                since = started - timedelta(days=self.settings.backfill_days)
             else:
                 # Cron and catch-up runs never repeat a search already done today; only
                 # the admin's manual run deliberately does.
                 if trigger != MANUAL and now - last_until < ALREADY_FETCHED:
                     continue
                 since = last_until - timedelta(hours=self.settings.window_overlap_hours)
-            window = FetchWindow(since=since, until=now)
+            window = FetchWindow(since=since, until=started)
             run = FetchRun(
                 source=adapter.name,
                 status=RunStatus.RUNNING,
                 trigger=trigger,
                 query_key=key,
                 window_since=since,
-                window_until=now,
+                window_until=started,
             )
             session.add(run)
             await session.flush()
@@ -577,9 +580,9 @@ class Fetcher:
                 result.credits_used,
             )
             if watermark is None:
-                session.add(QueryWatermark(source=adapter.name, query_key=key, last_until=now))
+                session.add(QueryWatermark(source=adapter.name, query_key=key, last_until=started))
             else:
-                watermark.last_until = now
+                watermark.last_until = started
             await session.commit()
             outcome.postings_new += new
             outcome.credits_used += result.credits_used
