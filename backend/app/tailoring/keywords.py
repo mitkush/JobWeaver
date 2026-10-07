@@ -3,14 +3,19 @@
 A differently titled Job reaches the Feed's keyword section only through the keywords the
 User chose in Preferences; the Fact Bank plays no part. Spellings of one skill count once
 ("Rails" = "Ruby on Rails"), and only whole skill phrases count ("Rails" never matches
-inside "guardrails")."""
+inside "guardrails"). Case does not matter, except for the few skill names that are also
+common English words ("Go", "REST"), which count only when written with a capital.
 
+Each keyword is matched on its own: a longer phrase another User chose ("Rails developer")
+never hides a shorter one ("Rails"), so one User's keywords cannot change another's Feed."""
+
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal
 
-from app.tailoring.checks import technologies_in
-from app.tailoring.skills import canonical_skill
+from app.tailoring.skills import PROSE_WORDS, canonical_skill, spellings
 
 Where = Literal["requirements", "description"]
 
@@ -66,9 +71,27 @@ def keyword_rule(
     return KeywordRule(tuple(merged.values()), max(1, min_matches))
 
 
+@lru_cache(maxsize=1024)
+def _pattern(canonical: str) -> re.Pattern[str]:
+    terms = sorted(set(spellings(canonical)), key=len, reverse=True)
+    alternation = "|".join(re.escape(term) for term in terms)
+    return re.compile(rf"(?<![\w+#.])(?:{alternation})(?![\w+#])", re.IGNORECASE)
+
+
+def _found(canonical: str, text: str) -> bool:
+    for match in _pattern(canonical).finditer(text):
+        written = match.group(0)
+        if written.casefold() not in PROSE_WORDS or written[0].isupper():
+            return True
+    return False
+
+
 def mentioned(text: str, terms: Iterable[str]) -> set[str]:
-    """Canonical names of the skills named in the text, the User's own terms included."""
-    return set(technologies_in(text, terms)) if text else set()
+    """Canonical names of the given keywords named in the text, each checked on its own."""
+    if not text:
+        return set()
+    wanted = {canonical_skill(term) for term in terms} - {""}
+    return {canonical for canonical in wanted if _found(canonical, text)}
 
 
 def keyword_matches(

@@ -47,7 +47,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
 }
 _CANONICAL = {alias: name for name, aliases in _ALIASES.items() for alias in aliases}
 # Words too common in prose to count as a mention ("at rest", "go to market").
-_PROSE_WORDS = {"go", "ai", "ml", "ts", "js", "rest", "next", "node", "elastic", "spark", "r", "c"}
+PROSE_WORDS = {"go", "ai", "ml", "ts", "js", "rest", "next", "node", "elastic", "spark", "r", "c"}
 TECHNOLOGIES = set(_ALIASES) | {
     name.strip()
     for name in [
@@ -120,7 +120,7 @@ def canonical_skill(name: str) -> str:
     return _CANONICAL.get(key, key)
 
 
-def _spellings(canonical: str) -> list[str]:
+def spellings(canonical: str) -> list[str]:
     return [canonical, *_ALIASES.get(canonical, ())]
 
 
@@ -139,8 +139,8 @@ def user_skills(skill_facts: Iterable[str], all_facts: Iterable[str]) -> UserSki
 
 
 def _mentioned(canonical: str, text: str) -> bool:
-    for spelling in _spellings(canonical):
-        if len(spelling) < 3 or spelling in _PROSE_WORDS:
+    for spelling in spellings(canonical):
+        if len(spelling) < 3 or spelling in PROSE_WORDS:
             continue
         if re.search(rf"(?<![\w+#.]){re.escape(spelling)}(?![\w+#])", text):
             return True

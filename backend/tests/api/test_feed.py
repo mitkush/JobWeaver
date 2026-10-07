@@ -23,6 +23,7 @@ from app.models import (
     RunStatus,
 )
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
+from app.services.feed import sync_all_feeds
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
 BACKEND_BLR = {
@@ -509,3 +510,37 @@ async def test_title_suggestions(alice):
     body = response.json()
     assert "Software Engineer" in body["titles"]
     assert body["searches_per_title"] >= 0
+
+
+async def sync_all(_client) -> None:
+    async with get_sessionmaker()() as session:
+        await sync_all_feeds(session)
+        await session.commit()
+
+
+async def test_another_users_keywords_never_change_my_keyword_matches(alice, bob):
+    _, a = alice
+    _, b = bob
+    await add(
+        "linkedin",
+        posting(
+            "k3",
+            title="Software Engineer - Billing",
+            description="Rails developer wanted. postgresql experience required. Bengaluru.",
+        ),
+    )
+    await process()
+    params = {"section": "link", "match": "keywords"}
+    await a.put("/api/preferences", json=RAILS_BLR)
+    before = (await a.get("/api/feed", params=params)).json()["items"]
+    theirs = RAILS_BLR | {"keywords": ["Rails developer"], "core_keywords": ["Rails developer"]}
+    await b.put("/api/preferences", json=theirs)
+    await sync_all(a)
+    after = (await a.get("/api/feed", params=params)).json()["items"]
+
+    def matched(cards):
+        return [(c["job_id"], {k["keyword"] for k in c["matched_keywords"]}) for c in cards]
+
+    assert [c["title"] for c in before] == ["Software Engineer - Billing"]
+    assert matched(after) == matched(before)
+    assert matched(after)[0][1] == {"Rails", "PostgreSQL"}

@@ -171,3 +171,13 @@ it("marks core keywords, and removing a keyword unmarks it", async () => {
   expect(body).toMatchObject({ keywords: ["Rails"], core_keywords: ["Rails"], keyword_min_matches: 2, search_keywords: true });
   await expectAccessible();
 });
+
+it("stops offering suggestions at the title limit", async () => {
+  mockFetch({
+    "GET /api/preferences/title-suggestions": () => json({ titles: ["Software Engineer"], searches_per_title: 3 }),
+  });
+  const titles = Array.from({ length: 20 }, (_, i) => `Title ${i + 1}`);
+  renderWithApp(<PreferencesForm initial={{ titles, keywords: [], locations: [], work_modes: ["remote"] }} />);
+  expect(await screen.findByRole("button", { name: "Add title Software Engineer" })).toBeDisabled();
+  expect(screen.getByText(/maximum of 20 titles/)).toBeInTheDocument();
+});

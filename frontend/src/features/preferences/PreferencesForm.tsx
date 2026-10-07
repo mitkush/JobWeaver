@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { COUNTRIES, countryName } from "@/lib/countries";
 
 import { KeywordSettings } from "./KeywordSettings";
-import { TitleSuggestions } from "./TitleSuggestions";
+import { MAX_TITLES, TitleSuggestions } from "./TitleSuggestions";
 import { validatePreferences } from "./validate";
 
 type WorkMode = Preferences["work_modes"][number];
@@ -110,8 +110,14 @@ export function PreferencesForm({
           values={value.titles}
           onChange={(titles) => setValue({ ...value, titles })}
           placeholder="e.g. Backend Engineer"
+          max={MAX_TITLES}
         />
-        <TitleSuggestions titles={value.titles} onAdd={(title) => setValue({ ...value, titles: [...value.titles, title] })} />
+        <TitleSuggestions
+          titles={value.titles}
+          onAdd={(title) => {
+            if (value.titles.length < MAX_TITLES) setValue({ ...value, titles: [...value.titles, title] });
+          }}
+        />
       </Field>
 
       <Field label="Keywords" htmlFor="keywords" hint="Optional. Skills or domains you want to be hired for, such as Ruby on Rails or fintech.">

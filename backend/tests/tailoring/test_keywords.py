@@ -70,3 +70,30 @@ def test_each_match_says_where_it_was_found():
         ("Rails", "requirements", True),
         ("PostgreSQL", "description", False),
     ]
+
+
+def test_another_users_longer_phrase_never_hides_a_match():
+    mine = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
+    theirs = keyword_rule(["Rails developer"], ["Rails developer"], 1)
+    text = "Rails developer wanted. PostgreSQL required."
+    # Every User's keywords are scanned together in the Feed sync.
+    together = mine.terms | theirs.terms
+    matches = keyword_matches(mine, set(), mentioned(text, together))
+    assert {m.keyword for m in matches} == {"Rails", "PostgreSQL"}
+    assert qualifies(mine, matches)
+    assert qualifies(theirs, keyword_matches(theirs, set(), mentioned(text, together)))
+
+
+def test_lowercase_skill_names_match():
+    rule = keyword_rule(["Rails", "PostgreSQL"], ["Rails"], 2)
+    for text in (
+        "Rails development experience required. PostgreSQL required.",
+        "rails development experience required. postgresql required.",
+    ):
+        assert qualifies(rule, found(rule, description=text)), text
+
+
+def test_prose_words_need_a_capital_to_count():
+    rule = keyword_rule(["Go", "Kafka"], ["Go"], 2)
+    assert not qualifies(rule, found(rule, description="Ready to go the extra mile with kafka."))
+    assert qualifies(rule, found(rule, description="Services in Go with Kafka."))
