@@ -222,3 +222,56 @@ it("stays on the job when it is the one that survives a merge", async () => {
   expect(await screen.findByRole("heading", { name: "Backend Engineer (merged)" })).toBeInTheDocument();
   expect(screen.queryByText("This job is not in your feed")).not.toBeInTheDocument();
 });
+
+it("switches to differently titled jobs and shows which keywords matched", async () => {
+  const keywordCard = makeCard({
+    job_id: "job-k",
+    title: "Software Engineer - Payments",
+    match: "keywords",
+    matched_keywords: [
+      { keyword: "Rails", where: "requirements", core: true },
+      { keyword: "PostgreSQL", where: "description", core: false },
+    ],
+  });
+  const calls = mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": (request) => {
+      const keywords = queryOf(request).get("match") === "keywords";
+      const page = makeFeed(keywords ? [keywordCard] : [makeCard()]);
+      return json({ ...page, counts: { ...page.counts, title_matches: 1, keyword_matches: 1 } });
+    },
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("button", { name: /Other titles matching your keywords/ }));
+  const link = await screen.findByRole("link", { name: "Software Engineer - Payments" });
+  const card = link.closest("div.rounded-xl") as HTMLElement;
+  const matched = within(card).getByRole("list", { name: "Matched keywords" });
+  expect(matched).toHaveTextContent("Rails");
+  expect(matched).toHaveTextContent("in requirements");
+  expect(matched).toHaveTextContent("PostgreSQL");
+  expect(matched).toHaveTextContent("in description");
+  expect(within(card).getByLabelText("Core")).toBeInTheDocument();
+  expect(calls.some((c) => queryOf(c).get("match") === "keywords")).toBe(true);
+  await expectAccessible();
+});
+
+it("hides the keyword switch when no differently titled job matches", async () => {
+  mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () => json(makeFeed([makeCard()])),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.queryByRole("button", { name: /Other titles matching your keywords/ })).not.toBeInTheDocument();
+});
+
+it("labels a kept job that no longer matches the preferences", async () => {
+  mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () => json(makeFeed([makeCard({ match: null, draft_id: "draft-1" })])),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByText(/No longer matches your Preferences/)).toBeInTheDocument();
+});

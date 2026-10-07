@@ -16,7 +16,7 @@ The User's own resume as uploaded. The reference that the Tailored Resume's diff
 
 ## Preferences
 
-What a User wants: target titles and keywords, locations (India cities, other countries and cities), and work modes (onsite, hybrid, remote). Preferences decide which Jobs enter the User's Feed and shape the queries sent to paid Sources.
+What a User wants: target titles and keywords, locations (India cities, other countries and cities), and work modes (onsite, hybrid, remote). Preferences decide which Jobs enter the User's Feed and shape the queries sent to paid Sources. Keywords marked **Core** let differently titled Jobs into the Feed's keyword section (FR-A3 AC4).
 
 Location selection is optional: Global means no country/city restriction, including India. India and other-country selections can optionally name cities. Work mode is independent of job location: remote means WFH, hybrid means some days in the office, and onsite means office. A remote advert can still have a listed location ("India (Remote)"): it is the office location, shown on the card and matched by country only, since the city does not matter to someone working from home. Onsite and hybrid Jobs must match the chosen city too.
 
@@ -82,7 +82,7 @@ The stack of all Postings that make up one Job, across every Source, and the scr
 
 ## Feed
 
-A User's personal list of Jobs that match their Preferences, in two sections: **With email** and **Apply link only**. A Feed entry is a link between the User and a shared Job (`user_jobs`), never a copy of it (ADR-0002).
+A User's personal list of Jobs that match their Preferences, in two sections: **With email** and **Apply link only**. Title matches and keyword matches are shown apart. A Feed entry is a link between the User and a shared Job (`user_jobs`), never a copy of it (ADR-0002).
 
 ## Skill Gap
 

@@ -20,6 +20,7 @@ export const keys = {
   facts: ["facts"] as const,
   documents: ["documents"] as const,
   preferences: ["preferences"] as const,
+  titleSuggestions: (titles: string[]) => ["preferences", "title-suggestions", ...titles] as const,
   sources: ["admin", "sources"] as const,
   runs: ["admin", "runs"] as const,
   notices: ["notices"] as const,
@@ -59,6 +60,17 @@ export function usePreferences() {
         throw error;
       }
     },
+  });
+}
+
+/** Related titles to offer; only titles the User adds are ever searched. */
+export function useTitleSuggestions(titles: string[]) {
+  return useQuery({
+    queryKey: keys.titleSuggestions(titles),
+    queryFn: () => unwrap(api.GET("/api/preferences/title-suggestions", { params: { query: { titles } } })),
+    enabled: titles.length > 0,
+    placeholderData: (previous) => previous,
+    staleTime: 5 * 60_000,
   });
 }
 

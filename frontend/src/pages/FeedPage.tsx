@@ -10,7 +10,7 @@ import { buttonClasses } from "@/components/ui/button-classes";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
 import { FeedFilters } from "@/features/feed/FeedFilters";
-import { clearFilters, feedQuery, hasFilters, PAGE_SIZE, withParam } from "@/features/feed/feed-params";
+import { clearFilters, feedMatch, feedQuery, hasFilters, PAGE_SIZE, withParam } from "@/features/feed/feed-params";
 import { Reminders } from "@/features/applications/Reminders";
 import { JobCard } from "@/features/feed/JobCard";
 import { cn } from "@/lib/cn";
@@ -60,6 +60,41 @@ function SectionTabs({
   );
 }
 
+type Match = "title" | "keywords";
+
+/** Title matches, or differently titled Jobs that match the User's core keywords. */
+function MatchSwitch({
+  match,
+  counts,
+  onSelect,
+}: {
+  match: Match;
+  counts: { title_matches?: number; keyword_matches?: number } | undefined;
+  onSelect: (match: Match) => void;
+}) {
+  if (match === "title" && !counts?.keyword_matches) return null;
+  const options: { id: Match; label: string; count?: number }[] = [
+    { id: "title", label: "Your titles", count: counts?.title_matches },
+    { id: "keywords", label: "Other titles matching your keywords", count: counts?.keyword_matches },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Which jobs">
+      {options.map((option) => (
+        <Button
+          key={option.id}
+          size="sm"
+          variant={match === option.id ? "primary" : "secondary"}
+          aria-pressed={match === option.id}
+          onClick={() => onSelect(option.id)}
+        >
+          {option.label}
+          {option.count !== undefined && <span className="ml-1 opacity-80">({option.count})</span>}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 export function FeedPage() {
   // Clearing from the empty state also resets the filter boxes, whose typed text would
   // otherwise be applied again after the typing pause.
@@ -78,7 +113,8 @@ export function FeedPage() {
   const hidden = params.get("hidden") === "1";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const nothingAtAll = counts && counts.with_email + counts.apply_link_only === 0;
+  const match = feedMatch(params);
+  const nothingAtAll = counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) === 0;
 
   return (
     <>
@@ -107,6 +143,11 @@ export function FeedPage() {
         </Alert>
       )}
       <FeedFilters key={filtersKey} params={params} onChange={setParams} sources={data?.sources ?? []} />
+      <MatchSwitch
+        match={match}
+        counts={counts}
+        onSelect={(next) => setParams(withParam(params, "match", next === "keywords" ? next : null))}
+      />
       <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
 
       {feed.isPending ? (
@@ -158,7 +199,13 @@ export function FeedPage() {
         )
       ) : data && data.items.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-          {section === "email" ? "No jobs with a contact email here." : "No apply-link-only jobs here."}
+          {match === "keywords"
+            ? section === "email"
+              ? "No differently titled jobs with a contact email here."
+              : "No differently titled apply-link-only jobs here."
+            : section === "email"
+              ? "No jobs with a contact email here."
+              : "No apply-link-only jobs here."}
         </p>
       ) : (
         <div className="space-y-3" aria-busy={shown.isFetching || undefined}>

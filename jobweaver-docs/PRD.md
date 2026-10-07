@@ -85,6 +85,9 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - Location choices are India, other country (with optional city), or Global (no country/city restriction, including India). Job locations are optional: an empty list means Global. Work mode is separate: remote means WFH, hybrid means some days in the office, and onsite means office. A posting can list India and be remote; its listed place is the office location. Location and work mode must both match. For a remote (WFH) Job only the country has to match a chosen place (a remote Job listed in Pune matches a User who chose Bengaluru); for onsite and hybrid Jobs the city must match too.
 - AC1: Changing Preferences updates the Feed from Jobs already fetched within one minute, without waiting for the next Fetch Run.
 - AC2: New titles or locations are included in the next Fetch Run's queries; a Backfill runs for them.
+- AC3: Equivalent title wordings match each other ("Backend Developer" = "Back-end Engineer" = "Server-side Engineer"; "SDE" = "Software Development Engineer"). The Preferences page suggests related titles ("Software Engineer" for "Backend Developer") with the daily searches each would add; a suggestion is searched only after the User adds it.
+- AC4: Each keyword can be marked **Core**. A Job whose title matches none of the User's titles enters the Feed's keyword section when its places and work mode match and it mentions at least one Core keyword and at least N distinct keywords in total (N set by the User, default 2). Spellings of one skill count once ("Rails" = "Ruby on Rails"), only whole skill phrases count, and both the extracted required skills and the description are read. With no Core keyword the keyword section is off. Matching reads only Preferences, never the Fact Bank or a resume, and makes no AI call.
+- AC5: The User may also search paid Sources by each Core keyword; this is off by default and each Core keyword then costs daily searches like a title, within the Sources' budgets.
 
 **FR-A4 [V1] - Gmail connection.** The User connects Gmail (Google OAuth, `gmail.compose`) from Settings or at the first Open in Gmail.
 - AC1: Settings shows the connection status: Connected, Expires soon, Expired.
@@ -193,8 +196,10 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 ### Epic D - Feed
 
-**FR-D1 [V1] - Personal Feed.** Each User's Feed contains the Jobs whose title, locations and work mode match their Preferences, as links to shared Jobs (ADR-0002: Jobs stored once, linked to Users).
+**FR-D1 [V1] - Personal Feed.** Each User's Feed contains the Jobs whose title, locations and work mode match their Preferences, plus differently titled Jobs in matching places that mention the User's Core keywords (FR-A3 AC4), as links to shared Jobs (ADR-0002: Jobs stored once, linked to Users).
 - AC1: User A's Preferences never put a Job in User B's Feed; cross-user isolation tests cover every Feed endpoint.
+- AC2: Jobs matched by Core keywords (FR-A3 AC4) are shown apart from title matches, each card listing the matched keywords and whether each was found in the required skills or the description. They can be opened, drafted, hidden and tracked like any other Job.
+- AC3: When Preferences change, every Feed entry's match reason is refreshed. A Job the User drafted, applied to or hid stays reachable when it no longer matches, marked "No longer matches your Preferences".
 
 **FR-D2 [V1] - Two sections.** **With email** (the Job has a contact email) and **Apply link only**.
 

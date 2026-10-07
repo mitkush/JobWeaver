@@ -10,6 +10,8 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { COUNTRIES, countryName } from "@/lib/countries";
 
+import { KeywordSettings } from "./KeywordSettings";
+import { TitleSuggestions } from "./TitleSuggestions";
 import { validatePreferences } from "./validate";
 
 type WorkMode = Preferences["work_modes"][number];
@@ -19,8 +21,22 @@ const WORK_MODES: { value: WorkMode; label: string }[] = [
   { value: "remote", label: "Remote (WFH)" },
 ];
 
-type FormValue = Preferences & { keywords: string[]; locations: NonNullable<Preferences["locations"]> };
-const EMPTY: FormValue = { titles: [], keywords: [], locations: [], work_modes: [] };
+type FormValue = Preferences & {
+  keywords: string[];
+  core_keywords: string[];
+  keyword_min_matches: number;
+  search_keywords: boolean;
+  locations: NonNullable<Preferences["locations"]>;
+};
+const EMPTY: FormValue = {
+  titles: [],
+  keywords: [],
+  core_keywords: [],
+  keyword_min_matches: 2,
+  search_keywords: false,
+  locations: [],
+  work_modes: [],
+};
 
 export function PreferencesForm({
   initial,
@@ -32,7 +48,17 @@ export function PreferencesForm({
   onSaved?: () => void;
 }) {
   const [value, setValue] = useState<FormValue>(
-    initial ? { ...initial, keywords: initial.keywords ?? [], locations: initial.locations ?? [] } : EMPTY,
+    initial
+      ? {
+          ...EMPTY,
+          ...initial,
+          keywords: initial.keywords ?? [],
+          core_keywords: initial.core_keywords ?? [],
+          keyword_min_matches: initial.keyword_min_matches ?? 2,
+          search_keywords: initial.search_keywords ?? false,
+          locations: initial.locations ?? [],
+        }
+      : EMPTY,
   );
   const [locationScope, setLocationScope] = useState<"india" | "other" | "global">(
     initial?.locations?.length ? (initial.locations.some((l) => l.country === "IN") ? "india" : "other") : "global",
@@ -85,17 +111,26 @@ export function PreferencesForm({
           onChange={(titles) => setValue({ ...value, titles })}
           placeholder="e.g. Backend Engineer"
         />
+        <TitleSuggestions titles={value.titles} onAdd={(title) => setValue({ ...value, titles: [...value.titles, title] })} />
       </Field>
 
-      <Field label="Keywords" htmlFor="keywords" hint="Optional. Technologies or domains you want, such as FastAPI or fintech.">
+      <Field label="Keywords" htmlFor="keywords" hint="Optional. Skills or domains you want to be hired for, such as Ruby on Rails or fintech.">
         <ChipInput
           id="keywords"
           values={value.keywords}
-          onChange={(keywords) => setValue({ ...value, keywords })}
+          onChange={(keywords) =>
+            setValue({
+              ...value,
+              keywords,
+              // A removed keyword stops being core too.
+              core_keywords: value.core_keywords.filter((c) => keywords.some((k) => k.toLowerCase() === c.toLowerCase())),
+            })
+          }
           placeholder="e.g. Python"
           max={30}
         />
       </Field>
+      <KeywordSettings value={value} onChange={(next) => setValue({ ...value, ...next })} />
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium text-slate-800 dark:text-slate-200">Locations</legend>

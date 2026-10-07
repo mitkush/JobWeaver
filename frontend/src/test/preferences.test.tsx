@@ -41,6 +41,9 @@ it("saves titles, locations and work modes", async () => {
   expect(body).toEqual({
     titles: ["Backend Engineer"],
     keywords: [],
+    core_keywords: [],
+    keyword_min_matches: 2,
+    search_keywords: false,
     locations: [{ country: "IN", city: "Bengaluru" }],
     work_modes: ["remote"],
   });
@@ -121,4 +124,50 @@ it("keeps the places when switching to Global and back", async () => {
   expect(screen.getByText(/kept if you switch back/)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "India" }));
   expect(screen.getByRole("button", { name: "Remove Indore, India" })).toBeInTheDocument();
+});
+
+it("adds a suggested title with one click and shows its search cost", async () => {
+  document.cookie = "jw_csrf=t";
+  const calls = mockFetch({
+    "GET /api/preferences/title-suggestions": () => json({ titles: ["Software Engineer", "Platform Engineer"], searches_per_title: 3 }),
+    "PUT /api/preferences": async (r) => json(await r.json()),
+    "GET /api/me": () => json({}),
+  });
+  const user = userEvent.setup();
+  renderWithApp(
+    <PreferencesForm initial={{ titles: ["Backend Developer"], keywords: [], locations: [], work_modes: ["remote"] }} />,
+  );
+  await user.click(await screen.findByRole("button", { name: "Add title Software Engineer" }));
+  expect(screen.getByText(/about 3 more searches a day/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add title Software Engineer" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Save preferences" }));
+  const body = await calls.find((c) => c.method === "PUT")?.json();
+  expect(body.titles).toEqual(["Backend Developer", "Software Engineer"]);
+  await expectAccessible();
+});
+
+it("marks core keywords, and removing a keyword unmarks it", async () => {
+  document.cookie = "jw_csrf=t";
+  const calls = mockFetch({
+    "GET /api/preferences/title-suggestions": () => json({ titles: [], searches_per_title: 0 }),
+    "PUT /api/preferences": async (r) => json(await r.json()),
+    "GET /api/me": () => json({}),
+  });
+  const user = userEvent.setup();
+  renderWithApp(
+    <PreferencesForm
+      initial={{ titles: ["Backend Developer"], keywords: ["Rails", "Git"], locations: [], work_modes: ["remote"] }}
+    />,
+  );
+  // Without a core keyword the other settings are off.
+  expect(screen.getByRole("checkbox", { name: /search job sites by my Core keywords/ })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Core: Rails" }));
+  expect(screen.getByRole("button", { name: "Core: Rails" })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("checkbox", { name: /search job sites by my Core keywords/ }));
+  await user.click(screen.getByRole("button", { name: "Core: Git" }));
+  await user.click(screen.getByRole("button", { name: "Remove Git" }));
+  await user.click(screen.getByRole("button", { name: "Save preferences" }));
+  const body = await calls.find((c) => c.method === "PUT")?.json();
+  expect(body).toMatchObject({ keywords: ["Rails"], core_keywords: ["Rails"], keyword_min_matches: 2, search_keywords: true });
+  await expectAccessible();
 });
