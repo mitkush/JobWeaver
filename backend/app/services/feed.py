@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, any_, delete, func, or_, select, text
+from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -154,7 +154,9 @@ async def _apply_links(
     considered: set[uuid.UUID] | None,
 ) -> None:
     """Adds matching Jobs; removes considered Jobs that no longer match, unless the User
-    hid them (their choice is kept if the Job comes back)."""
+    hid them (their choice is kept if the Job comes back) or has a Draft or Application
+    for them: those stay reachable from the tracker after the Job closes or Preferences
+    change."""
     rows = [{"id": uuid.uuid4(), "user_id": user_id, "job_id": j} for j in matching]
     # Three parameters per row; chunks stay far below asyncpg's 32,767 per statement.
     for start in range(0, len(rows), LINK_CHUNK):
@@ -167,6 +169,8 @@ async def _apply_links(
         UserJob.user_id == user_id,
         UserJob.hidden_at.is_(None),
         ~among(UserJob.job_id, matching),
+        ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
+        ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
     )
     if considered is not None:
         stale = stale.where(UserJob.job_id.in_(considered))

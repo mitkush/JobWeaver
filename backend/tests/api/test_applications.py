@@ -170,3 +170,25 @@ async def test_follow_up_days_setting(prepared, db):  # noqa: F811
     db.expire_all()
     row = await db.get(Application, uuid.UUID(item["id"]))
     assert (row.follow_up_after - row.status_changed_at).days == 10
+
+
+async def test_an_applied_job_stays_reachable_after_it_closes_or_preferences_change(
+    prepared,  # noqa: F811
+    db,
+):
+    from app.services.feed import sync_user_feed
+
+    user, client, job_id, _ = prepared
+    _, item = await applied(prepared)
+    # Preferences move to something unrelated: the Job leaves the Feed's matches.
+    other = {"titles": ["Pastry Chef"], "keywords": [], "locations": [], "work_modes": ["onsite"]}
+    assert (await client.put("/api/preferences", json=other)).status_code == 200
+    assert (await client.get(f"/api/jobs/{job_id}")).status_code == 200
+    # The Job closes everywhere.
+    await db.execute(update(Job).values(expired_at=datetime.now(UTC)))
+    await db.commit()
+    await sync_user_feed(db, user.id)
+    await db.commit()
+    detail = await client.get(f"/api/jobs/{job_id}")
+    assert detail.status_code == 200 and detail.json()["expired"] is True
+    assert (await client.get("/api/applications")).json()[0]["job_id"] == item["job_id"]

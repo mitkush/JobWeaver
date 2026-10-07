@@ -48,7 +48,9 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const [confirmWarning, setConfirmWarning] = useState(false);
   const [handoffConfirm, setHandoffConfirm] = useState(false);
   const [handoff, setHandoff] = useState<Schemas["HandoffOut"] | null>(null);
-  const [template, setTemplate] = useState<"standard" | "compact">("standard");
+  // Until the User picks one, use the layout this version fits on two pages in.
+  const [chosenTemplate, setTemplate] = useState<"standard" | "compact" | null>(null);
+  const template = chosenTemplate ?? draft.template ?? "standard";
   const [error, setError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | undefined>();
   const [outwardBusy, setOutwardBusy] = useState(false);
@@ -181,7 +183,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
           <DraftChatPanel versions={versions.data ?? []} busy={busy} dirty={dirty || stale} onChat={chat} onUndo={(number) => void restore(number)} error={chatError} />
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
-            <Field label="PDF layout" htmlFor="pdf-template"><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
+            <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
             {!dirty && !stale ? <div className="flex flex-wrap gap-2"><a className={buttonClasses("secondary", "sm")} href={pdfHref(draft.id, "resume", current.number, template)} download>Resume PDF</a><a className={buttonClasses("secondary", "sm")} href={pdfHref(draft.id, "cover_letter", current.number, template)} download>Cover Letter PDF</a></div> : <p className="text-xs text-slate-500">Save your edits to download PDFs.</p>}
             {hasEmail ? <>
               <Field label="Recipient" htmlFor="draft-recipient"><Input id="draft-recipient" type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} /></Field>

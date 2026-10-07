@@ -273,15 +273,20 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             content.email_subject = "Application for " + str(draft.job_snapshot["title"])
             if draft.job_snapshot.get("contact_email") and not content.email_body:
                 raise _Unverified()
-            await asyncio.to_thread(
-                render_pdf,
-                content,
-                str(draft.job_snapshot["name"]),
-                str(draft.job_snapshot["email"]),
-                "resume",
-                "compact",
-                facts,
-            )
+            try:
+                await asyncio.to_thread(
+                    render_pdf,
+                    content,
+                    str(draft.job_snapshot["name"]),
+                    str(draft.job_snapshot["email"]),
+                    "resume",
+                    "compact",
+                    facts,
+                )
+            except ValidationFailedError as exc:
+                # The Draft is still saved: only the editor can fix it, and a failed Draft
+                # has no editor. The warning says what to change before downloading.
+                warnings = [*warnings, f"PDF: {exc.message}"]
             await _save_version(
                 session, draft, content, facts, "generation", warnings, result.result.message
             )
@@ -345,6 +350,33 @@ async def stop_tasks() -> None:
         await asyncio.gather(*_TASKS, return_exceptions=True)
 
 
+# Which layout each version fits in, so the page opens on one that downloads. Versions are
+# immutable, so the answer never changes; the cache only bounds repeated rendering.
+_TEMPLATE_FITS: dict[tuple[uuid.UUID, int], Literal["standard", "compact"]] = {}
+
+
+async def _fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
+    key = (draft.id, row.number)
+    if key not in _TEMPLATE_FITS:
+        try:
+            await asyncio.to_thread(
+                render_pdf,
+                DraftContent.model_validate(row.content),
+                str(draft.job_snapshot["name"]),
+                str(draft.job_snapshot["email"]),
+                "resume",
+                "standard",
+                [FactSnapshot.model_validate(fact) for fact in row.facts],
+            )
+            fits: Literal["standard", "compact"] = "standard"
+        except ValidationFailedError:
+            fits = "compact"
+        if len(_TEMPLATE_FITS) > 2000:
+            _TEMPLATE_FITS.clear()
+        _TEMPLATE_FITS[key] = fits
+    return _TEMPLATE_FITS[key]
+
+
 async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> DraftOut:
     draft = await owned_draft(session, user, draft_id)
     current = await version(session, draft) if draft.current_version else None
@@ -366,6 +398,7 @@ async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> Draf
         version=version_out(current) if current else None,
         application_status=status,
         attachment_name=filename(str(job["name"]), str(job["company"]), str(job["title"])),
+        template=await _fitting_template(draft, current) if current else "standard",
     )
 
 
