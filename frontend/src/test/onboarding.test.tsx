@@ -6,7 +6,7 @@ import { App } from "@/app/App";
 import { furthestStep } from "@/pages/onboarding-steps";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 
-import { json, makeFeed, makeMe, mockFetch, renderWithApp } from "./utils";
+import { json, makeFeed, makeMe, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,6 +36,7 @@ describe("OnboardingPage", () => {
     renderOnboarding("/onboarding", "ai_notice");
     expect(await screen.findByText("How your documents are used")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "I understand, continue" })).toBeInTheDocument();
+    await expectAccessible();
   });
 
   it("does not let users skip ahead of their progress", async () => {
@@ -74,6 +75,7 @@ describe("App routing", () => {
     renderWithApp(<App />, { route: "/feed" });
     expect(await screen.findByText("No jobs yet")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review your preferences" })).toBeInTheDocument();
+    await expectAccessible();
   });
 
   it("warns when Gmail access has expired", async () => {

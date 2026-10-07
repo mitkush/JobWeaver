@@ -4,6 +4,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageSpinner } from "@/components/ui/spinner";
+import { AiUsage } from "@/features/sources/AiUsage";
 import { SourceCard } from "@/features/sources/SourceCard";
 import { formatQueryKey } from "@/lib/query-key";
 import { fromNow } from "@/lib/time";
@@ -71,8 +72,9 @@ export function AdminSourcesPage() {
           <SourceCard key={source.name} source={source} />
         ))}
       </div>
-      <div className="mt-8">
+      <div className="mt-8 space-y-8">
         <RecentRuns />
+        <AiUsage />
       </div>
     </>
   );

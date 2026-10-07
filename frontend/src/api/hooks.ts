@@ -8,7 +8,9 @@ import {
   type DocumentKind,
   type Fact,
   type FactKind,
+  type ApplicationStatus,
   type FeedQuery,
+  type FollowUpRequest,
   type Me,
   type Preferences,
 } from "./client";
@@ -25,6 +27,9 @@ export const keys = {
   feed: ["feed"] as const,
   runStartedAt: ["admin", "run-started-at"] as const,
   job: (id: string) => ["job", id] as const,
+  applications: ["applications"] as const,
+  reminders: ["reminders"] as const,
+  company: (id: string) => ["company", id] as const,
 };
 
 export function useMe() {
@@ -345,3 +350,82 @@ export function useSplitPosting() {
 }
 
 export type { Fact };
+
+// Applications (FR-F1 to FR-F3) ------------------------------------------------------------
+
+export function useApplications() {
+  return useQuery({ queryKey: keys.applications, queryFn: () => unwrap(api.GET("/api/applications")) });
+}
+
+export function useReminders() {
+  return useQuery({ queryKey: keys.reminders, queryFn: () => unwrap(api.GET("/api/reminders")) });
+}
+
+export function useCompanyHistory(companyId: string) {
+  return useQuery({
+    queryKey: keys.company(companyId),
+    queryFn: () =>
+      unwrap(api.GET("/api/companies/{company_id}/applications", { params: { path: { company_id: companyId } } })),
+  });
+}
+
+/** A status change shows on the tracker, reminders, Company history and Job cards. */
+function useInvalidateApplications() {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: keys.applications }),
+      client.invalidateQueries({ queryKey: keys.reminders }),
+      client.invalidateQueries({ queryKey: ["company"] }),
+      client.invalidateQueries({ queryKey: keys.feed }),
+      client.invalidateQueries({ queryKey: ["job"] }),
+    ]);
+}
+
+export function useSetApplicationStatus() {
+  const invalidate = useInvalidateApplications();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ApplicationStatus }) =>
+      unwrap(api.PATCH("/api/applications/{application_id}", { params: { path: { application_id: id } }, body: { status } })),
+    onSettled: invalidate,
+  });
+}
+
+export function useDismissReminder() {
+  const invalidate = useInvalidateApplications();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.POST("/api/applications/{application_id}/follow-up/dismiss", { params: { path: { application_id: id } } })),
+    onSettled: invalidate,
+  });
+}
+
+export function useFollowUp(id: string | null) {
+  return useQuery({
+    queryKey: ["follow-up", id],
+    enabled: id !== null,
+    queryFn: () =>
+      unwrap(api.GET("/api/applications/{application_id}/follow-up", { params: { path: { application_id: id! } } })),
+  });
+}
+
+export function useSendFollowUp() {
+  const invalidate = useInvalidateApplications();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: FollowUpRequest }) =>
+      unwrap(api.POST("/api/applications/{application_id}/follow-up", { params: { path: { application_id: id } }, body })),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAiUsage() {
+  return useQuery({ queryKey: ["admin", "ai-usage"], queryFn: () => unwrap(api.GET("/api/admin/ai-usage")) });
+}
+
+export function useSetFollowUpDays() {
+  const setMe = useSetMe();
+  return useMutation({
+    mutationFn: (days: number) => unwrap(api.PUT("/api/me/follow-up-days", { body: { days } })),
+    onSuccess: setMe,
+  });
+}

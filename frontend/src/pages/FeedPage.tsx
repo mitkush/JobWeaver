@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
 import { FeedFilters } from "@/features/feed/FeedFilters";
 import { clearFilters, feedQuery, hasFilters, PAGE_SIZE, withParam } from "@/features/feed/feed-params";
+import { Reminders } from "@/features/applications/Reminders";
 import { JobCard } from "@/features/feed/JobCard";
 import { cn } from "@/lib/cn";
 import { fromNow } from "@/lib/time";
@@ -90,6 +91,7 @@ export function FeedPage() {
           </Button>
         }
       />
+      <Reminders />
       {notices.data?.map((notice) => (
         <Alert key={notice.label} tone="info" className="mb-4">
           {notice.message}

@@ -20,6 +20,12 @@ export type JobDetail = Schemas["JobDetailOut"];
 export type PostingInfo = Schemas["PostingOut"];
 export type PossibleDuplicate = Schemas["PossibleDuplicateOut"];
 export type JobLocation = Schemas["LocationOut"];
+export type Application = Schemas["ApplicationOut"];
+export type ApplicationStatus = "drafted" | "applied" | "replied" | "interview" | "offer" | "rejected";
+export type Reminder = Schemas["ReminderOut"];
+export type FollowUp = Schemas["FollowUpOut"];
+export type FollowUpRequest = Schemas["FollowUpIn"];
+export type CompanyHistory = Schemas["CompanyHistoryOut"];
 export type FeedQuery = NonNullable<paths["/api/feed"]["get"]["parameters"]["query"]>;
 
 export class ApiError extends Error {

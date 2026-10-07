@@ -6,6 +6,8 @@ import { useMe } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { PageSpinner } from "@/components/ui/spinner";
 import { AdminSourcesPage } from "@/pages/AdminSourcesPage";
+import { ApplicationsPage } from "@/pages/ApplicationsPage";
+import { CompanyPage } from "@/pages/CompanyPage";
 import { FactBankPage } from "@/pages/FactBankPage";
 import { FeedPage } from "@/pages/FeedPage";
 import { DraftPage } from "@/pages/DraftPage";
@@ -51,6 +53,8 @@ export function App() {
       <Route path="/feed" element={<Authenticated>{() => <FeedPage />}</Authenticated>} />
       <Route path="/jobs/:jobId" element={<Authenticated>{() => <JobPage />}</Authenticated>} />
       <Route path="/drafts/:draftId" element={<Authenticated>{() => <DraftPage />}</Authenticated>} />
+      <Route path="/applications" element={<Authenticated>{() => <ApplicationsPage />}</Authenticated>} />
+      <Route path="/companies/:companyId" element={<Authenticated>{() => <CompanyPage />}</Authenticated>} />
       <Route path="/fact-bank" element={<Authenticated>{() => <FactBankPage />}</Authenticated>} />
       <Route path="/preferences" element={<Authenticated>{() => <PreferencesPage />}</Authenticated>} />
       <Route path="/settings" element={<Authenticated>{(me) => <SettingsPage me={me} />}</Authenticated>} />

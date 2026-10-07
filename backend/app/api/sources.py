@@ -9,6 +9,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
 from app.core.errors import AuthError, ForbiddenError, NotFoundError
 from app.models.user import Role, User
+from app.schemas.ai_usage import AIUsageOut
 from app.schemas.sources import (
     AtsBoardIn,
     AtsBoardOut,
@@ -18,7 +19,7 @@ from app.schemas.sources import (
     SourceStatusOut,
     SourceUpdate,
 )
-from app.services import source_status
+from app.services import ai_usage, source_status
 from app.services.fetching import Fetcher
 from app.services.pipeline import build_fetcher
 
@@ -41,6 +42,12 @@ def get_fetcher() -> Fetcher:
 
 
 FetcherDep = Annotated[Fetcher, Depends(get_fetcher)]
+
+
+@router.get("/admin/ai-usage")
+async def ai_usage_summary(db: DbSession, _: AdminUser) -> AIUsageOut:
+    """Calls against each provider's free daily quota, and the last week by task (FR-G4)."""
+    return await ai_usage.summary(db)
 
 
 @router.get("/admin/sources")

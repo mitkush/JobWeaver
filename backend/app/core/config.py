@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # While on Gemini's free tier, users in the EEA, CH and UK cannot be served (ADR-0012).
     gemini_free_tier: bool = True
 
+    # Error reporting (FR-G5): a free Sentry project's DSN. Empty turns reporting off.
+    sentry_dsn: str = ""
+
     # Job Sources (Phase 2). A Source without its key is reported as not configured.
     brightdata_api_key: str = ""
     brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"

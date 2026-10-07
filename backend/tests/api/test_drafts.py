@@ -20,7 +20,15 @@ from app.core.errors import ExternalServiceError, GatewayError
 from app.core.security import encrypt
 from app.gateway.recorded import RecordedAIGateway
 from app.main import app
-from app.models import Application, Draft, DraftVersion, Fact, Job, OAuthCredential
+from app.models import (
+    Application,
+    Draft,
+    DraftVersion,
+    Fact,
+    GmailHandoff,
+    Job,
+    OAuthCredential,
+)
 from app.schemas.drafts import EmailCheck
 from app.services import drafting
 from app.services.correspondence import merge_jobs, source_priorities
@@ -438,8 +446,9 @@ async def test_after_a_gmail_failure_the_next_hand_off_tries_gmail_again(
     second = await client.post(f"/api/drafts/{draft['id']}/handoff", json=body)
     assert second.json()["mode"] == "gmail"
     assert len(gmail.calls) == 1
-    rows = (await db.execute(select(Application).where(Application.user_id == user.id))).scalars()
+    rows = (await db.execute(select(GmailHandoff).where(GmailHandoff.user_id == user.id))).scalars()
     assert [row.gmail_draft_id for row in rows] == ["gmail-draft-123"]  # one row, updated
+    assert len((await db.scalars(select(Application))).all()) == 1
 
 
 class _Raises:
@@ -539,14 +548,12 @@ async def test_job_merge_preserves_draft_versions_and_application(prepared, db):
     assert row.job_id == survivor and application.job_id == survivor and len(versions) == 1
 
 
-async def test_feed_application_state_is_private_and_applied_wins(prepared, db, bob):
+async def test_feed_application_state_and_company_warning(prepared, db, bob):
     from app.services.feed import package_states
 
     draft = await generated(prepared)
     user, client, job_id, _ = prepared
     await client.post(f"/api/drafts/{draft['id']}/applied", json={"expected_version": 1})
-    db.add(Application(user_id=user.id, job_id=uuid.UUID(job_id), status="drafted", version=1))
-    await db.commit()
     job = await db.get(Job, uuid.UUID(job_id))
     sibling = Job(company_id=job.company_id, title="Platform Engineer", company_name="Acme")
     db.add(sibling)

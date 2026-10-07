@@ -8,7 +8,7 @@ import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { formatQueryKey } from "@/lib/query-key";
 import { AdminSourcesPage } from "@/pages/AdminSourcesPage";
 
-import { json, makeFeed, makeMe, mockFetch, renderWithApp } from "./utils";
+import { json, makeFeed, makeMe, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -70,6 +70,7 @@ it("shows health, budget pace and the most expensive searches", async () => {
   expect(within(card).getByText(/runs out around/)).toBeInTheDocument();
   expect(within(card).getByText("backend engineer · Bengaluru, India")).toBeInTheDocument();
   expect(screen.getByText(/Company boards · 12 tracked/)).toBeInTheDocument();
+  await expectAccessible();
 });
 
 it("explains standbys, shared allowances and sources that are off by default", async () => {
@@ -198,4 +199,28 @@ it("shows the Sources page to the admin only", async () => {
   renderWithApp(<App />, { route: "/feed" });
   expect((await screen.findAllByRole("link", { name: "Sources" })).length).toBeGreaterThan(0);
   expect(await screen.findByText("LinkedIn jobs are delayed; other sources are up to date.")).toBeInTheDocument();
+});
+
+it("shows AI calls against each free daily quota", async () => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([linkedin]),
+    "GET /api/admin/fetch-runs": () => json([]),
+    "GET /api/admin/ai-usage": () =>
+      json({
+        day_started_at: new Date().toISOString(),
+        models: [
+          { provider: "gemini", model: "gemini-flash-latest", calls_today: 16, errors_today: 1, daily_quota: 18 },
+          { provider: "groq", model: "openai/gpt-oss-120b", calls_today: 3, errors_today: 0, daily_quota: 900 },
+        ],
+        tasks_last_7_days: [{ task: "tailor_draft", calls: 40, errors: 2, input_tokens: 120000, output_tokens: 30000 }],
+      }),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  const table = await screen.findByRole("table", { name: "AI calls today by provider and model" });
+  const flash = within(table).getByRole("row", { name: /gemini-flash-latest/ });
+  // Within 20% of the quota is highlighted.
+  expect(within(flash).getByText("16")).toHaveClass("font-semibold");
+  expect(within(table).getByRole("row", { name: /gpt-oss-120b/ })).toHaveTextContent("900");
+  expect(screen.getByRole("table", { name: "Last 7 days by task" })).toHaveTextContent("120,000 / 30,000");
+  await expectAccessible();
 });

@@ -72,6 +72,7 @@ async def build_me(session: AsyncSession, user: User) -> MeOut:
         country=user.country,
         onboarding=OnboardingStatus(**status, next_step=next_step),
         gmail=GmailStatus(state=gmail_state, expires_at=gmail_expires),
+        follow_up_days=user.follow_up_days,
     )
 
 

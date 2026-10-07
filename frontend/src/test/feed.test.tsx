@@ -9,7 +9,7 @@ import { feedQuery } from "@/features/feed/feed-params";
 import { FeedPage } from "@/pages/FeedPage";
 import { JobPage } from "@/pages/JobPage";
 
-import { json, makeCard, makeFeed, mockFetch, renderWithApp } from "./utils";
+import { json, makeCard, makeFeed, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,6 +37,7 @@ it("shows cards with skill gaps, source badges and the email section first", asy
   expect(within(card).getByText("Greenhouse")).toBeInTheDocument();
   expect(screen.getByText("No gaps found")).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: /With email/ })).toHaveAttribute("aria-selected", "true");
+  await expectAccessible();
 });
 
 it("opens the apply-link section when no job has an email", async () => {
@@ -137,6 +138,7 @@ function makeJob(overrides: Partial<JobDetail> = {}): JobDetail {
     job_id: "job-1",
     title: "Backend Engineer",
     company: "Acme",
+    company_id: "company-1",
     description: "Build payment APIs.",
     locations: [{ city: "Bengaluru", country: "IN", remote: false }],
     work_mode: "hybrid",
@@ -181,6 +183,7 @@ it("shows the Correspondence stack and confirms a possible duplicate", async () 
   await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
   expect(await screen.findByRole("heading", { name: "Merged job" })).toBeInTheDocument();
   expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/confirm"))).toBe(true);
+  await expectAccessible();
 });
 
 it("rejects a possible duplicate and splits a posting", async () => {

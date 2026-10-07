@@ -301,16 +301,14 @@ async def package_states(
         select(Application, Job.company_id)
         .join(Job, Job.id == Application.job_id)
         .where(Application.user_id == user.id, Job.company_id.in_(company_ids))
-        .order_by(Application.created_at.desc(), Application.id.desc())
     )
     states: dict[uuid.UUID, str] = {}
     applied_jobs: dict[uuid.UUID, set[uuid.UUID]] = {}
     for application, company_id in applications:
-        states.setdefault(application.job_id, application.status)
-        if application.status == "applied":
-            states[application.job_id] = "applied"
-            if application.applied_at and application.applied_at >= now - APPLIED_RECENTLY:
-                applied_jobs.setdefault(company_id, set()).add(application.job_id)
+        states[application.job_id] = application.status
+        # "Applied or later" (FR-D5): every status past Drafted keeps applied_at set.
+        if application.applied_at and application.applied_at >= now - APPLIED_RECENTLY:
+            applied_jobs.setdefault(company_id, set()).add(application.job_id)
     warned = {job.id for job in jobs if applied_jobs.get(job.company_id, set()) - {job.id}}
     return draft_ids, states, warned
 
@@ -479,6 +477,7 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         job_id=job.id,
         title=job.title,
         company=job.company_name,
+        company_id=job.company_id,
         description=primary.description if primary else "",
         locations=_locations(job),
         work_mode=job.work_mode,

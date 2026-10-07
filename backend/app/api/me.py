@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 
 from app.api.auth import gmail_connect
 from app.api.deps import SESSION_COOKIE, CurrentUser, DbSession, Google
+from app.schemas.applications import FollowUpDaysIn
 from app.schemas.me import CountryIn, MeOut
 from app.services import accounts
 from app.services.gmail import disconnect_gmail
@@ -25,6 +26,14 @@ async def accept_ai_notice(db: DbSession, user: CurrentUser) -> MeOut:
 @router.put("/me/country")
 async def set_country(db: DbSession, user: CurrentUser, body: CountryIn) -> MeOut:
     await accounts.set_country(db, user, body.country)
+    await db.commit()
+    return await accounts.build_me(db, user)
+
+
+@router.put("/me/follow-up-days")
+async def set_follow_up_days(db: DbSession, user: CurrentUser, body: FollowUpDaysIn) -> MeOut:
+    """Applies to Applications marked Applied from now on; existing reminders keep their date."""
+    user.follow_up_days = body.days
     await db.commit()
     return await accounts.build_me(db, user)
 

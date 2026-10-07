@@ -168,6 +168,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/follow-up-days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Follow Up Days
+         * @description Applies to Applications marked Applied from now on; existing reminders keep their date.
+         */
+        put: operations["set_follow_up_days_api_me_follow_up_days_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/gmail/connect": {
         parameters: {
             query?: never;
@@ -372,6 +392,26 @@ export interface paths {
         get: operations["get_preferences_api_preferences_get"];
         /** Save Preferences */
         put: operations["save_preferences_api_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Usage Summary
+         * @description Calls against each provider's free daily quota, and the last week by task (FR-G4).
+         */
+        get: operations["ai_usage_summary_api_admin_ai_usage_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -793,10 +833,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Applications */
+        get: operations["list_applications_api_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Status */
+        patch: operations["set_status_api_applications__application_id__patch"];
+        trace?: never;
+    };
+    "/api/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reminders */
+        get: operations["list_reminders_api_reminders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/follow-up/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss */
+        post: operations["dismiss_api_applications__application_id__follow_up_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/follow-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Follow Up */
+        get: operations["follow_up_api_applications__application_id__follow_up_get"];
+        put?: never;
+        /** Follow Up To Gmail */
+        post: operations["follow_up_to_gmail_api_applications__application_id__follow_up_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{company_id}/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Company History */
+        get: operations["company_history_api_companies__company_id__applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIUsageOut */
+        AIUsageOut: {
+            /**
+             * Day Started At
+             * Format: date-time
+             */
+            day_started_at: string;
+            /** Models */
+            models: components["schemas"]["ModelUsage"][];
+            /** Tasks Last 7 Days */
+            tasks_last_7_days: components["schemas"]["TaskUsage"][];
+        };
+        /** ApplicationOut */
+        ApplicationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Draft Id */
+            draft_id: string | null;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Job Expired */
+            job_expired: boolean;
+            /** Status */
+            status: string;
+            /** Applied At */
+            applied_at: string | null;
+            /**
+             * Status Changed At
+             * Format: date-time
+             */
+            status_changed_at: string;
+            /** Follow Up Due */
+            follow_up_due: boolean;
+            /** History */
+            history: components["schemas"]["EventOut"][];
+        };
         /** AppliedIn */
         AppliedIn: {
             /** Expected Version */
@@ -861,6 +1055,18 @@ export interface components {
             runs_out_on: string | null;
             /** Top Queries */
             top_queries: components["schemas"]["QuerySpend"][];
+        };
+        /** CompanyHistoryOut */
+        CompanyHistoryOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Applications */
+            applications: components["schemas"]["ApplicationOut"][];
         };
         /** CountryIn */
         CountryIn: {
@@ -1017,6 +1223,16 @@ export interface components {
             valid: boolean;
             /** Warnings */
             warnings: string[];
+        };
+        /** EventOut */
+        EventOut: {
+            /** Status */
+            status: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
         };
         /**
          * FactBankChanges
@@ -1209,6 +1425,51 @@ export interface components {
             /** Error */
             error: string | null;
         };
+        /** FollowUpDaysIn */
+        FollowUpDaysIn: {
+            /** Days */
+            days: number;
+        };
+        /** FollowUpIn */
+        FollowUpIn: {
+            /** Recipient */
+            recipient: string;
+            /** Subject */
+            subject: string;
+            /** Body */
+            body: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm?: boolean;
+            /**
+             * Confirm Email Warning
+             * @default false
+             */
+            confirm_email_warning?: boolean;
+        };
+        /**
+         * FollowUpOut
+         * @description A starting point the User edits; written from a template, never by AI.
+         */
+        FollowUpOut: {
+            /** Recipient */
+            recipient: string | null;
+            /** Subject */
+            subject: string;
+            /** Body */
+            body: string;
+        };
+        /** FollowUpResult */
+        FollowUpResult: {
+            /** Mode */
+            mode: string;
+            /** Url */
+            url: string;
+            /** Message */
+            message: string;
+        };
         /**
          * GmailState
          * @enum {string}
@@ -1275,6 +1536,11 @@ export interface components {
             title: string;
             /** Company */
             company: string;
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
             /** Description */
             description: string;
             /** Locations */
@@ -1352,6 +1618,21 @@ export interface components {
             country: string | null;
             onboarding: components["schemas"]["OnboardingStatus"];
             gmail: components["schemas"]["GmailStatus"];
+            /** Follow Up Days */
+            follow_up_days: number;
+        };
+        /** ModelUsage */
+        ModelUsage: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Calls Today */
+            calls_today: number;
+            /** Errors Today */
+            errors_today: number;
+            /** Daily Quota */
+            daily_quota: number | null;
         };
         /** OnboardingStatus */
         OnboardingStatus: {
@@ -1468,6 +1749,30 @@ export interface components {
             /** Spent */
             spent: number;
         };
+        /** ReminderOut */
+        ReminderOut: {
+            /**
+             * Application Id
+             * Format: uuid
+             */
+            application_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /**
+             * Applied At
+             * Format: date-time
+             */
+            applied_at: string;
+            /** Days Waiting */
+            days_waiting: number;
+        };
         /** RestoreVersion */
         RestoreVersion: {
             /** Expected Version */
@@ -1565,6 +1870,24 @@ export interface components {
         SourceUpdate: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** StatusIn */
+        StatusIn: {
+            /** Status */
+            status: string;
+        };
+        /** TaskUsage */
+        TaskUsage: {
+            /** Task */
+            task: string;
+            /** Calls */
+            calls: number;
+            /** Errors */
+            errors: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
         };
         /** TextDocumentIn */
         TextDocumentIn: {
@@ -1896,6 +2219,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CountryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_follow_up_days_api_me_follow_up_days_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowUpDaysIn"];
             };
         };
         responses: {
@@ -2426,6 +2784,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_usage_summary_api_admin_ai_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIUsageOut"];
                 };
             };
             /** @description Validation Error */
@@ -3350,6 +3739,239 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_applications_api_applications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_status_api_applications__application_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reminders_api_reminders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_api_applications__application_id__follow_up_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    follow_up_api_applications__application_id__follow_up_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowUpOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    follow_up_to_gmail_api_applications__application_id__follow_up_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowUpIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowUpResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_history_api_companies__company_id__applications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyHistoryOut"];
+                };
             };
             /** @description Validation Error */
             422: {

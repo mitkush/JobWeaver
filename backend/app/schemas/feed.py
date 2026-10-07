@@ -99,6 +99,8 @@ class JobDetailOut(BaseModel):
     job_id: uuid.UUID
     title: str
     company: str
+    # For the User's history with this Company (FR-F3).
+    company_id: uuid.UUID
     description: str
     locations: list[LocationOut]
     work_mode: str | None
