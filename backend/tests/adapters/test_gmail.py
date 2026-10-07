@@ -45,3 +45,10 @@ async def test_gmail_network_failure_is_typed():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         with pytest.raises(ExternalServiceError):
             await GmailClient(http).create_draft("token", "mime")
+
+
+def test_compose_link_encodes_the_sender_like_the_drafts_link():
+    from app.adapters.gmail import compose_url
+
+    url = compose_url("a+b/c@example.com", "jobs@acme.com", "Hi", "Body")
+    assert url.startswith("https://mail.google.com/mail/u/a%2Bb%2Fc@example.com/?")

@@ -30,3 +30,15 @@ def test_production_starts_with_secrets():
 def test_admin_emails_are_comma_separated(monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "A@x.com, b@y.com")
     assert Settings().admin_emails == ["a@x.com", "b@y.com"]
+
+
+def test_production_requires_an_https_public_url():
+    with pytest.raises(ValidationError, match=r"PUBLIC_URL \(https\)"):
+        Settings(
+            environment="production",
+            session_secret="a-real-secret-value",
+            credentials_encryption_key="key",
+            google_client_id="id",
+            google_client_secret="secret",
+            public_url="http://jobweaver.example",
+        )

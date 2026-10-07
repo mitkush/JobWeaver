@@ -11,7 +11,7 @@ from app.models.draft import (
     DraftVersion,
     GmailHandoff,
 )
-from app.models.fact import Fact, FactKind, FactOrigin
+from app.models.fact import DismissedFact, Fact, FactKind, FactOrigin
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.oauth_credential import OAuthCredential
@@ -46,6 +46,7 @@ __all__ = [
     "Source",
     "SourceState",
     "Base",
+    "DismissedFact",
     "Document",
     "DocumentKind",
     "Fact",

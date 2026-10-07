@@ -45,6 +45,79 @@ _US_STATES = {
     "VA", "WA", "WV", "WI", "WY", "DC",
 }  # fmt: skip
 
+# Indian state and union territory codes, and the cities job adverts most often pair with
+# them, so "Pune, MH" or "Pune, IN" is India rather than a US state (IN is Indiana).
+_INDIAN_STATES = {  # fmt: skip
+    "AP",
+    "AR",
+    "AS",
+    "BR",
+    "CG",
+    "CT",
+    "DL",
+    "GA",
+    "GJ",
+    "HP",
+    "HR",
+    "JH",
+    "JK",
+    "KA",
+    "KL",
+    "MH",
+    "ML",
+    "MN",
+    "MP",
+    "MZ",
+    "NL",
+    "OD",
+    "OR",
+    "PB",
+    "PY",
+    "RJ",
+    "SK",
+    "TG",
+    "TN",
+    "TR",
+    "TS",
+    "UK",
+    "UP",
+    "UT",
+    "WB",
+    "IN",
+}
+_INDIAN_CITIES = {  # fmt: skip
+    "bengaluru",
+    "mumbai",
+    "navi mumbai",
+    "pune",
+    "hyderabad",
+    "chennai",
+    "delhi",
+    "new delhi",
+    "gurugram",
+    "noida",
+    "kolkata",
+    "ahmedabad",
+    "jaipur",
+    "kochi",
+    "coimbatore",
+    "indore",
+    "chandigarh",
+    "thiruvananthapuram",
+    "nagpur",
+    "lucknow",
+    "bhubaneswar",
+    "mysuru",
+    "vadodara",
+    "visakhapatnam",
+    "surat",
+    "goa",
+    "mohali",
+    "faridabad",
+    "ghaziabad",
+    "thane",
+}
+
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _NO_REPLY = re.compile(r"no-?reply|donotreply|do-not-reply", re.IGNORECASE)
 _TAGS = re.compile(r"<[^>]+>")
@@ -148,8 +221,11 @@ def parse_location(text: str | None, default_country: str | None = None) -> Loca
     country = None
     if parts:
         last = parts[-1]
+        first = (normalize_city(parts[0]) or "").lower()
+        if len(parts) > 1 and last.upper() in _INDIAN_STATES and first in _INDIAN_CITIES:
+            country = "IN"
         # "San Francisco, CA" is California, not Canada.
-        if len(parts) > 1 and len(last) == 2 and last.upper() in _US_STATES:
+        elif len(parts) > 1 and len(last) == 2 and last.upper() in _US_STATES:
             country = "US"
         else:
             country = country_code(last)

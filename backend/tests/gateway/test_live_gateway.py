@@ -39,15 +39,19 @@ REQUEST = ParseDocumentsRequest(
 
 
 async def test_falls_back_on_errors_and_bad_output_then_records_usage(db):
-    gemini = FakeClient("gemini", [GatewayError("gemini rate limit"), "not json"])
-    groq = FakeClient("groq", [GOOD])
-    gateway = LiveAIGateway({"gemini": gemini, "groq": groq}, UsageLedger(get_sessionmaker()))
+    gemini = FakeClient("gemini", [GatewayError("gemini rate limit")])
+    groq = FakeClient("groq", ["not json"])
+    openrouter = FakeClient("openrouter", [GOOD])
+    gateway = LiveAIGateway(
+        {"gemini": gemini, "groq": groq, "openrouter": openrouter},
+        UsageLedger(get_sessionmaker()),
+    )
 
     response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
-    assert response.provider == "groq"
+    assert response.provider == "openrouter"
     assert response.result.facts[0].text == "Go"
     outcomes = [(u.provider, u.outcome) for u in (await db.execute(select(AIUsage))).scalars()]
-    assert sorted(outcomes) == [("gemini", "error"), ("gemini", "error"), ("groq", "ok")]
+    assert sorted(outcomes) == [("gemini", "error"), ("groq", "error"), ("openrouter", "ok")]
 
 
 async def test_skips_routes_over_their_daily_quota(db):

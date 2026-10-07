@@ -3,13 +3,16 @@
 import asyncio
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote, urlencode
 
-from sqlalchemy import select
+import httpx
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.gmail import GmailClient, compose_url, raw_message
+from app.adapters.links import LinkState, check_apply_link
 from app.core.db import get_sessionmaker
 from app.core.errors import (
     ConflictError,
@@ -35,14 +38,17 @@ from app.models import (
     User,
     UserJob,
 )
+from app.models.posting import Posting
 from app.schemas.drafts import DraftOut, HandoffIn, HandoffOut, VersionOut
 from app.services import applications
 from app.services.accounts import ensure_ai_allowed
+from app.services.correspondence import refresh_jobs, source_priorities
 from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
 from app.tailoring.content import DraftContent, FactSnapshot
+from app.tailoring.diff import moved
 from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
@@ -152,6 +158,58 @@ def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> Ch
         company=str(job.get("company") or ""),
         job_skills=[str(s) for s in job.get("required_skills") or []],
     )
+
+
+MAX_LINKS_CHECKED = 4
+LINK_CLOSED = (
+    "This job's apply link now says the page is not found, so the job looks closed. "
+    "It has been marked closed; choose another job."
+)
+
+
+async def ensure_link_open(
+    session: AsyncSession, user: User, job_id: uuid.UUID, http: httpx.AsyncClient
+) -> None:
+    """Checks the apply link for free before drafting (FR-B10 AC3). A closed link closes
+    its Postings; if that closes the Job, the User is told before any AI work starts."""
+    job = await session.scalar(
+        select(Job)
+        .join(UserJob, UserJob.job_id == Job.id)
+        .where(Job.id == job_id, UserJob.user_id == user.id)
+    )
+    if job is None or job.expired_at is not None:
+        return  # create() reports the missing or closed Job itself
+    # Each open Posting's own link: copies of one advert often differ only by a tracking
+    # parameter, and a Job is closed only when none of its links still works.
+    links = (
+        await session.execute(
+            select(Posting.apply_url)
+            .where(
+                Posting.job_id == job.id,
+                Posting.closed_at.is_(None),
+                Posting.apply_url.is_not(None),
+            )
+            .distinct()
+            .limit(MAX_LINKS_CHECKED)
+        )
+    ).scalars()
+    dead = [url for url in links if await check_apply_link(http, url) == LinkState.CLOSED]
+    if not dead:
+        return
+    await session.execute(
+        update(Posting)
+        .where(
+            Posting.job_id == job.id,
+            Posting.apply_url.in_(dead),
+            Posting.closed_at.is_(None),
+        )
+        .values(closed_at=datetime.now(UTC), closed_reason="link")
+    )
+    await refresh_jobs(session, [job.id], source_priorities())
+    await session.commit()
+    await session.refresh(job)
+    if job.expired_at is not None:
+        raise PreconditionError(LINK_CLOSED)
 
 
 async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
@@ -273,15 +331,20 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             content.email_subject = "Application for " + str(draft.job_snapshot["title"])
             if draft.job_snapshot.get("contact_email") and not content.email_body:
                 raise _Unverified()
-            await asyncio.to_thread(
-                render_pdf,
-                content,
-                str(draft.job_snapshot["name"]),
-                str(draft.job_snapshot["email"]),
-                "resume",
-                "compact",
-                facts,
-            )
+            try:
+                await asyncio.to_thread(
+                    render_pdf,
+                    content,
+                    str(draft.job_snapshot["name"]),
+                    str(draft.job_snapshot["email"]),
+                    "resume",
+                    "compact",
+                    facts,
+                )
+            except ValidationFailedError as exc:
+                # The Draft is still saved: only the editor can fix it, and a failed Draft
+                # has no editor. The warning says what to change before downloading.
+                warnings = [*warnings, f"PDF: {exc.message}"]
             await _save_version(
                 session, draft, content, facts, "generation", warnings, result.result.message
             )
@@ -345,6 +408,33 @@ async def stop_tasks() -> None:
         await asyncio.gather(*_TASKS, return_exceptions=True)
 
 
+# Which layout each version fits in, so the page opens on one that downloads. Versions are
+# immutable, so the answer never changes; the cache only bounds repeated rendering.
+_TEMPLATE_FITS: dict[tuple[uuid.UUID, int], Literal["standard", "compact"]] = {}
+
+
+async def _fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
+    key = (draft.id, row.number)
+    if key not in _TEMPLATE_FITS:
+        try:
+            await asyncio.to_thread(
+                render_pdf,
+                DraftContent.model_validate(row.content),
+                str(draft.job_snapshot["name"]),
+                str(draft.job_snapshot["email"]),
+                "resume",
+                "standard",
+                [FactSnapshot.model_validate(fact) for fact in row.facts],
+            )
+            fits: Literal["standard", "compact"] = "standard"
+        except ValidationFailedError:
+            fits = "compact"
+        if len(_TEMPLATE_FITS) > 2000:
+            _TEMPLATE_FITS.clear()
+        _TEMPLATE_FITS[key] = fits
+    return _TEMPLATE_FITS[key]
+
+
 async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> DraftOut:
     draft = await owned_draft(session, user, draft_id)
     current = await version(session, draft) if draft.current_version else None
@@ -366,6 +456,7 @@ async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> Draf
         version=version_out(current) if current else None,
         application_status=status,
         attachment_name=filename(str(job["name"]), str(job["company"]), str(job["title"])),
+        template=await _fitting_template(draft, current) if current else "standard",
     )
 
 
@@ -386,12 +477,24 @@ async def save(
         for line in getattr(DraftContent.model_validate(previous.content), part)
     }
     edited = content.model_copy(deep=True)
+    old_position = {
+        line.id: i
+        for part in ("resume", "cover_letter", "email_body")
+        for i, line in enumerate(getattr(DraftContent.model_validate(previous.content), part))
+    }
     for part in ("resume", "cover_letter", "email_body"):
-        for line in getattr(edited, part):
+        lines = getattr(edited, part)
+        kept = [i for i, line in enumerate(lines) if line.id in old_position]
+        # A line the User moved, or moved to another section, is their edit too (FR-E6):
+        # Draft Chat keeps it where they put it.
+        shifted = {kept[j] for j in moved([old_position[lines[i].id] for i in kept])}
+        for i, line in enumerate(lines):
             if (
                 line.id not in old
                 or line.text != old[line.id].text
                 or line.fact_refs != old[line.id].fact_refs
+                or line.section != old[line.id].section
+                or i in shifted
             ):
                 line.manual = True
             else:

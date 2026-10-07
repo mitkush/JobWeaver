@@ -77,8 +77,28 @@ async def test_reupload_keeps_user_edits_and_reports_changes(ready):
     assert "Python 3.12" in texts and "Rust" in texts
     assert texts.count("PostgreSQL") == 1
     assert second["changes"]["kept_edits"] == 2
-    # "Python" comes back from the AI as a new fact because the user renamed theirs.
-    assert second["changes"]["added"] == ["Python"]
+    # The AI's "Python" does not come back beside the User's "Python 3.12".
+    assert "Python" not in texts and second["changes"]["added"] == []
+
+
+async def test_deleted_and_merged_facts_stay_gone_after_a_reupload(ready):
+    facts = (await upload_resume(ready)).json()["facts"]
+    by_text = {f["text"]: f["id"] for f in facts}
+    assert (await ready.delete(f"/api/facts/{by_text['PostgreSQL']}")).status_code == 204
+    skills = [f for f in facts if f["kind"] == "skill" and f["text"] != "PostgreSQL"][:2]
+    merged = await ready.post(
+        "/api/facts/merge",
+        json={"fact_ids": [s["id"] for s in skills], "text": "Merged skill"},
+    )
+    assert merged.status_code in (200, 201)
+
+    texts = [f["text"] for f in (await upload_resume(ready)).json()["facts"]]
+    assert "PostgreSQL" not in texts
+    assert all(s["text"] not in texts for s in skills) and "Merged skill" in texts
+    # Deleting the whole Fact Bank is a fresh start: everything can be parsed again.
+    assert (await ready.delete("/api/fact-bank")).status_code == 204
+    texts = [f["text"] for f in (await upload_resume(ready)).json()["facts"]]
+    assert "PostgreSQL" in texts
 
 
 async def test_ai_failure_keeps_the_document_and_allows_retry(ready):
@@ -174,4 +194,4 @@ async def test_failed_ai_calls_still_count_toward_the_daily_quota(ready, db):
     )
     response = await upload_resume(ready)
     assert response.status_code == 503
-    assert await db.scalar(select(func.count()).select_from(AIUsage)) == 2  # Flash, Flash-Lite
+    assert await db.scalar(select(func.count()).select_from(AIUsage)) == 1  # Flash-Lite

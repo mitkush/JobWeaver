@@ -21,7 +21,7 @@ from app.adapters.registry import register_adapter
 def freshness_for(window: FetchWindow) -> str:
     """Smallest Naukri "freshness" (days) that reaches back to the window start."""
     for days in (1, 3, 7, 15, 30):
-        if window.hours <= days * 24 + 2:
+        if window.within_days(days):
             return str(days)
     return "all"
 

@@ -7,10 +7,11 @@ import uuid
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, any_, delete, func, or_, select, text
+from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.normalize import normalize_city
 from app.adapters.registry import registered_adapters
 from app.core.db import among
 from app.core.errors import NotFoundError
@@ -83,6 +84,12 @@ def title_matches(job_title: str, wanted: Sequence[str]) -> bool:
     return any(want and want <= have for want in (title_words(t) for t in wanted))
 
 
+def _city_key(value: object) -> str:
+    """Compared the way Jobs store cities, so "Bangalore" matches "Bengaluru" even for
+    Preferences saved before cities were normalised."""
+    return (normalize_city(str(value)) or "").lower() if value else ""
+
+
 def location_matches(
     job_locations: Sequence[dict[str, object]],
     job_work_mode: str | None,
@@ -99,14 +106,14 @@ def location_matches(
     if not job_locations:
         return True  # unknown place: shown rather than silently missed
     for location in job_locations:
-        city = str(location.get("city") or "").lower()
+        city = _city_key(location.get("city"))
         country = str(location.get("country") or "").upper()
         remote = job_work_mode == "remote" or bool(location.get("remote"))
         if not country and not city:
             return True
         for place in wanted:
             want_country = str(place.get("country") or "").upper()
-            want_city = str(place.get("city") or "").lower()
+            want_city = _city_key(place.get("city"))
             if country and country != want_country:
                 continue
             if want_city and city and city != want_city and not remote:
@@ -147,7 +154,9 @@ async def _apply_links(
     considered: set[uuid.UUID] | None,
 ) -> None:
     """Adds matching Jobs; removes considered Jobs that no longer match, unless the User
-    hid them (their choice is kept if the Job comes back)."""
+    hid them (their choice is kept if the Job comes back) or has a Draft or Application
+    for them: those stay reachable from the tracker after the Job closes or Preferences
+    change."""
     rows = [{"id": uuid.uuid4(), "user_id": user_id, "job_id": j} for j in matching]
     # Three parameters per row; chunks stay far below asyncpg's 32,767 per statement.
     for start in range(0, len(rows), LINK_CHUNK):
@@ -160,6 +169,8 @@ async def _apply_links(
         UserJob.user_id == user_id,
         UserJob.hidden_at.is_(None),
         ~among(UserJob.job_id, matching),
+        ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
+        ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
     )
     if considered is not None:
         stale = stale.where(UserJob.job_id.in_(considered))
@@ -222,8 +233,13 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         UserJob.hidden_at.is_not(None) if query.hidden else UserJob.hidden_at.is_(None)
     )
     if query.q:
-        pattern = f"%{query.q.strip()}%"
-        stmt = stmt.where(or_(Job.title.ilike(pattern), Job.company_name.ilike(pattern)))
+        pattern = f"%{_like_literal(query.q.strip())}%"
+        stmt = stmt.where(
+            or_(
+                Job.title.ilike(pattern, escape="\\"),
+                Job.company_name.ilike(pattern, escape="\\"),
+            )
+        )
     if query.work_mode:
         stmt = stmt.where(Job.work_mode == query.work_mode.value)
     if query.source:
@@ -234,10 +250,15 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         stmt = stmt.where(
             text(
                 "EXISTS (SELECT 1 FROM jsonb_array_elements(jobs.locations) AS l "
-                "WHERE l->>'city' ILIKE :loc OR upper(l->>'country') = upper(:loc))"
-            ).bindparams(loc=query.location.strip())
+                "WHERE l->>'city' ILIKE :city ESCAPE '\\' OR upper(l->>'country') = upper(:loc))"
+            ).bindparams(city=_like_literal(query.location.strip()), loc=query.location.strip())
         )
     return stmt
+
+
+def _like_literal(value: str) -> str:
+    """A User's search text matched literally: "%" and "_" are not wildcards."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _section(stmt: Select[tuple[Job, UserJob]], with_email: bool) -> Select[tuple[Job, UserJob]]:

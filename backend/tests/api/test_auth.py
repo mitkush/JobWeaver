@@ -156,6 +156,7 @@ async def test_dev_login_is_off_unless_enabled(anon, monkeypatch):
 async def test_dev_login_never_works_in_production(anon, monkeypatch):
     monkeypatch.setenv("DEV_LOGIN_ENABLED", "true")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("PUBLIC_URL", "https://jobweaver.example")
     get_settings.cache_clear()
     response = await anon.post("/api/auth/dev-login", json={"email": "dev@example.com"})
     assert response.status_code == 404

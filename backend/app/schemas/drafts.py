@@ -50,6 +50,8 @@ class DraftOut(BaseModel):
     version: VersionOut | None
     application_status: str | None
     attachment_name: str
+    # The layout the resume fits on two pages in: Standard when it does, else Compact.
+    template: Literal["standard", "compact"] = "standard"
 
 
 class EmailCheck(BaseModel):

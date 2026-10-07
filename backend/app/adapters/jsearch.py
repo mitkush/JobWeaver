@@ -27,15 +27,9 @@ HOST = "jsearch.p.rapidapi.com"
 
 
 def date_posted_for(window: FetchWindow) -> str:
-    hours = window.hours
-    if hours <= 26:
-        return "today"
-    if hours <= 74:
-        return "3days"
-    if hours <= 7 * 24 + 2:
-        return "week"
-    if hours <= 31 * 24:
-        return "month"
+    for days, value in ((1, "today"), (3, "3days"), (7, "week"), (31, "month")):
+        if window.within_days(days):
+            return value
     return "all"
 
 

@@ -75,6 +75,12 @@ class SourceQuery(BaseModel):
         return f"{self.keywords.lower()}@{where}"[:300]
 
 
+# A daily window is 24 hours plus the fetcher's overlap (2 hours by default) plus a little
+# scheduling drift. Without slack, any drift tips a daily search into a "past week" filter
+# that is billed per record (Bright Data) or returns far more than is new.
+WINDOW_SLACK_HOURS = 3
+
+
 class FetchWindow(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -84,6 +90,10 @@ class FetchWindow(BaseModel):
     @property
     def hours(self) -> float:
         return (self.until - self.since).total_seconds() / 3600
+
+    def within_days(self, days: float) -> bool:
+        """True when a provider filter of the last `days` days covers this window."""
+        return self.hours <= days * 24 + WINDOW_SLACK_HOURS
 
 
 class NormalizedPosting(BaseModel):

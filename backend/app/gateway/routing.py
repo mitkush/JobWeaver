@@ -43,9 +43,9 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("groq", GROQ_LARGE),
         Route("openrouter", OPENROUTER_FREE),
     ],
-    # Once per upload and quality matters, so the strongest model goes first.
+    # Flash (about 20 calls a day) is reserved for Drafts and Draft Chat (FR-G4 AC1,
+    # COSTS.md); parsing is extraction work, so Flash-Lite goes first.
     "parse_documents": [
-        Route("gemini", GEMINI_FLASH),
         Route("gemini", GEMINI_FLASH_LITE),
         Route("groq", GROQ_LARGE),
         Route("openrouter", OPENROUTER_FREE),

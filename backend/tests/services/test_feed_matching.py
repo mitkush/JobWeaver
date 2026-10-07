@@ -121,3 +121,13 @@ def test_agreed_location_and_work_mode_rules(wanted, modes, job_places, job_mode
     """The table agreed for PR 4: location AND work mode, city ignored for WFH jobs."""
     pref = Preference(titles=["Backend Engineer"], locations=wanted, work_modes=modes)
     assert job_matches("Backend Engineer", job_places, job_mode, pref) is shown
+
+
+def test_typed_city_aliases_match_normalised_job_cities():
+    """Jobs store "Bengaluru"; a Preference typed (or saved earlier) as "Bangalore" or
+    "gurgaon" must still match onsite and hybrid Jobs there."""
+    job = [{"city": "Bengaluru", "country": "IN", "remote": False}]
+    assert location_matches(job, "hybrid", [{"city": "Bangalore", "country": "IN"}], ["hybrid"])
+    gurugram = [{"city": "Gurugram", "country": "IN", "remote": False}]
+    assert location_matches(gurugram, "onsite", [{"city": "gurgaon", "country": "IN"}], ["onsite"])
+    assert not location_matches(job, "hybrid", [{"city": "Pune", "country": "IN"}], ["hybrid"])

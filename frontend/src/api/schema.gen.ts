@@ -1208,6 +1208,12 @@ export interface components {
             application_status: string | null;
             /** Attachment Name */
             attachment_name: string;
+            /**
+             * Template
+             * @default standard
+             * @enum {string}
+             */
+            template?: "standard" | "compact";
         };
         /** DraftSave */
         DraftSave: {

@@ -202,11 +202,15 @@ async def test_failing_source_is_degraded_and_others_still_run(db, fetcher):
     by_name = {o.source: o for o in outcomes}
     assert by_name["fake-search"].status == "failed"
     assert by_name["fake-board"].status == "succeeded"
-    assert by_name["fake-keyless"].status == "failed"
+    # A missing key is not an outage: skipped, not Degraded, so Users see no notice.
+    assert (by_name["fake-keyless"].status, by_name["fake-keyless"].message) == (
+        "skipped",
+        "not configured",
+    )
     search = await source_row(db, "fake-search")
     assert search.state == SourceState.DEGRADED and search.last_error == "Fake Search is down"
     keyless = await source_row(db, "fake-keyless")
-    assert "not configured" in keyless.last_error
+    assert keyless.state == SourceState.HEALTHY and keyless.last_error is None
     assert await db.scalar(select(func.count()).select_from(Posting)) == 1
 
 
@@ -758,3 +762,35 @@ async def test_pending_adverts_are_stored_once_and_reopened_when_edited(db, fetc
         assert row.extracted_at is None and row.text.endswith("now remote")
     finally:
         FakeSearch.per_query = True
+
+
+async def test_every_search_in_a_run_ends_its_window_at_the_run_start(db, fetcher, clock):
+    """Slow searches must not push later ones past a 24 h window the next day."""
+    await add_preferences(db)  # two queries: hybrid and remote
+
+    class SlowSearch(FakeSearch):
+        async def fetch_window(self, query, window):
+            clock.now += timedelta(minutes=40)  # each search takes a while
+            return await super().fetch_window(query, window)
+
+    registry._REGISTRY["fake-search"] = SlowSearch
+    try:
+        await fetcher.run_source("fake-search")
+        assert {w.until for _, w in FakeSearch.windows} == {START}
+        FakeSearch.windows.clear()
+        clock.now = START + timedelta(days=1)
+        day_two = clock.now
+        await fetcher.run_source("fake-search")
+        assert all(w.until == day_two for _, w in FakeSearch.windows)
+        assert all(w.within_days(1) for _, w in FakeSearch.windows)
+    finally:
+        registry._REGISTRY["fake-search"] = FakeSearch
+
+
+async def test_a_standby_covers_a_main_source_that_has_no_key(db, fetcher, standby, monkeypatch):
+    await add_preferences(db)
+    # Only the main Source lacks its key; the standby (a subclass) keeps its own.
+    monkeypatch.setattr(FakeSearch, "is_configured", lambda self: type(self) is not FakeSearch)
+    outcomes = {o.source: o for o in await fetcher.run_all()}
+    assert outcomes["fake-search"].message == "not configured"
+    assert len(standby.windows) == 2

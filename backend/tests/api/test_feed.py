@@ -379,3 +379,14 @@ async def test_not_the_same_job_tolerates_an_existing_rejected_pair(alice, db):
     await db.commit()
     response = await client.post(f"/api/possible-duplicates/{pair.id}/reject")
     assert response.status_code == 204
+
+
+async def test_search_text_is_literal_not_a_wildcard(alice):
+    _, client = alice
+    await seed()
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    everything = (await client.get("/api/feed")).json()["counts"]
+    assert sum(everything.values()) > 0
+    percent = (await client.get("/api/feed", params={"q": "%"})).json()["counts"]
+    underscore = (await client.get("/api/feed", params={"q": "_"})).json()["counts"]
+    assert sum(percent.values()) == 0 and sum(underscore.values()) == 0

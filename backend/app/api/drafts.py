@@ -2,10 +2,12 @@ import uuid
 from typing import Annotated, Literal
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from sqlalchemy import select
 
 from app.adapters.gmail import GmailClient, get_gmail_client
+from app.adapters.links import get_link_http
 from app.api.deps import CurrentUser, DbSession, Gateway, Google
 from app.core.errors import ConflictError
 from app.models import DraftVersion
@@ -38,7 +40,9 @@ async def create(
     body: DraftCreate,
     gateway: Gateway,
     background: BackgroundTasks,
+    link_http: Annotated[httpx.AsyncClient, Depends(get_link_http)],
 ) -> DraftOut:
+    await drafting.ensure_link_open(db, user, body.job_id, link_http)
     draft = await drafting.create(db, user, body.job_id)
     await db.commit()
     result = await drafting.detail(db, user, draft.id)

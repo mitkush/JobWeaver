@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.adapters.gmail import get_gmail_client
 from app.api.deps import get_gateway
 from app.core.config import get_settings
-from app.core.errors import ExternalServiceError, GatewayError
+from app.core.errors import ExternalServiceError, GatewayError, ValidationFailedError
 from app.core.security import encrypt
 from app.gateway.recorded import RecordedAIGateway
 from app.main import app
@@ -28,6 +28,7 @@ from app.models import (
     GmailHandoff,
     Job,
     OAuthCredential,
+    Posting,
 )
 from app.schemas.drafts import EmailCheck
 from app.services import drafting
@@ -593,3 +594,104 @@ async def test_ai_cannot_mark_its_own_lines_as_manual_edits(prepared, monkeypatc
     assert "Ran Kubernetes at Google" not in texts
     assert not any(line["manual"] for line in draft["version"]["content"]["resume"])
     assert any(w.startswith("Removed a resume line") for w in draft["version"]["warnings"])
+
+
+async def test_page_opens_on_the_template_the_resume_fits_in(prepared, monkeypatch):
+    real = drafting.render_pdf
+
+    def compact_only(content, name, email, kind="resume", template="standard", facts=None):
+        if template == "standard":
+            raise ValidationFailedError("The resume exceeds two pages. Shorten it or use Compact.")
+        return real(content, name, email, kind, template, facts)
+
+    monkeypatch.setattr(drafting, "render_pdf", compact_only)
+    drafting._TEMPLATE_FITS.clear()
+    draft = await generated(prepared)
+    assert draft["template"] == "compact"
+
+
+async def test_a_pdf_problem_never_fails_generation(prepared, monkeypatch):
+    """A failed Draft has no editor, so it could never be fixed: it is saved with a warning
+    saying what to change instead."""
+
+    def unrenderable(*args, **kwargs):
+        raise ValidationFailedError("This PDF font cannot render a character. Edit it first.")
+
+    monkeypatch.setattr(drafting, "render_pdf", unrenderable)
+    drafting._TEMPLATE_FITS.clear()
+    draft = await generated(prepared)
+    assert draft["state"] == "ready"
+    assert any(w.startswith("PDF: This PDF font") for w in draft["version"]["warnings"])
+
+
+async def test_a_closed_apply_link_closes_the_job_before_any_ai_work(prepared, db):
+    """FR-B10 AC3: checked for free when the Draft is created."""
+    import httpx
+
+    from app.adapters.links import get_link_http
+
+    _, client, _, _ = prepared
+    link_job = (await client.get("/api/feed?section=link")).json()["items"][0]["job_id"]
+    dead = "https://jobs.acme.dev/backend/1"
+    await db.execute(
+        update(Posting).where(Posting.job_id == uuid.UUID(link_job)).values(apply_url=dead)
+    )
+    await db.execute(update(Job).where(Job.id == uuid.UUID(link_job)).values(apply_url=dead))
+    await db.commit()
+    app.dependency_overrides[get_link_http] = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404))
+    )
+    refused = await client.post("/api/drafts", json={"job_id": link_job})
+    assert refused.status_code == 409
+    assert "looks closed" in refused.json()["error"]["message"]
+    job = await db.get(Job, uuid.UUID(link_job))
+    await db.refresh(job)
+    assert job.expired_at is not None
+    assert (await db.scalars(select(Draft))).all() == []
+    posting = await db.scalar(select(Posting).where(Posting.job_id == uuid.UUID(link_job)))
+    await db.refresh(posting)
+    assert posting.closed_reason == "link"
+
+
+async def test_an_open_or_unreachable_link_never_blocks_a_draft(prepared, db):
+    """Only an explicit 404 or 410 closes a Job; a blocked or slow site is not evidence."""
+    import httpx
+
+    from app.adapters.links import get_link_http
+
+    _, client, job_id, _ = prepared
+    await db.execute(
+        update(Job).where(Job.id == uuid.UUID(job_id)).values(apply_url="https://x.dev/1")
+    )
+    await db.execute(
+        update(Posting)
+        .where(Posting.job_id == uuid.UUID(job_id))
+        .values(apply_url="https://x.dev/1")
+    )
+    await db.commit()
+    app.dependency_overrides[get_link_http] = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(403))
+    )
+    assert (await client.post("/api/drafts", json={"job_id": job_id})).status_code == 202
+
+
+async def test_moving_a_line_protects_it_like_an_edit(prepared):
+    """FR-E6: reordering or moving a line to another section is the User's edit."""
+    draft = await generated(prepared)
+    _, client, _, _ = prepared
+    content = draft["version"]["content"]
+    assert len(content["resume"]) >= 2
+    content["resume"] = [content["resume"][-1], *content["resume"][:-1]]
+    first = content["resume"][0]
+    content["resume"][1]["section"] = (
+        "Projects" if content["resume"][1]["section"] != "Projects" else "Summary"
+    )
+    saved = await client.put(
+        f"/api/drafts/{draft['id']}", json={"expected_version": 1, "content": content}
+    )
+    assert saved.status_code in (200, 204), saved.text
+    lines = (await client.get(f"/api/drafts/{draft['id']}")).json()["version"]["content"]["resume"]
+    by_id = {line["id"]: line for line in lines}
+    assert by_id[first["id"]]["manual"] is True
+    assert by_id[content["resume"][1]["id"]]["manual"] is True
+    assert all(not by_id[line["id"]]["manual"] for line in content["resume"][2:])

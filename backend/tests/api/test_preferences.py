@@ -52,3 +52,15 @@ async def test_saving_preferences_completes_onboarding(alice):
     _, client = alice
     await client.put("/api/preferences", json=VALID)
     assert (await client.get("/api/me")).json()["onboarding"]["preferences_set"] is True
+
+
+async def test_cities_are_saved_the_way_jobs_store_them(alice):
+    _, client = alice
+    body = {
+        "titles": ["Backend Engineer"],
+        "keywords": [],
+        "locations": [{"city": "Bangalore", "country": "IN"}],
+        "work_modes": ["hybrid"],
+    }
+    saved = (await client.put("/api/preferences", json=body)).json()
+    assert saved["locations"][0]["city"] == "Bengaluru"
