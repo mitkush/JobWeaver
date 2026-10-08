@@ -41,11 +41,13 @@ class Settings(BaseSettings):
 
     # Job Sources (Phase 2). A Source without its key is reported as not configured.
     brightdata_api_key: str = ""
+    brightdata_api_keys: str = Field(default="", repr=False)
     brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"
     rapidapi_key: str = ""
     # Phase 5 Sources. Apify's free $5 a month is shared by Naukri and LinkedIn (Apify).
     # Actor inputs are written for these actors; another actor needs its own mapping.
     apify_token: str = ""
+    apify_tokens: str = Field(default="", repr=False)
     apify_naukri_actor: str = "muhammetakkurtt~naukri-job-scraper"
     apify_naukri_max_jobs: int = 200
     # Full descriptions, needed for skills and contact emails (the actor's detail mode).

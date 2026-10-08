@@ -828,6 +828,7 @@ async def test_apify_account_balance_overrides_old_account_ledger(db, fetcher, m
             message="verified",
         )
 
+    fetcher.settings.apify_token = "test-primary"
     monkeypatch.setattr(fetching, "account_balance", account)
     db.add(
         FetchRun(source=FakeSearch.name, status="succeeded", credits_used=1000, created_at=START)
@@ -857,7 +858,130 @@ async def test_apify_unknown_or_exhausted_balance_stops_before_actor_call(
             message="unverified",
         )
 
+    fetcher.settings.apify_token = "test-primary"
     monkeypatch.setattr(fetching, "account_balance", account)
     with pytest.raises(SourceError):
         await fetcher._check_budget(db, AccountSearch(fetcher.http, fetcher.settings))
     assert FakeSearch.windows == []
+
+
+async def test_apify_backup_then_primary_after_renewal_preserves_checkpoints(
+    db, fetcher, clock, monkeypatch
+):
+    from app.models.fetch import QueryWatermark
+    from app.services import fetching
+    from app.services.account_balances import AccountBalance
+
+    tokens = []
+    renewed = False
+
+    class Accounts(FakeSearch):
+        name = "fake-apify"
+        budget_pool = "apify"
+
+        async def fetch_window(self, query, window):
+            tokens.append((self.settings.apify_token, window))
+            return FetchResult(postings=[posting("same-job")], credits_used=1)
+
+    registry.register_adapter(Accounts)
+    fetcher.settings.apify_token = "primary"
+    fetcher.settings.apify_tokens = "backup"
+    await add_preferences(db)
+
+    async def account(cls, http, settings, now, **kwargs):
+        remaining = 500 if settings.apify_token == "backup" or renewed else 0
+        return AccountBalance(status="live", remaining=remaining, message="verified")
+
+    monkeypatch.setattr(fetching, "account_balance", account)
+    assert (await fetcher.run_source(Accounts.name)).status == "succeeded"
+    assert all(token == "backup" for token, _ in tokens)
+    assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 2
+    tokens.clear()
+    # Already fetched: neither backfill nor re-billing when an account changes.
+    assert (await fetcher.run_source(Accounts.name)).status == "succeeded"
+    assert not tokens
+    renewed = True
+    clock.now += timedelta(days=1)
+    assert (await fetcher.run_source(Accounts.name)).status == "succeeded"
+    assert all(
+        token == "primary" and window.since == START - timedelta(hours=2)
+        for token, window in tokens
+    )
+    assert await db.scalar(select(func.count()).select_from(Posting)) == 1
+    runs = (await db.execute(select(FetchRun))).scalars().all()
+    assert len({run.credential_fingerprint for run in runs}) == 2
+    assert all(run.credential_fingerprint not in ("primary", "backup", None) for run in runs)
+
+
+@pytest.mark.parametrize("error", ["quota", "timeout", "billed"])
+async def test_only_unbilled_start_quota_rejection_can_retry_with_backup(
+    db, fetcher, monkeypatch, error
+):
+    from app.adapters.errors import SourceQuotaRejected
+
+    calls = []
+
+    class Accounts(FakeSearch):
+        name = "linkedin"
+        monthly_allowance = 5000
+
+        async def fetch_window(self, query, window):
+            calls.append((self.settings.brightdata_api_key, window))
+            if self.settings.brightdata_api_key == "primary":
+                if error == "quota":
+                    raise SourceQuotaRejected("No credits; search not started")
+                raise SourceUnavailable(
+                    "Failed after start" if error == "billed" else "Timed out",
+                    credits_used=3 if error == "billed" else 0,
+                )
+            return FetchResult(postings=[], credits_used=1)
+
+    registry.register_adapter(Accounts)
+    fetcher.settings.brightdata_api_key = "primary"
+    fetcher.settings.brightdata_api_keys = "backup"
+    await add_preferences(db)
+    outcome = await fetcher.run_source(Accounts.name)
+    if error == "quota":
+        assert outcome.status == "succeeded"
+        assert [token for token, _ in calls] == ["primary", "backup", "backup"]
+        assert calls[0][1] == calls[1][1]
+    else:
+        assert outcome.status == "failed"
+        assert [token for token, _ in calls] == ["primary"]
+    runs = (await db.execute(select(FetchRun))).scalars().all()
+    assert sum(run.credits_used for run in runs) == (
+        2 if error == "quota" else 3 if error == "billed" else 0
+    )
+
+
+async def test_brightdata_primary_and_backup_have_separate_spend(db, fetcher):
+    from app.services.fetching import budget_for
+    from app.services.provider_credentials import credentials
+
+    class Accounts(FakeSearch):
+        name = "linkedin"
+
+    registry.register_adapter(Accounts)
+    fetcher.settings.brightdata_api_key = "primary"
+    fetcher.settings.brightdata_api_keys = "backup,backup,primary"
+    options = credentials(Accounts, fetcher.settings)
+    assert len(options) == 2
+    db.add(FetchRun(source="linkedin", status="succeeded", credits_used=10, created_at=START))
+    db.add(
+        FetchRun(
+            source="linkedin",
+            status="succeeded",
+            credits_used=3,
+            created_at=START,
+            credential_fingerprint=options[1].fingerprint,
+        )
+    )
+    await db.flush()
+    primary = await budget_for(
+        db, Accounts, START, credential_fingerprint=options[0].fingerprint, include_legacy=True
+    )
+    backup = await budget_for(db, Accounts, START, credential_fingerprint=options[1].fingerprint)
+    assert primary.spent == 10 and backup.spent == 3
+    adapter = Accounts(fetcher.http, fetcher.settings)
+    await fetcher._check_budget(db, adapter)
+    assert adapter.settings.brightdata_api_key == "backup" and adapter.allowance_left == 7

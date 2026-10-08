@@ -22,6 +22,7 @@ class FetchRun(Base):
     __table_args__ = (Index("idx_fetch_runs_source_created", "source", "created_at"),)
 
     source: Mapped[str] = mapped_column(String(64))
+    credential_fingerprint: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus, name="run_status", values_callable=lambda e: [m.value for m in e])
     )

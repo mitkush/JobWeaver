@@ -18,7 +18,12 @@ from app.adapters.base import (
     SourceQuery,
     WindowedSourceAdapter,
 )
-from app.adapters.errors import SourceBadResponse, SourceUnavailable
+from app.adapters.errors import (
+    SourceBadResponse,
+    SourceQuotaRejected,
+    SourceUnavailable,
+    quota_rejected,
+)
 from app.adapters.normalize import (
     country_display,
     extract_contact_email,
@@ -73,7 +78,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         self.sleep = sleep
 
     def is_configured(self) -> bool:
-        return bool(self.settings.brightdata_api_key)
+        return bool(self.settings.brightdata_api_key or self.settings.brightdata_api_keys)
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -117,6 +122,10 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             headers=self._headers,
             json=payload,
         )
+        if quota_rejected(response):
+            raise SourceQuotaRejected(
+                f"{self.label} account credits exhausted before search started"
+            )
         self.check_response(self.label, response)
         snapshot_id = response.json().get("snapshot_id")
         if not snapshot_id:

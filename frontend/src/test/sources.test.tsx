@@ -265,3 +265,29 @@ it.each(["unsupported", "unavailable"] as const)("labels %s balances as unknown 
   expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
   expect(screen.queryByText(/available for searches/)).not.toBeInTheDocument();
 });
+
+it("shows backup account credits and each account's remaining allowance", async () => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: {
+        ...linkedin.budget!, tracked_account: "Backup account 1",
+        account: {
+          status: "live", account_label: "Backup account 1", allowance: 500, spent: 0,
+          remaining: 500, unit: "US cents", checked_at: inDays(0), renews_on: inDays(25),
+          message: "Account-wide usage",
+          accounts: [
+            { label: "Primary account", status: "live", remaining: 0, renews_on: inDays(5) },
+            { label: "Backup account 1", status: "live", remaining: 500, renews_on: inDays(25) },
+          ],
+        },
+      },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("Apify credits — Backup account 1")).toBeInTheDocument();
+  expect(screen.getByText(/Primary account: 0 US cents available/)).toBeInTheDocument();
+  expect(screen.getByText(/Backup account 1: 500 US cents available/)).toBeInTheDocument();
+  await expectAccessible();
+});

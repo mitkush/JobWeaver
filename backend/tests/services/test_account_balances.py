@@ -138,3 +138,23 @@ async def test_brightdata_free_credits_are_unknown_not_dollars():
     async with httpx.AsyncClient(transport=httpx.MockTransport(no_call)) as http:
         result = await account_balances.account_balance(BrightData, http, Settings(), NOW)
     assert result.status == "unsupported" and result.remaining is None
+
+
+async def test_status_lists_account_limits_and_selects_backup_then_renewed_primary():
+    renewed = False
+
+    def handler(request):
+        primary = request.headers["Authorization"] == "Bearer primary"
+        return response(request, usage=0 if not primary or renewed else 5)
+
+    settings = Settings(apify_token="primary", apify_tokens="backup")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await account_balances.account_status(Apify, http, settings, NOW)
+        assert result.account_label == "Backup account 1" and result.remaining == 500
+        assert [a.remaining for a in result.accounts] == [0, 500]
+        renewed = True
+        account_balances._cache.clear()
+        result = await account_balances.account_status(Apify, http, settings, NOW)
+        assert result.account_label == "Primary account" and result.remaining == 500
+        assert "primary" not in result.model_dump_json()
+        assert "backup" not in result.model_dump_json()

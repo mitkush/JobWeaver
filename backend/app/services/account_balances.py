@@ -15,9 +15,21 @@ from pydantic import BaseModel
 
 from app.adapters.base import SourceAdapter
 from app.core.config import Settings
+from app.services.provider_credentials import credentials
+
+
+class AccountCredit(BaseModel):
+    label: str
+    status: Literal["live", "unavailable", "unsupported"]
+    allowance: int | None = None
+    spent: int | None = None
+    remaining: int | None = None
+    renews_on: datetime | None = None
 
 
 class AccountBalance(BaseModel):
+    account_label: str = "Primary account"
+    accounts: list[AccountCredit] = []
     status: Literal["live", "unavailable", "unsupported"]
     allowance: int | None = None
     spent: int | None = None
@@ -115,9 +127,51 @@ async def account_balance(
             )
         # Bound the cache and retry failures soon. A failed refresh never displays an old
         # balance as current, and a new token cannot inherit another account's usage.
-        _cache.clear()
+        for key, (expiry, _) in list(_cache.items()):
+            if expiry <= now:
+                del _cache[key]
+        if len(_cache) >= 32:
+            _cache.clear()
         expiry = now + timedelta(seconds=60 if result.status == "live" else 15)
         if result.renews_on:
             expiry = min(expiry, result.renews_on)
         _cache[fingerprint] = (expiry, result)
         return result
+
+
+async def account_status(
+    adapter: type[SourceAdapter],
+    http: httpx.AsyncClient,
+    settings: Settings,
+    now: datetime,
+) -> AccountBalance | None:
+    options = credentials(adapter, settings)
+    if not options:
+        return await account_balance(adapter, http, settings, now)
+    balances = [await account_balance(adapter, http, option.settings, now) for option in options]
+    # Same ordering as fetching: an unverifiable primary does not silently spend elsewhere.
+    index = 0
+    if adapter.budget_pool == "apify":
+        while (
+            index < len(balances) - 1
+            and balances[index].status == "live"
+            and not balances[index].remaining
+        ):
+            index += 1
+    selected = balances[index]
+    return selected.model_copy(
+        update={
+            "account_label": options[index].label,
+            "accounts": [
+                AccountCredit(
+                    label=option.label,
+                    status=balance.status,
+                    allowance=balance.allowance,
+                    spent=balance.spent,
+                    remaining=balance.remaining,
+                    renews_on=balance.renews_on,
+                )
+                for option, balance in zip(options, balances, strict=True)
+            ],
+        }
+    )

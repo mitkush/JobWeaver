@@ -19,8 +19,19 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium">
-        {live ? "Apify account credits" : "JobWeaver tracked usage (estimate)"}
+        {live ? `Apify credits — ${account.account_label ?? "Primary account"}` : "JobWeaver tracked usage (estimate)"}
       </p>
+      {budget.tracked_account && <p className="text-xs text-slate-500">Tracked search costs: {budget.tracked_account}</p>}
+      {account?.accounts && account.accounts.length > 1 && (
+        <ul className="text-xs text-slate-500">
+          {account.accounts.map((a) => (
+            <li key={a.label}>
+              {a.label}: {a.status === "live" ? `${a.remaining?.toLocaleString()} US cents available` : "balance unavailable"}
+              {a.renews_on && ` · renews ${shortDate(a.renews_on)}`}
+            </li>
+          ))}
+        </ul>
+      )}
       {account && !live && (
         <p className="text-xs text-amber-700 dark:text-amber-300">{account.message}</p>
       )}

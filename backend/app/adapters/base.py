@@ -155,6 +155,8 @@ class SourceAdapter(ABC):
         # Set by the fetcher before each call on metered Sources, so providers that take a
         # spending cap (Apify) stop at the budget instead of overrunning it.
         self.allowance_left: int | None = None
+        self.credential_fingerprint: str | None = None
+        self.exhausted_credentials: set[str] = set()
 
     def is_configured(self) -> bool:
         return True

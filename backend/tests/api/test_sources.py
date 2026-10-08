@@ -221,7 +221,7 @@ async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypat
             status="live", allowance=500, spent=500, remaining=0, message="Account-wide usage"
         )
 
-    monkeypatch.setattr(source_status, "account_balance", account)
+    monkeypatch.setattr(source_status, "account_status", account)
     _, client = admin
     budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
     assert budget["spent"] == 281

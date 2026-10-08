@@ -14,7 +14,13 @@ from typing import Any
 import httpx
 
 from app.adapters.base import FetchResult, FetchWindow, SourceQuery, WindowedSourceAdapter
-from app.adapters.errors import SourceBadResponse, SourceError, SourceUnavailable
+from app.adapters.errors import (
+    SourceBadResponse,
+    SourceError,
+    SourceQuotaRejected,
+    SourceUnavailable,
+    quota_rejected,
+)
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -67,7 +73,7 @@ class ApifyAdapter(WindowedSourceAdapter):
         raise NotImplementedError
 
     def is_configured(self) -> bool:
-        return bool(self.settings.apify_token)
+        return bool(self.settings.apify_token or self.settings.apify_tokens)
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -133,6 +139,10 @@ class ApifyAdapter(WindowedSourceAdapter):
         response = await self.http.post(
             f"{API}/acts/{self.actor()}/runs", params=params, headers=self._headers, json=payload
         )
+        if quota_rejected(response):
+            raise SourceQuotaRejected(
+                f"{self.label} account credits exhausted before search started"
+            )
         self.check_response(self.label, response)
         run = response.json().get("data")
         if not isinstance(run, dict) or not run.get("id"):

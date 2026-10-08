@@ -15,6 +15,7 @@ class QuerySpend(BaseModel):
 
 class BudgetOut(BaseModel):
     account: AccountBalance | None = None
+    tracked_account: str | None = None
     allowance: int
     unit: str
     spent: int

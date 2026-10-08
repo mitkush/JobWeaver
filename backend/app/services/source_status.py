@@ -21,8 +21,9 @@ from app.schemas.sources import (
     SourceNotice,
     SourceStatusOut,
 )
-from app.services.account_balances import account_balance
+from app.services.account_balances import account_status
 from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
+from app.services.provider_credentials import credentials
 
 NOTICE_AFTER = timedelta(days=1)
 
@@ -54,7 +55,30 @@ async def list_statuses(
     for cls in registered_adapters():
         source = rows.get(cls.name)
         adapter = cls(get_sources_http(), get_settings())
-        budget = await budget_for(session, cls, now)
+        account = (
+            await account_status(cls, get_sources_http(), get_settings(), now)
+            if adapter.is_configured()
+            else None
+        )
+        options = credentials(cls, get_settings())
+        tracked = None
+        if options:
+            latest = await session.scalar(
+                select(FetchRun.credential_fingerprint)
+                .where(FetchRun.source.in_(pool_of(cls)))
+                .order_by(FetchRun.created_at.desc())
+                .limit(1)
+            )
+            tracked = next((c for c in options if c.fingerprint == latest), options[0])
+            if cls.budget_pool == "apify" and account:
+                tracked = next((c for c in options if c.label == account.account_label), tracked)
+        budget = await budget_for(
+            session,
+            cls,
+            now,
+            credential_fingerprint=tracked.fingerprint if tracked else None,
+            include_legacy=tracked.primary if tracked else False,
+        )
         boards = None
         if issubclass(cls, SnapshotSourceAdapter):
             boards = int(
@@ -89,9 +113,8 @@ async def list_statuses(
                 budget=None
                 if budget is None
                 else BudgetOut(
-                    account=await account_balance(cls, get_sources_http(), get_settings(), now)
-                    if adapter.is_configured()
-                    else None,
+                    account=account,
+                    tracked_account=tracked.label if tracked else None,
                     allowance=budget.allowance,
                     unit=budget.unit,
                     spent=budget.spent,

@@ -975,6 +975,16 @@ export interface components {
         /** AccountBalance */
         AccountBalance: {
             /**
+             * Account Label
+             * @default Primary account
+             */
+            account_label?: string;
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts?: components["schemas"]["AccountCredit"][];
+            /**
              * Status
              * @enum {string}
              */
@@ -998,6 +1008,24 @@ export interface components {
             renews_on?: string | null;
             /** Message */
             message: string;
+        };
+        /** AccountCredit */
+        AccountCredit: {
+            /** Label */
+            label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "live" | "unavailable" | "unsupported";
+            /** Allowance */
+            allowance?: number | null;
+            /** Spent */
+            spent?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /** Renews On */
+            renews_on?: string | null;
         };
         /** ApplicationOut */
         ApplicationOut: {
@@ -1081,6 +1109,8 @@ export interface components {
         /** BudgetOut */
         BudgetOut: {
             account?: components["schemas"]["AccountBalance"] | null;
+            /** Tracked Account */
+            tracked_account?: string | null;
             /** Allowance */
             allowance: number;
             /** Unit */
