@@ -70,7 +70,7 @@ async def list_statuses(
                 .limit(1)
             )
             tracked = next((c for c in options if c.fingerprint == latest), options[0])
-            if cls.budget_pool == "apify" and account:
+            if cls.account_balance_required and account:
                 tracked = next((c for c in options if c.label == account.account_label), tracked)
         budget = await budget_for(
             session,

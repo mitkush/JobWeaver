@@ -264,6 +264,9 @@ it.each(["unsupported", "unavailable"] as const)("labels %s balances as unknown 
   expect(screen.getByText("Actual account credits could not be verified.")).toBeInTheDocument();
   expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
   expect(screen.queryByText(/available for searches/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.getByText("3,000 credits tracked; account credits unknown")).toBeInTheDocument();
+  expect(screen.queryByText("3,000 / 5,000 credits")).not.toBeInTheDocument();
 });
 
 it("shows backup account credits and each account's remaining allowance", async () => {
@@ -286,7 +289,7 @@ it("shows backup account credits and each account's remaining allowance", async 
     "GET /api/admin/fetch-runs": () => json([]),
   });
   renderWithApp(<AdminSourcesPage />);
-  expect(await screen.findByText("Apify credits — Backup account 1")).toBeInTheDocument();
+  expect(await screen.findByText("Account credits - Backup account 1")).toBeInTheDocument();
   expect(screen.getByText(/Primary account: 0 US cents available/)).toBeInTheDocument();
   expect(screen.getByText(/Backup account 1: 500 US cents available/)).toBeInTheDocument();
   await expectAccessible();

@@ -1106,7 +1106,10 @@ export interface components {
             /** File */
             file: string;
         };
-        /** BudgetOut */
+        /**
+         * BudgetOut
+         * @description Local tracking guard and spend; verified provider values live under account.
+         */
         BudgetOut: {
             account?: components["schemas"]["AccountBalance"] | null;
             /** Tracked Account */

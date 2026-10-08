@@ -811,11 +811,13 @@ def test_core_keywords_are_searched_only_when_the_user_chose_it():
 
 
 async def test_apify_account_balance_overrides_old_account_ledger(db, fetcher, monkeypatch):
+    from app.schemas.account_balances import AccountBalance
     from app.services import fetching
-    from app.services.account_balances import AccountBalance
 
     class AccountSearch(FakeSearch):
         budget_pool = "apify"
+        credential_settings = ("apify_token", "apify_tokens")
+        account_balance_required = True
 
     async def account(*args, **kwargs):
         assert kwargs["force"] is True
@@ -844,11 +846,13 @@ async def test_apify_unknown_or_exhausted_balance_stops_before_actor_call(
     db, fetcher, monkeypatch, status, remaining
 ):
     from app.adapters.errors import SourceError
+    from app.schemas.account_balances import AccountBalance
     from app.services import fetching
-    from app.services.account_balances import AccountBalance
 
     class AccountSearch(FakeSearch):
         budget_pool = "apify"
+        credential_settings = ("apify_token", "apify_tokens")
+        account_balance_required = True
 
     async def account(*args, **kwargs):
         return AccountBalance(
@@ -869,8 +873,8 @@ async def test_apify_backup_then_primary_after_renewal_preserves_checkpoints(
     db, fetcher, clock, monkeypatch
 ):
     from app.models.fetch import QueryWatermark
+    from app.schemas.account_balances import AccountBalance
     from app.services import fetching
-    from app.services.account_balances import AccountBalance
 
     tokens = []
     renewed = False
@@ -878,6 +882,8 @@ async def test_apify_backup_then_primary_after_renewal_preserves_checkpoints(
     class Accounts(FakeSearch):
         name = "fake-apify"
         budget_pool = "apify"
+        credential_settings = ("apify_token", "apify_tokens")
+        account_balance_required = True
 
         async def fetch_window(self, query, window):
             tokens.append((self.settings.apify_token, window))
@@ -923,6 +929,7 @@ async def test_only_unbilled_start_quota_rejection_can_retry_with_backup(
 
     class Accounts(FakeSearch):
         name = "linkedin"
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
         monthly_allowance = 5000
 
         async def fetch_window(self, query, window):
@@ -960,6 +967,7 @@ async def test_brightdata_primary_and_backup_have_separate_spend(db, fetcher):
 
     class Accounts(FakeSearch):
         name = "linkedin"
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
 
     registry.register_adapter(Accounts)
     fetcher.settings.brightdata_api_key = "primary"
@@ -985,3 +993,32 @@ async def test_brightdata_primary_and_backup_have_separate_spend(db, fetcher):
     adapter = Accounts(fetcher.http, fetcher.settings)
     await fetcher._check_budget(db, adapter)
     assert adapter.settings.brightdata_api_key == "backup" and adapter.allowance_left == 7
+
+
+async def test_new_provider_declares_credentials_and_balance_without_service_branches(db, fetcher):
+    from app.schemas.account_balances import AccountBalance
+    from app.services.account_balances import account_status
+
+    class NewProvider(FakeSearch):
+        name = "third-provider"
+        budget_pool = "new-provider-pool"
+        credential_settings = ("groq_api_key", "brightdata_api_keys")
+        account_balance_required = True
+
+        async def account_balance(self, now, *, force=False):
+            return AccountBalance(
+                status="live",
+                allowance=10,
+                spent=0,
+                remaining=0 if self.settings.groq_api_key == "primary" else 10,
+                message="verified",
+            )
+
+    fetcher.settings.groq_api_key = "primary"
+    fetcher.settings.brightdata_api_keys = "backup"
+    adapter = NewProvider(fetcher.http, fetcher.settings)
+    await fetcher._check_budget(db, adapter)
+    assert adapter.settings.groq_api_key == "backup" and adapter.allowance_left == 10
+    account = await account_status(NewProvider, fetcher.http, fetcher.settings, START)
+    assert account.account_label == "Backup account 1"
+    assert [a.remaining for a in account.accounts] == [0, 10]

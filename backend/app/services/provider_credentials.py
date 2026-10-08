@@ -16,18 +16,10 @@ class Credential:
 
 
 def credentials(adapter: type[SourceAdapter], settings: Settings) -> list[Credential]:
-    if adapter.budget_pool == "apify":
-        key, backups = (
-            "apify_token",
-            [key.strip() for key in settings.apify_tokens.split(",") if key.strip()],
-        )
-    elif adapter.name == "linkedin":
-        key, backups = (
-            "brightdata_api_key",
-            [key.strip() for key in settings.brightdata_api_keys.split(",") if key.strip()],
-        )
-    else:
+    if adapter.credential_settings is None:
         return []
+    key, extra_keys = adapter.credential_settings
+    backups = [token.strip() for token in getattr(settings, extra_keys).split(",") if token.strip()]
     options = [("Primary account", getattr(settings, key), True)]
     options += [(f"Backup account {i}", token, False) for i, token in enumerate(backups, 1)]
     result = []

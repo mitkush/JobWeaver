@@ -518,12 +518,14 @@ class Fetcher:
         for credential in options:
             if credential.fingerprint in adapter.exhausted_credentials:
                 continue
-            if type(adapter).budget_pool == "apify":
+            if adapter.account_balance_required:
                 account = await account_balance(
                     type(adapter), self.http, credential.settings, self.clock(), force=True
                 )
-                if account.status != "live":
-                    raise SourceUnavailable(account.message)
+                if account is None or account.status != "live":
+                    raise SourceUnavailable(
+                        account.message if account else "Account balance could not be verified"
+                    )
                 remaining = account.remaining
             else:
                 budget = await budget_for(

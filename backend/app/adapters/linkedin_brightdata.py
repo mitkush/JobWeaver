@@ -6,7 +6,7 @@ because the exact names could not be checked against a live response when this w
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -34,6 +34,7 @@ from app.adapters.normalize import (
 )
 from app.adapters.registry import register_adapter
 from app.core.config import Settings
+from app.schemas.account_balances import AccountBalance
 
 API = "https://api.brightdata.com/datasets/v3"
 
@@ -59,6 +60,7 @@ def time_range_for(window: FetchWindow) -> str:
 
 @register_adapter
 class LinkedInBrightDataAdapter(WindowedSourceAdapter):
+    credential_settings = ("brightdata_api_key", "brightdata_api_keys")
     name = "linkedin"
     label = "LinkedIn (Bright Data)"
     priority = 1
@@ -76,6 +78,15 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     ) -> None:
         super().__init__(http, settings)
         self.sleep = sleep
+
+    async def account_balance(self, now: datetime, *, force: bool = False) -> AccountBalance:
+        return AccountBalance(
+            status="unsupported",
+            unit="credits",
+            message="Bright Data does not expose free-credit balances through its API. "
+            "Account allowance and remaining credits are unknown. Check its Free credits card; "
+            "JobWeaver's tracked count excludes other usage.",
+        )
 
     def is_configured(self) -> bool:
         return bool(self.settings.brightdata_api_key or self.settings.brightdata_api_keys)
