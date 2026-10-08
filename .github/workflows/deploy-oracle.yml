@@ -1,0 +1,61 @@
+name: Deploy to Oracle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: oracle-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '92.4.68.22' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Require passing CI on the exact main commit
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          commit=$(git rev-parse HEAD)
+          result=$(gh run list --workflow ci.yml --event push --commit "$commit" --limit 1 --json conclusion --jq '.[0].conclusion')
+          test "$result" = success || { echo 'Main CI must pass before deploying. Run again when it passes.'; exit 1; }
+          echo "DEPLOY_COMMIT=$commit" >> "$GITHUB_ENV"
+      - name: Build production image on GitHub
+        run: |
+          docker build -t "jobweaver:$DEPLOY_COMMIT" .
+          docker save "jobweaver:$DEPLOY_COMMIT" | gzip > "$RUNNER_TEMP/jobweaver-image.tar.gz"
+      - name: Configure verified SSH connection
+        env:
+          SSH_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          [[ "$ORACLE_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_oracle
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_oracle ~/.ssh/known_hosts
+      - name: Upload and deploy image
+        run: |
+          set -euo pipefail
+          remote_dir="/tmp/jobweaver-deploy-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ssh -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "ubuntu@$ORACLE_HOST" "umask 077; mkdir -p '$remote_dir'"
+          scp -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/jobweaver-image.tar.gz" scripts/deploy-oracle.sh "ubuntu@$ORACLE_HOST:$remote_dir/"
+          ssh -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "ubuntu@$ORACLE_HOST" "bash '$remote_dir/deploy-oracle.sh' '$remote_dir/jobweaver-image.tar.gz' '$DEPLOY_COMMIT'"
+      - name: Verify public HTTPS
+        run: curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 15 https://jobweaver.duckdns.org/health
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_oracle
