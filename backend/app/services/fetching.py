@@ -49,6 +49,7 @@ from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
 from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
+from app.services.account_balances import account_balance
 
 logger = logging.getLogger(__name__)
 
@@ -501,6 +502,19 @@ class Fetcher:
             logger.warning("Source %s degraded: %s", source.name, exc.message)
 
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
+        account = await account_balance(
+            type(adapter), self.http, self.settings, self.clock(), force=True
+        )
+        if account and type(adapter).budget_pool == "apify":
+            if account.status != "live":
+                raise SourceUnavailable(account.message)
+            adapter.allowance_left = account.remaining
+            if not account.remaining:
+                raise SourceErrorBudget(
+                    "Apify account's included credits or spending limit used up; "
+                    f"usage cycle ends {account.renews_on:%d %b %Y}"
+                )
+            return
         budget = await budget_for(session, type(adapter), self.clock())
         adapter.allowance_left = budget.allowance - budget.spent if budget else None
         if budget and budget.exhausted:

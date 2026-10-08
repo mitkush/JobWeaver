@@ -808,3 +808,56 @@ def test_core_keywords_are_searched_only_when_the_user_chose_it():
     pref.search_keywords = True
     keys = sorted(q.keywords for q in queries_from_preferences([pref]))
     assert keys == ["Backend Engineer", "Ruby on Rails"]
+
+
+async def test_apify_account_balance_overrides_old_account_ledger(db, fetcher, monkeypatch):
+    from app.services import fetching
+    from app.services.account_balances import AccountBalance
+
+    class AccountSearch(FakeSearch):
+        budget_pool = "apify"
+
+    async def account(*args, **kwargs):
+        assert kwargs["force"] is True
+        return AccountBalance(
+            status="live",
+            allowance=500,
+            spent=100,
+            remaining=400,
+            renews_on=START + timedelta(days=30),
+            message="verified",
+        )
+
+    monkeypatch.setattr(fetching, "account_balance", account)
+    db.add(
+        FetchRun(source=FakeSearch.name, status="succeeded", credits_used=1000, created_at=START)
+    )
+    await db.flush()
+    adapter = AccountSearch(fetcher.http, fetcher.settings)
+    await fetcher._check_budget(db, adapter)
+    assert adapter.allowance_left == 400
+
+
+@pytest.mark.parametrize("status,remaining", [("live", 0), ("unavailable", None)])
+async def test_apify_unknown_or_exhausted_balance_stops_before_actor_call(
+    db, fetcher, monkeypatch, status, remaining
+):
+    from app.adapters.errors import SourceError
+    from app.services import fetching
+    from app.services.account_balances import AccountBalance
+
+    class AccountSearch(FakeSearch):
+        budget_pool = "apify"
+
+    async def account(*args, **kwargs):
+        return AccountBalance(
+            status=status,
+            remaining=remaining,
+            renews_on=START + timedelta(days=30),
+            message="unverified",
+        )
+
+    monkeypatch.setattr(fetching, "account_balance", account)
+    with pytest.raises(SourceError):
+        await fetcher._check_budget(db, AccountSearch(fetcher.http, fetcher.settings))
+    assert FakeSearch.windows == []

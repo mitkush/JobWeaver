@@ -76,3 +76,13 @@ Revisit this file when:
 - the AI Gateway falls back past Gemini on most days,
 - the User count grows beyond the founder's private group, or
 - before any public or paid launch (ADR-0012).
+
+### Account balances versus tracked usage (8 Oct 2026)
+
+JobWeaver's `FetchRun.credits_used` ledger only counts its own recorded searches. It misses outside activity and some provider charges after failed responses, so it is not an account balance.
+
+Apify's [private user data](https://docs.apify.com/api/v2/users-me-get) supplies included plan credits; [account limits](https://docs.apify.com/api/v2/users-me-limits-get) supplies current usage, the spending limit and the actual usage cycle. The Sources page shows account-wide usage and remaining included credits separately from local query costs. Fetches read the account again before starting each paid search, cap actor charges at the remaining included credits or spending limit, and pause if the account cannot be verified. Balances may lag recent provider charges. Nothing here enables spending above included credits.
+
+Bright Data's [balance API documentation](https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API#is-there-an-api-endpoint-for-free-tier-credit-status) explicitly states that no Account Management API returns the free-tier credit balance. Its USD balance is not the 5,000-credit pool. The Sources page labels local usage as an estimate and directs the admin to the Free credits card. The existing local allowance guard remains, but cannot guarantee account-wide credit availability.
+
+The cache is scoped to a credential fingerprint and never stores raw tokens or exposes account identity. Updating credentials does not delete jobs, search watermarks or historical spend. No database migration is needed for this change.

@@ -21,6 +21,7 @@ from app.schemas.sources import (
     SourceNotice,
     SourceStatusOut,
 )
+from app.services.account_balances import account_balance
 from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
 
 NOTICE_AFTER = timedelta(days=1)
@@ -88,6 +89,9 @@ async def list_statuses(
                 budget=None
                 if budget is None
                 else BudgetOut(
+                    account=await account_balance(cls, get_sources_http(), get_settings(), now)
+                    if adapter.is_configured()
+                    else None,
                     allowance=budget.allowance,
                     unit=budget.unit,
                     spent=budget.spent,
