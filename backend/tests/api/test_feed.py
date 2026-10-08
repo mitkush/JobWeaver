@@ -1,6 +1,6 @@
 """Feed and Correspondence endpoints, including cross-user isolation (FR-D1 AC1, ADR-0001)."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -148,10 +148,13 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     ) is not None
 
 
-async def test_sections_filters_and_search(alice):
+async def test_sections_filters_and_search(alice, db):
     _, client = alice
     await client.put("/api/preferences", json=BACKEND_BLR)
     await seed()
+    # The Feed filters by the real clock, so the fixed seed date would age out.
+    await db.execute(update(Job).values(posted_at=datetime.now(UTC) - timedelta(days=1)))
+    await db.commit()
     link_only = (await client.get("/api/feed", params={"section": "link"})).json()
     assert [c["company"] for c in link_only["items"]] == ["Globex"]
 
@@ -173,7 +176,7 @@ async def test_posted_within_uses_the_earliest_posting_date(alice, db):
     _, client = alice
     await client.put("/api/preferences", json=BACKEND_BLR)
     await seed()
-    await db.execute(update(Job).values(posted_at=NOW - timedelta(days=10)))
+    await db.execute(update(Job).values(posted_at=datetime.now(UTC) - timedelta(days=10)))
     await db.commit()
     assert (await client.get("/api/feed", params={"posted_within_days": 7})).json()["total"] == 0
 
