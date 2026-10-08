@@ -134,16 +134,33 @@ class TestJSearch:
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen.append(request)
-            return httpx.Response(200, json={"status": "OK", "data": [self.JOB, {"job_id": None}]})
+            return httpx.Response(
+                200,
+                json={
+                    "status": "OK",
+                    "data": {"jobs": [self.JOB, {"job_id": None}], "cursor": None},
+                },
+            )
 
         async with http(handler) as client:
             result = await JSearchAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
         params = seen[0].url.params
+        assert seen[0].url.path == "/search-v2"
         assert params["query"] == "Backend Engineer in Bengaluru, India"
         assert params["date_posted"] == "today" and params["country"] == "in"
         assert seen[0].headers["x-rapidapi-key"] == "rapid-key"
         assert result.credits_used == 1 and len(result.postings) == 1
         assert result.postings[0].locations[0].city == "Bengaluru"
+
+    async def test_empty_v2_search_is_a_successful_fetch(self):
+        async with http(
+            lambda r: httpx.Response(
+                200, json={"status": "OK", "data": {"jobs": [], "cursor": None}}
+            )
+        ) as client:
+            result = await JSearchAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+        assert result.postings == []
+        assert result.credits_used == 1
 
     def test_date_filter_widens_for_catch_up(self):
         assert date_posted_for(FetchWindow(since=NOW - timedelta(days=2), until=NOW)) == "3days"

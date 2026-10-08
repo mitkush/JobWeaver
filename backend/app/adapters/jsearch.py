@@ -64,7 +64,7 @@ class JSearchAdapter(WindowedSourceAdapter):
         if loc and loc.remote:
             params["work_from_home"] = "true"
         response = await self.http.get(
-            f"https://{HOST}/search",
+            f"https://{HOST}/search-v2",
             params=params,
             headers={"X-RapidAPI-Key": self.settings.rapidapi_key, "X-RapidAPI-Host": HOST},
         )
@@ -81,6 +81,8 @@ class JSearchAdapter(WindowedSourceAdapter):
                 "JSearch returned data JobWeaver could not read", credits_used=1
             ) from exc
         data = body.get("data") if isinstance(body, dict) else None
+        if isinstance(data, dict):
+            data = data.get("jobs")
         if not isinstance(data, list):
             raise SourceBadResponse("JSearch returned an unexpected response", credits_used=1)
         postings = [p for job in data if (p := self._to_posting(job)) is not None]
