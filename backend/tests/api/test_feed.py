@@ -22,6 +22,7 @@ from app.models import (
     RejectedPair,
     RunStatus,
 )
+from app.services import feed as feed_service
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from app.services.feed import sync_all_feeds
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
@@ -56,6 +57,17 @@ async def process(**overrides) -> None:
 @pytest.fixture(autouse=True)
 def _recorded_gateway():
     app.dependency_overrides[get_gateway] = gateway
+
+
+@pytest.fixture(autouse=True)
+def _feed_clock(monkeypatch):
+    # Seeded postings use NOW; relative date filters must use that same clock.
+    list_feed = feed_service.list_feed
+
+    async def at_fixture_time(session, user, query, now=None):
+        return await list_feed(session, user, query, now=NOW if now is None else now)
+
+    monkeypatch.setattr(feed_service, "list_feed", at_fixture_time)
 
 
 async def seed() -> None:
