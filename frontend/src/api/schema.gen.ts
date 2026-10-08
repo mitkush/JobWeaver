@@ -972,6 +972,33 @@ export interface components {
             /** Tasks Last 7 Days */
             tasks_last_7_days: components["schemas"]["TaskUsage"][];
         };
+        /** AccountBalance */
+        AccountBalance: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "live" | "unavailable" | "unsupported";
+            /** Allowance */
+            allowance?: number | null;
+            /** Spent */
+            spent?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /**
+             * Unit
+             * @default US cents
+             */
+            unit?: string;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Period Start */
+            period_start?: string | null;
+            /** Renews On */
+            renews_on?: string | null;
+            /** Message */
+            message: string;
+        };
         /** ApplicationOut */
         ApplicationOut: {
             /**
@@ -1053,6 +1080,7 @@ export interface components {
         };
         /** BudgetOut */
         BudgetOut: {
+            account?: components["schemas"]["AccountBalance"] | null;
             /** Allowance */
             allowance: number;
             /** Unit */

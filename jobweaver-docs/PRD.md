@@ -135,7 +135,10 @@ Both modes normalise into Postings and report credits or requests used.
 - AC1: Two Users with the same title and location trigger one query, not two.
 - AC2: The adapter uses the scraper's "Past 24 hours" time range (seen in use alongside "Past week" and "Past month"; full list confirmed in the Bright Data dashboard when building); overlap records are stored once, and the credits they cost show in the Credit Budget.
 
-**FR-B5 [V1] - Credit Budget.** The Admin sees each credit- or quota-limited Source's monthly allowance, spend to date, spend per query, and a month-end projection.
+**FR-B5 [V1] - Credit Budget.** The Admin sees provider-reported account credits when the provider exposes them, separately from JobWeaver's tracked search usage and estimates.
+- Account balances: Apify shares one account balance across Naukri and LinkedIn, using the account's included usage credits, current usage, spending limit and usage cycle. Display checks are cached for up to 60 seconds; every paid search verifies the balance again and pauses if it cannot be verified. New credentials cannot inherit another account's cached balance. Provider accounting may lag recent charges.
+- Bright Data does not expose its shared free-credit allowance, remaining credits or renewal date through its Account Management API. Its meter is explicitly a JobWeaver estimate; the admin must check the provider's Free credits card for the actual balance. Dollar balances are not converted to scraper credits. Local projections are not represented as account-wide forecasts.
+- Fetch checkpoints and historical spend are independent of balance checks and credential changes; no account switch automatically replays the initial backfill.
 - AC1: When the projection says the budget will run out before renewal, the Admin is warned with the date and the most expensive queries, so they can narrow Preferences themselves. JobWeaver does not cap daily spend or the Backfill on its own.
 - AC2: When a Source's budget is exhausted it becomes Degraded with reason "budget exhausted until <renewal date>"; other Sources are unaffected.
 - AC3: No per-user quota (decided). Rollout: in the first month only the founder uses LinkedIn, so the full 5,000 credits serve one User's queries; friends are added after the first month's spend is known.

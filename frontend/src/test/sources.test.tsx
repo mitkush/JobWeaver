@@ -224,3 +224,44 @@ it("shows AI calls against each free daily quota", async () => {
   expect(screen.getByRole("table", { name: "Last 7 days by task" })).toHaveTextContent("120,000 / 30,000");
   await expectAccessible();
 });
+
+it("shows the account's Apify usage instead of the local estimate", async () => {
+  const apify: SourceStatus = {
+    ...linkedin,
+    label: "LinkedIn (Apify)",
+    budget: {
+      ...linkedin.budget!,
+      unit: "US cents", allowance: 500, spent: 281,
+      account: {
+        status: "live", allowance: 500, spent: 500, remaining: 0, unit: "US cents",
+        checked_at: inDays(0), period_start: inDays(-5), renews_on: inDays(25),
+        message: "Account-wide usage, including activity outside JobWeaver.",
+      },
+    },
+  };
+  mockFetch({
+    "GET /api/admin/sources": () => json([apify]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("500 / 500 US cents")).toBeInTheDocument();
+  expect(screen.getByText(/0 US cents available/)).toBeInTheDocument();
+  expect(screen.getByText(/JobWeaver tracked usage: 281/)).toBeInTheDocument();
+  expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
+  await expectAccessible();
+});
+
+it.each(["unsupported", "unavailable"] as const)("labels %s balances as unknown and local usage as an estimate", async (status) => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: { ...linkedin.budget!, account: { status, unit: "credits", message: "Actual account credits could not be verified." } },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("JobWeaver tracked usage (estimate)")).toBeInTheDocument();
+  expect(screen.getByText("Actual account credits could not be verified.")).toBeInTheDocument();
+  expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/available for searches/)).not.toBeInTheDocument();
+});

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.models.fetch import RunStatus
 from app.models.source import SourceState
+from app.services.account_balances import AccountBalance
 
 
 class QuerySpend(BaseModel):
@@ -13,6 +14,7 @@ class QuerySpend(BaseModel):
 
 
 class BudgetOut(BaseModel):
+    account: AccountBalance | None = None
     allowance: int
     unit: str
     spent: int

@@ -206,3 +206,24 @@ async def test_budget_is_reported_for_metered_sources(admin, db, monkeypatch):
     budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
     assert budget["spent"] == 30 and budget["allowance"] == 100
     assert budget["top_queries"] == [{"query_key": "q", "spent": 30}]
+
+
+async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypatch):
+    from app.services import source_status
+    from app.services.account_balances import AccountBalance
+
+    monkeypatch.setattr(Board, "monthly_allowance", 500)
+    db.add(FetchRun(source=Board.name, status="succeeded", credits_used=281))
+    await db.commit()
+
+    async def account(*args, **kwargs):
+        return AccountBalance(
+            status="live", allowance=500, spent=500, remaining=0, message="Account-wide usage"
+        )
+
+    monkeypatch.setattr(source_status, "account_balance", account)
+    _, client = admin
+    budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
+    assert budget["spent"] == 281
+    assert budget["account"]["spent"] == 500
+    assert budget["account"]["remaining"] == 0
