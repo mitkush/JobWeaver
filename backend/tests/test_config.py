@@ -42,3 +42,12 @@ def test_production_requires_an_https_public_url():
             google_client_secret="secret",
             public_url="http://jobweaver.example",
         )
+
+
+def test_fallback_credentials_use_comma_separated_keys(monkeypatch):
+    monkeypatch.setenv("APIFY_TOKENS", "backup-a,backup-b")
+    monkeypatch.setenv("BRIGHTDATA_API_KEYS", "backup-c")
+    settings = Settings()
+    assert settings.apify_tokens == "backup-a,backup-b"
+    assert settings.brightdata_api_keys == "backup-c"
+    assert "backup-a" not in repr(settings) and "backup-c" not in repr(settings)

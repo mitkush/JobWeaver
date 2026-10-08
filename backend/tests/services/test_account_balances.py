@@ -3,25 +3,22 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from app.adapters.base import SourceAdapter
+from app.adapters import apify_balances
+from app.adapters.linkedin_brightdata import LinkedInBrightDataAdapter
+from app.adapters.naukri_apify import NaukriApifyAdapter
 from app.core.config import Settings
 from app.services import account_balances
 
 NOW = datetime(2026, 10, 8, tzinfo=UTC)
 
 
-class Apify(SourceAdapter):
-    name = "test-apify"
-    budget_pool = "apify"
-
-
-class BrightData(SourceAdapter):
-    name = "linkedin"
+Apify = NaukriApifyAdapter
+BrightData = LinkedInBrightDataAdapter
 
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    account_balances._cache.clear()
+    apify_balances._cache.clear()
 
 
 def limits(usage=4.95, hard_limit=100):
@@ -138,3 +135,34 @@ async def test_brightdata_free_credits_are_unknown_not_dollars():
     async with httpx.AsyncClient(transport=httpx.MockTransport(no_call)) as http:
         result = await account_balances.account_balance(BrightData, http, Settings(), NOW)
     assert result.status == "unsupported" and result.remaining is None
+
+
+async def test_status_lists_account_limits_and_selects_backup_then_renewed_primary():
+    renewed = False
+
+    def handler(request):
+        primary = request.headers["Authorization"] == "Bearer primary"
+        return response(request, usage=0 if not primary or renewed else 5)
+
+    settings = Settings(apify_token="primary", apify_tokens="backup")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await account_balances.account_status(Apify, http, settings, NOW)
+        assert result.account_label == "Backup account 1" and result.remaining == 500
+        assert [a.remaining for a in result.accounts] == [0, 500]
+        renewed = True
+        apify_balances._cache.clear()
+        result = await account_balances.account_status(Apify, http, settings, NOW)
+        assert result.account_label == "Primary account" and result.remaining == 500
+        assert "primary" not in result.model_dump_json()
+        assert "backup" not in result.model_dump_json()
+
+
+async def test_brightdata_backups_have_unknown_allowance_not_5000():
+    def no_call(request):
+        raise AssertionError("Free-credit balances are not exposed")
+
+    settings = Settings(brightdata_api_key="primary", brightdata_api_keys="backup")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(no_call)) as http:
+        result = await account_balances.account_status(BrightData, http, settings, NOW)
+    assert len(result.accounts) == 2
+    assert all(a.allowance is None and a.remaining is None for a in result.accounts)

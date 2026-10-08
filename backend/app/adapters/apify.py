@@ -8,14 +8,22 @@ import logging
 import math
 import time
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 
+from app.adapters.apify_balances import apify_account_balance
 from app.adapters.base import FetchResult, FetchWindow, SourceQuery, WindowedSourceAdapter
-from app.adapters.errors import SourceBadResponse, SourceError, SourceUnavailable
+from app.adapters.errors import (
+    SourceBadResponse,
+    SourceError,
+    SourceQuotaRejected,
+    SourceUnavailable,
+    quota_rejected,
+)
 from app.core.config import Settings
+from app.schemas.account_balances import AccountBalance
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +43,8 @@ def cents(run: dict[str, Any]) -> int:
 
 
 class ApifyAdapter(WindowedSourceAdapter):
+    credential_settings = ("apify_token", "apify_tokens")
+    account_balance_required = True
     budget_pool = "apify"
     monthly_allowance = 500  # $5.00 of platform usage
     allowance_unit = "US cents"
@@ -56,6 +66,11 @@ class ApifyAdapter(WindowedSourceAdapter):
         self._settled: dict[str, int] = {}
         self.monotonic: Callable[[], float] = time.monotonic
 
+    async def account_balance(self, now: datetime, *, force: bool = False) -> AccountBalance | None:
+        if not self.settings.apify_token:
+            return None
+        return await apify_account_balance(self.http, self.settings, now, force=force)
+
     def actor(self) -> str:
         raise NotImplementedError
 
@@ -67,7 +82,7 @@ class ApifyAdapter(WindowedSourceAdapter):
         raise NotImplementedError
 
     def is_configured(self) -> bool:
-        return bool(self.settings.apify_token)
+        return bool(self.settings.apify_token or self.settings.apify_tokens)
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -133,6 +148,10 @@ class ApifyAdapter(WindowedSourceAdapter):
         response = await self.http.post(
             f"{API}/acts/{self.actor()}/runs", params=params, headers=self._headers, json=payload
         )
+        if quota_rejected(response):
+            raise SourceQuotaRejected(
+                f"{self.label} account credits exhausted before search started"
+            )
         self.check_response(self.label, response)
         run = response.json().get("data")
         if not isinstance(run, dict) or not run.get("id"):

@@ -209,8 +209,8 @@ async def test_budget_is_reported_for_metered_sources(admin, db, monkeypatch):
 
 
 async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypatch):
+    from app.schemas.account_balances import AccountBalance
     from app.services import source_status
-    from app.services.account_balances import AccountBalance
 
     monkeypatch.setattr(Board, "monthly_allowance", 500)
     db.add(FetchRun(source=Board.name, status="succeeded", credits_used=281))
@@ -221,7 +221,7 @@ async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypat
             status="live", allowance=500, spent=500, remaining=0, message="Account-wide usage"
         )
 
-    monkeypatch.setattr(source_status, "account_balance", account)
+    monkeypatch.setattr(source_status, "account_status", account)
     _, client = admin
     budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
     assert budget["spent"] == 281

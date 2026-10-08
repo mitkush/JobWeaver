@@ -18,6 +18,7 @@ from app.adapters.errors import (
     SourceUnavailable,
 )
 from app.core.config import Settings
+from app.schemas.account_balances import AccountBalance
 
 T = TypeVar("T")
 
@@ -130,11 +131,15 @@ class FetchResult(BaseModel):
 
 
 class SourceAdapter(ABC):
+    # Each provider declares its own key fields and account-balance capabilities.
+    credential_settings: tuple[str, str] | None = None
+    account_balance_required: bool = False
     name: str
     label: str
     priority: int
     mode: FetchMode
-    # Monthly free allowance in credits or requests; None means no metered limit.
+    # Local monthly tracking guard; provider-reported limits come from account_balance.
+    # None means no local metered limit.
     monthly_allowance: int | None = None
     allowance_unit: str = "requests"
     renewal_day: int = 1
@@ -155,6 +160,11 @@ class SourceAdapter(ABC):
         # Set by the fetcher before each call on metered Sources, so providers that take a
         # spending cap (Apify) stop at the budget instead of overrunning it.
         self.allowance_left: int | None = None
+        self.credential_fingerprint: str | None = None
+        self.exhausted_credentials: set[str] = set()
+
+    async def account_balance(self, now: datetime, *, force: bool = False) -> AccountBalance | None:
+        return None
 
     def is_configured(self) -> bool:
         return True

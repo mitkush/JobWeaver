@@ -283,3 +283,20 @@ async def test_each_search_records_its_own_runs_cost():
         first = await adapter.fetch_window(QUERY, DAY)
         second = await adapter.fetch_window(QUERY, DAY)
     assert (first.credits_used, second.credits_used) == (5, 12)
+
+
+async def test_apify_quota_error_after_actor_start_is_not_safe_to_retry():
+    from app.adapters.errors import SourceQuotaRejected
+
+    def handler(request):
+        if request.url.path.endswith("/runs"):
+            return httpx.Response(
+                201, json={"data": {"id": "run1", "status": "RUNNING", "usageTotalUsd": 0.01}}
+            )
+        return httpx.Response(402, text="insufficient credits")
+
+    async with client(handler) as http:
+        with pytest.raises(SourceQuotaExhausted) as caught:
+            await NaukriApifyAdapter(http, SETTINGS, sleep=no_sleep).fetch_window(QUERY, DAY)
+    assert not isinstance(caught.value, SourceQuotaRejected)
+    assert caught.value.credits_used == 1

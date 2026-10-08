@@ -282,3 +282,25 @@ def test_daily_windows_with_drift_keep_the_one_day_filters():
     # A missed day still widens the filter.
     two_days = FetchWindow(since=NOW - timedelta(hours=50), until=NOW)
     assert time_range_for(two_days) == "Past week"
+
+
+@pytest.mark.parametrize(
+    "status,body,allowed",
+    [
+        (402, "no credits", True),
+        (403, "insufficient credits", True),
+        (429, "slow down", False),
+        (401, "bad token", False),
+        (503, "unavailable", False),
+    ],
+)
+async def test_only_credit_rejection_before_snapshot_is_safe_to_switch_accounts(
+    status, body, allowed
+):
+    from app.adapters.errors import SourceError, SourceQuotaRejected
+
+    async with http(lambda r: httpx.Response(status, text=body)) as client:
+        with pytest.raises(SourceError) as caught:
+            await LinkedInBrightDataAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+    assert isinstance(caught.value, SourceQuotaRejected) is allowed
+    assert caught.value.credits_used == 0

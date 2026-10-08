@@ -85,4 +85,23 @@ Apify's [private user data](https://docs.apify.com/api/v2/users-me-get) supplies
 
 Bright Data's [balance API documentation](https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API#is-there-an-api-endpoint-for-free-tier-credit-status) explicitly states that no Account Management API returns the free-tier credit balance. Its USD balance is not the 5,000-credit pool. The Sources page labels local usage as an estimate and directs the admin to the Free credits card. The existing local allowance guard remains, but cannot guarantee account-wide credit availability.
 
-The cache is scoped to a credential fingerprint and never stores raw tokens or exposes account identity. Updating credentials does not delete jobs, search watermarks or historical spend. No database migration is needed for this change.
+The cache is scoped to a credential fingerprint and never stores raw tokens or exposes account identity. Updating credentials does not delete jobs, search watermarks or historical spend. Credential fallback adds migration `0009`: an optional fingerprint on FetchRun for per-credential cost accounting. Legacy unlabelled runs count against the primary account only.
+
+### Retaining primary and backup accounts
+
+Keep `APIFY_TOKEN` and `BRIGHTDATA_API_KEY` as the original primary credentials. Put backup credentials in comma-separated lists in the VM's `backend/.env`:
+
+```dotenv
+APIFY_TOKENS=backup-apify-token,another-backup-token
+BRIGHTDATA_API_KEYS=backup-brightdata-key,another-backup-key
+```
+
+These are accounts with their own allowances, not extra keys for the same account. Never commit real values. Changing an environment file takes effect when the container is recreated.
+
+Apify checks the primary's actual balance first and then exhausted-account backups in order before each new search. If an account cannot be verified, searches pause instead of silently spending on another one. Account balances are displayed with Primary/Backup labels. After primary credits renew, a new balance check selects the primary again. Both Apify Sources use the same credential order and balances.
+
+Bright Data checks each credential's tracked monthly allowance. Since actual free credits are not available through its API, this is an application guard, not an assertion about a backup account's actual plan or remaining credits. Account allowance and remaining credits stay explicitly unknown in the UI. It can additionally switch when the trigger request explicitly rejects a search for credit exhaustion before returning a snapshot id. Rejected credentials are skipped for the remainder of that Source run and checked again on the next run. Timeouts, general rate limits, malformed downloads and failures after a search starts never trigger cross-account retries.
+
+Only successful fetches advance the query watermark. A safe quota retry uses the exact same window; it does not refetch earlier successful windows or reset the 14-day initial backfill. Historical spend is retained per fingerprint and old unlabelled spend is attributed to the primary credential.
+
+Deployment applies migration `0009` through the container's normal startup. If rolling back to an image that only contains migrations through `0008`, first stop fetching and use the newer image to downgrade to `0008`; older Alembic code cannot resolve revision `0009`. Downgrading removes credential attribution, so back up the database before doing so. The deployment script does not automatically downgrade the database.

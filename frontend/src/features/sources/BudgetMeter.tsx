@@ -12,6 +12,7 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
   const spent = live ? account.spent! : budget.spent;
   const allowance = live ? account.allowance! : budget.allowance;
   const used = allowance > 0 ? Math.min(spent / allowance, 1) : 1;
+  const unknown = account != null && !live;
   const projectedOver = !live && budget.projected > budget.allowance;
   const exhausted = live ? account.remaining === 0 : used >= 1;
   const tone = exhausted ? "bg-red-600" : projectedOver ? "bg-amber-500" : "bg-brand-600";
@@ -19,32 +20,45 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium">
-        {live ? "Apify account credits" : "JobWeaver tracked usage (estimate)"}
+        {live ? `Account credits - ${account.account_label ?? "Primary account"}` : "JobWeaver tracked usage (estimate)"}
       </p>
+      {budget.tracked_account && <p className="text-xs text-slate-500">Tracked search costs: {budget.tracked_account}</p>}
+      {account?.accounts && account.accounts.length > 1 && (
+        <ul className="text-xs text-slate-500">
+          {account.accounts.map((a) => (
+            <li key={a.label}>
+              {a.label}: {a.status === "live" ? `${a.remaining?.toLocaleString()} ${account.unit} available` : "account allowance and remaining credits unknown"}
+              {a.renews_on && ` · renews ${shortDate(a.renews_on)}`}
+            </li>
+          ))}
+        </ul>
+      )}
       {account && !live && (
         <p className="text-xs text-amber-700 dark:text-amber-300">{account.message}</p>
       )}
       <div className="flex items-baseline justify-between text-sm">
         <span className="font-medium">
-          {spent.toLocaleString()} / {allowance.toLocaleString()} {live ? account.unit : budget.unit}
+          {unknown
+            ? `${spent.toLocaleString()} ${budget.unit} tracked; account credits unknown`
+            : `${spent.toLocaleString()} / ${allowance.toLocaleString()} ${live ? account.unit : budget.unit}`}
         </span>
-        <span className="text-xs text-slate-500">
+        {!unknown && <span className="text-xs text-slate-500">
           {live ? "renews" : "estimated renewal"} {shortDate(live ? account.renews_on! : budget.renews_on)}
-        </span>
+        </span>}
       </div>
-      <div
+      {!unknown && <div
         className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
         role="progressbar"
-        aria-label={live ? "Apify account credits used" : "JobWeaver tracked usage"}
+        aria-label={live ? "Account credits used" : "JobWeaver tracked usage"}
         aria-valuemin={0}
         aria-valuemax={allowance}
         aria-valuenow={Math.min(spent, allowance)}
       >
         <div className={cn("h-full rounded-full", tone)} style={{ width: `${used * 100}%` }} />
-      </div>
+      </div>}
       {live && (
         <p className="text-xs text-slate-500">
-          {account.remaining!.toLocaleString()} US cents available for searches.
+          {account.remaining!.toLocaleString()} {account.unit} available for searches.
           {" "}Checked {new Date(account.checked_at!).toLocaleString()}.
           {" "}{account.message}
         </p>
