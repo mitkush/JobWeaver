@@ -64,6 +64,8 @@ A provider that answers HTTP 503 ("high demand", common on Gemini's free models)
 
 **Storage estimate for Neon's 1 GB:** a Posting with description is a few KB, and a 768-dimension embedding is about 3 KB. Around 100,000 Postings fit with room for user data. Old Expired Jobs without Applications are pruned after 90 days. *(Gemini embeddings support a reduced output size such as 768 dimensions; unconfirmed, check when building.)*
 
+**Neon network transfer is a separate limit:** the Free project has a 5 GB monthly outbound transfer allowance. Each description read by the Oracle app counts again even when the database stores only one copy. On 9 Oct 2026, the JobWeaver database used about 54 MB of storage but Neon warned that its 5 GB transfer allowance was exhausted. Feed matching now asks PostgreSQL for descriptions that may contain a User's Core keyword, plus short adverts that need review; Job metadata refresh no longer reads descriptions. This lowers one repeat-read path, but it does not prove the entire 5 GB spike came from that path. Monitor the project's data-transfer graph in Neon after deployment. The HTTP `/health` check does not access Neon, so use a database-backed request or a small SQL query when diagnosing suspension.
+
 ## 4. Development tooling
 
 Claude Code usage for building JobWeaver comes from the founder's own plan and is outside the product budget.
