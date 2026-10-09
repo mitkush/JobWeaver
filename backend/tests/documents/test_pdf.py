@@ -192,3 +192,54 @@ def test_page_count_tells_which_template_fits():
         content, "Asha", "a@example.com", "compact", FACTS
     )
     assert page_count(resume(bullets[0]), "Asha", "a@example.com", "standard", FACTS) == 1
+
+
+def test_contact_line_comes_from_contact_facts_when_the_draft_has_none():
+    facts = [
+        *(fact for fact in FACTS if fact.group != "Contact"),
+        FactSnapshot(
+            ref="F5",
+            id=uuid.uuid4(),
+            kind="link",
+            group="",
+            text="LinkedIn: https://www.linkedin.com/in/asha-rao/ and github.com/asha/ledger",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F6",
+            id=uuid.uuid4(),
+            kind="other",
+            group="Contact",
+            text="Location: Pune, India",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F7",
+            id=uuid.uuid4(),
+            kind="link",
+            group="",
+            text="Phone +91 98765 43210",
+            in_base_resume=True,
+        ),
+    ]
+    content = resume(DraftLine(text="Built the billing API", fact_refs=["F1"]))
+    text = page_text(render_pdf(content, "Asha", "asha@example.com", facts=facts))
+    assert (
+        "+91 98765 43210 | asha@example.com | https://www.linkedin.com/in/asha-rao | Pune, India"
+        in text
+    )
+    assert "ledger" not in text  # a repository is not a profile
+
+
+def test_a_line_naming_its_group_is_printed_once_as_the_title():
+    content = resume(
+        DraftLine(text="Acme Corp — Senior Developer", fact_refs=["F1"]),
+        DraftLine(text="Built the billing API", fact_refs=["F1"]),
+        DraftLine(text="Ledger", fact_refs=["F2"], section="Projects"),
+        DraftLine(text="Ledger sync streams changes", fact_refs=["F2"], section="Projects"),
+    )
+    text = page_text(render_pdf(content, "Asha", "asha@example.com", facts=FACTS))
+    assert text.count("Acme Corp") == 1
+    assert "• Acme Corp" not in text
+    assert text.count("Ledger") == 2  # the title, and the bullet that starts with it
+    assert "• Ledger sync streams changes" in text

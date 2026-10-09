@@ -317,3 +317,20 @@ def test_the_jobs_title_is_never_claimed_in_the_resume():
     result = check(content, FACTS, job_title="Staff Engineer", company="Scribd")
     assert [line.id for line in result.content.resume] == []
     assert [line.id for line in result.content.cover_letter] == ["c"]
+
+
+def test_a_role_title_must_be_stated_as_a_phrase():
+    """Words found elsewhere in the Fact do not make up a title it never states."""
+    fact = ROLE.model_copy(update={"text": "Senior Software Developer. Worked with an Engineer."})
+    line = DraftLine(text="Senior Software Engineer | Acme Corp", fact_refs=["F9"], heading=True)
+    assert line_problem(line, [*FACTS, fact]) == (
+        'The role title "Senior Software Engineer" is not in the Facts it cites'
+    )
+
+
+def test_an_unflagged_line_naming_its_employer_is_checked_as_a_title():
+    """Older Drafts wrote "Employer - Role" as an ordinary line."""
+    line = DraftLine(text="Acme Corp — Senior Software Engineer", fact_refs=["F9"])
+    assert line_problem(line, [*FACTS, ROLE]) is not None
+    line = DraftLine(text="Acme Corp — Senior Software Developer", fact_refs=["F9"])
+    assert line_problem(line, [*FACTS, ROLE]) is None

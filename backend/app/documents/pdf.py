@@ -10,7 +10,7 @@ from fontTools.ttLib import TTFont
 from fpdf import FPDF
 
 from app.core.errors import ValidationFailedError
-from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
+from app.tailoring.content import DraftContent, DraftLine, FactSnapshot, names_group
 
 # Sections whose lines sit under the employer, project or school they come from.
 _GROUPED = {"Experience", "Projects", "Education"}
@@ -191,9 +191,37 @@ class _Resume(FPDF):
         self.ln(1.4)
 
 
-def _contact(lines: list[DraftLine], email: str) -> str:
-    """One contact line: the User's contact Facts with their sign-in email added."""
+_PHONE = re.compile(r"(?<![\w+])\+?\d[\d ().-]{7,}\d(?!\w)")
+# A profile, not a repository: "github.com/asha", never "github.com/asha/ledger".
+_PROFILE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:linkedin\.com/in|github\.com)/[\w.-]+/?(?![\w/])",
+    re.IGNORECASE,
+)
+_CONTACT_LABEL = re.compile(
+    r"^(?:phone|mobile|tel|linkedin|github|location|portfolio|website)\s*:\s*", re.IGNORECASE
+)
+
+
+def _contact_facts(facts: list[FactSnapshot]) -> list[str]:
+    """Contact details the User reviewed as Facts, copied as written: anything filed
+    under the Contact group, and phone numbers and profile links in link Facts."""
+    parts: list[str] = []
+    for fact in facts:
+        text = " ".join(fact.text.split())
+        if fact.group.strip().casefold() == "contact":
+            parts.append(_CONTACT_LABEL.sub("", text))
+        elif fact.kind == "link":
+            parts += [m.group(0) for m in _PHONE.finditer(text)]
+            parts += [m.group(0).rstrip("/") for m in _PROFILE.finditer(text)]
+    phones = [p for p in parts if _PHONE.fullmatch(p)]
+    return list(dict.fromkeys(phones + [p for p in parts if p not in phones]))
+
+
+def _contact(lines: list[DraftLine], email: str, facts: list[FactSnapshot]) -> str:
+    """One contact line: the Draft's Contact lines, or else the User's contact Facts, with
+    their sign-in email added after the phone number."""
     parts = [p.strip() for line in lines for p in line.text.split("|") if p.strip()]
+    parts = parts or _contact_facts(facts)
     if email and not any(email.casefold() in p.casefold() for p in parts):
         phones = [i for i, p in enumerate(parts) if re.fullmatch(r"[+\d\s().-]{7,}", p)]
         parts.insert(phones[0] + 1 if phones else 0, email)
@@ -227,7 +255,7 @@ def _build(
             if line.section == "Headline":
                 pdf.rich(line.text, bold=True, size=size + 1)
     contact = [line for line in content.resume if line.section == "Contact"]
-    pdf.rich(_contact(contact, email), size=size - 0.5)
+    pdf.rich(_contact(contact, email, facts), size=size - 0.5)
     if kind == "cover_letter":
         pdf.ln(4)
         for line in content.cover_letter:
@@ -239,10 +267,16 @@ def _build(
         pdf.section(section)
         for group, lines in groups:
             listed = section in _GROUPED
-            if listed and group and not any(line.heading for line in lines):
+            # A line naming its own group is its title, so the name is not printed twice.
+            titles = {
+                line.id
+                for line in lines
+                if line.heading or (listed and names_group(line.text, group))
+            }
+            if listed and group and not titles:
                 pdf.rich(group, bold=True)
             for line in lines:
-                if line.heading:
+                if line.id in titles:
                     pdf.ln(0.6)
                     pdf.rich(line.text, bold=True)
                 elif listed:

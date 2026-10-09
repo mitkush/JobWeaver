@@ -44,3 +44,13 @@ class FactSnapshot(BaseModel):
     group: str
     text: str
     in_base_resume: bool
+
+
+def names_group(text: str, group: str) -> bool:
+    """The line is the group's own title: the bare employer or project name, or the name
+    followed by a role ("Acme Corp - Senior Developer"), as older Drafts wrote them."""
+    folded, name = " ".join(text.split()).casefold(), " ".join(group.split()).casefold()
+    if not name or not folded.startswith(name):
+        return False
+    rest = folded[len(name) :].strip()
+    return not rest or rest[0] in "-|:–—"
