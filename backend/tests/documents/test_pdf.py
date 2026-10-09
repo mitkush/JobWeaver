@@ -91,7 +91,130 @@ def test_resume_lines_sit_under_their_employer_headings():
     assert (
         text.index("Cut report time") < text.index("Globex") < text.index("Ran the data platform")
     )
-    assert text.count("Experience") == 1
+    assert text.count("EXPERIENCE") == 1
+
+
+def test_resume_does_not_repeat_bare_project_heading_and_links_profiles():
+    facts = [
+        FactSnapshot(
+            ref="F1",
+            id=uuid.uuid4(),
+            kind="project",
+            group="JobWeaver",
+            text="Built a job-search application.",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F2",
+            id=uuid.uuid4(),
+            kind="link",
+            group="",
+            text="linkedin.com/in/example-person",
+            in_base_resume=True,
+        ),
+        FactSnapshot(
+            ref="F3",
+            id=uuid.uuid4(),
+            kind="link",
+            group="",
+            text="https://github.com/example-person",
+            in_base_resume=True,
+        ),
+    ]
+    content = DraftContent(
+        resume=[
+            DraftLine(text="JobWeaver", fact_refs=["F1"], section="Projects"),
+            DraftLine(text="Built a job-search application.", fact_refs=["F1"], section="Projects"),
+        ],
+        cover_letter=[DraftLine(text="Hello", fact_refs=["F1"])],
+    )
+    reader = PdfReader(io.BytesIO(render_pdf(content, "Asha", "asha@example.com", facts=facts)))
+    text = reader.pages[0].extract_text()
+    assert text.count("JobWeaver") == 1
+    urls = {
+        annotation.get_object()["/A"].get("/URI")
+        for annotation in reader.pages[0].get("/Annots", [])
+        if annotation.get_object().get("/A")
+    }
+    assert "mailto:asha@example.com" in urls
+    assert "https://linkedin.com/in/example-person" in urls
+    assert "https://github.com/example-person" in urls
+
+
+def test_contact_phone_is_used_only_when_it_is_a_link_fact():
+    content = package("Python")
+    phone = FactSnapshot(
+        ref="F2",
+        id=uuid.uuid4(),
+        kind="link",
+        group="",
+        text="Phone: +91 7222986584",
+        in_base_resume=True,
+    )
+    reader = PdfReader(io.BytesIO(render_pdf(content, "Asha", "asha@example.com", facts=[phone])))
+    assert "+91 7222986584" in reader.pages[0].extract_text()
+    urls = {
+        annotation.get_object()["/A"].get("/URI")
+        for annotation in reader.pages[0].get("/Annots", [])
+        if annotation.get_object().get("/A")
+    }
+    assert "tel:+917222986584" in urls
+
+
+def test_bare_project_url_in_resume_is_clickable():
+    fact = FactSnapshot(
+        ref="F1",
+        id=uuid.uuid4(),
+        kind="link",
+        group="",
+        text="github.com/example-person/sample-project",
+        in_base_resume=True,
+    )
+    content = DraftContent(
+        resume=[
+            DraftLine(
+                text="Code: github.com/example-person/sample-project",
+                fact_refs=["F1"],
+                section="Links",
+            )
+        ],
+        cover_letter=[DraftLine(text="Hello", fact_refs=["F1"])],
+    )
+    reader = PdfReader(io.BytesIO(render_pdf(content, "Asha", "asha@example.com", facts=[fact])))
+    urls = {
+        annotation.get_object()["/A"].get("/URI")
+        for annotation in reader.pages[0].get("/Annots", [])
+        if annotation.get_object().get("/A")
+    }
+    assert "https://github.com/example-person/sample-project" in urls
+
+
+def test_employer_prefix_is_removed_but_role_is_preserved():
+    fact = FactSnapshot(
+        ref="F1",
+        id=uuid.uuid4(),
+        kind="experience",
+        group="Acme Corp",
+        text="Senior Software Developer at Acme Corp",
+        in_base_resume=True,
+    )
+    content = DraftContent(
+        resume=[
+            DraftLine(
+                text="Acme Corp - Senior Software Developer",
+                fact_refs=["F1"],
+                section="Experience",
+            )
+        ],
+        cover_letter=[DraftLine(text="Hello", fact_refs=["F1"])],
+    )
+    text = (
+        PdfReader(io.BytesIO(render_pdf(content, "Asha", "asha@example.com", facts=[fact])))
+        .pages[0]
+        .extract_text()
+    )
+    assert text.count("Acme Corp") == 1
+    assert "Senior Software Developer" in text
 
 
 def test_common_ai_characters_print_with_a_fallback():

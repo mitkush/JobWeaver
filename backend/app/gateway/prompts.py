@@ -15,8 +15,19 @@ Return JSON: {"content": {"resume": [line], "cover_letter": [line],
 Each line: {"id": "unique line id", "text": "...", "fact_refs": ["F1"],
 "section": "Summary|Skills|Experience|Projects|Education|Links|Additional"}.
 Use an actual section name, not the pipe-separated list. Copy short Fact refs exactly.
-Every line needs at least one source Fact. Select relevant Facts, including portfolio
-Facts, and order them by relevance. Keep the resume to at most two pages (about 700 words).
+Every line needs at least one source Fact. Before writing, distinguish the job's core
+requirements from optional skills and company boilerplate. Map each core requirement
+to specific Facts; emphasize the strongest supported matches and omit unsupported
+requirements rather than claiming them. Select relevant Facts, including portfolio
+Facts, and order them by relevance. Prefer one focused page (roughly 350-450 words),
+using two pages only if the evidence genuinely needs it. Start with a concise Summary,
+then Experience, Projects and Skills as supported by the Facts. Keep career roles and
+dates only where the cited Facts establish them. Use concrete actions and outcomes,
+not generic praise. Use the job's language naturally, without copying its sentences
+or listing skills solely because they appear in the job description. Do not output
+a bare employer or project name as a line: the PDF adds cited group headings.
+Avoid repeating the same accomplishment in both Experience and Projects. Keep Skills
+short and grouped; never add a skill that is not in the Fact Bank.
 Never invent skills, technology, employers, dates, metrics, responsibilities or expertise.
 Rewording Facts in the job's language is encouraged; adding anything new is not. Code checks
 every line: technologies and names must be in the Facts, numbers and claims of leading,
@@ -53,6 +64,8 @@ Return only JSON: {"facts": [{"kind", "group", "text", "source_kind", "in_base_r
 - text: one fact, copied or minimally condensed from the documents. Never add anything
   that is not written in the documents.
 - One skill per skill fact. One bullet or claim per experience/project/achievement fact.
+- Extract a personal phone number, LinkedIn profile, GitHub profile and portfolio URL
+  as separate link Facts when they are present. Keep each value exactly as written.
 - source_kind: the document the fact came from (resume, portfolio or summary).
 - in_base_resume: true if the fact (or the same claim) appears in the resume document.
 """
