@@ -213,9 +213,12 @@ def parse_location(text: str | None, default_country: str | None = None) -> Loca
     if not text:
         return Location(country=default_country)
     raw = clean_space(text)
-    remote = bool(re.search(r"\bremote\b|work from home|anywhere", raw, re.IGNORECASE))
+    remote = bool(re.search(r"\bremote\b|\bwfh\b|work from home|anywhere", raw, re.IGNORECASE))
     cleaned = re.sub(
-        r"\(?\b(remote|hybrid|on-?site|work from home|anywhere)\b\)?", "", raw, flags=re.IGNORECASE
+        r"\(?\b(remote|wfh|hybrid|on-?site|work from home|anywhere)\b\)?",
+        "",
+        raw,
+        flags=re.IGNORECASE,
     )
     parts = [p.strip(" -/") for p in re.split(r"[,;|/]| - ", cleaned) if p.strip(" -/")]
     country = None
@@ -263,7 +266,7 @@ def work_mode_from(text: str | None, *, remote_flag: bool | None = None) -> Work
     lowered = text.lower()
     if "hybrid" in lowered:
         return WorkMode.HYBRID
-    if "remote" in lowered or "work from home" in lowered:
+    if "remote" in lowered or "work from home" in lowered or re.search(r"\bwfh\b", lowered):
         return WorkMode.REMOTE
     if re.search(r"on-?site|in-office|in office", lowered):
         return WorkMode.ONSITE
