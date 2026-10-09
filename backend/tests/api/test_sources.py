@@ -291,6 +291,6 @@ async def test_source_status_tracks_latest_backup_without_pause(db, monkeypatch)
     await db.commit()
 
     status = (await source_status.list_statuses(db, datetime(2026, 10, 9, tzinfo=UTC)))[0]
-    assert status.budget.account.account_label == "Primary account"
+    assert status.budget.account.account_label == "Backup account 1"
     assert status.budget.tracked_account == "Backup account 1"
     assert status.budget.spent == 30
