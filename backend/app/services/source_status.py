@@ -78,6 +78,11 @@ async def list_statuses(
                 )
             ):
                 tracked = next((c for c in options if c.label == account.account_label), tracked)
+            # When the provider cannot verify balances, its default account label is not
+            # evidence of which key was last used. Keep the account summary aligned with
+            # the credential whose JobWeaver spend is shown below it.
+            if account and account.status != "live" and tracked:
+                account = account.model_copy(update={"account_label": tracked.label})
         budget = await budget_for(
             session,
             cls,
