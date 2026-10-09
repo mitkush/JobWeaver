@@ -1111,6 +1111,33 @@ async def test_paused_primary_uses_backup_then_returns_after_renewal(db, fetcher
     assert await db.scalar(select(func.count()).select_from(Posting)) == 1
 
 
+async def test_paused_primary_exhausted_backup_names_resume_date(db, fetcher):
+    from app.services.fetching import SourceErrorBudget
+    from app.services.provider_credentials import credentials
+
+    class Accounts(FakeSearch):
+        name = "linkedin"
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+        primary_credential_pause_setting = "brightdata_primary_paused_until"
+
+    fetcher.settings.brightdata_api_key = "primary"
+    fetcher.settings.brightdata_api_keys = "backup"
+    fetcher.settings.brightdata_primary_paused_until = datetime(2026, 11, 1, tzinfo=UTC)
+    backup = credentials(Accounts, fetcher.settings)[1]
+    db.add(
+        FetchRun(
+            source=Accounts.name,
+            status="succeeded",
+            credits_used=10,
+            created_at=START,
+            credential_fingerprint=backup.fingerprint,
+        )
+    )
+    await db.flush()
+    with pytest.raises(SourceErrorBudget, match="Primary is paused until 01 Nov 2026"):
+        await fetcher._check_budget(db, Accounts(fetcher.http, fetcher.settings))
+
+
 async def test_brightdata_primary_and_backup_have_separate_spend(db, fetcher):
     from app.services.fetching import budget_for
     from app.services.provider_credentials import credentials

@@ -166,3 +166,23 @@ async def test_brightdata_backups_have_unknown_allowance_not_5000():
         result = await account_balances.account_status(BrightData, http, settings, NOW)
     assert len(result.accounts) == 2
     assert all(a.allowance is None and a.remaining is None for a in result.accounts)
+
+
+async def test_brightdata_status_shows_paused_primary_and_selected_backup():
+    def no_call(request):
+        raise AssertionError("Free-credit balances are not exposed")
+
+    paused_until = datetime(2026, 11, 1, tzinfo=UTC)
+    settings = Settings(
+        brightdata_api_key="primary",
+        brightdata_api_keys="backup",
+        brightdata_primary_paused_until=paused_until,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(no_call)) as http:
+        paused = await account_balances.account_status(BrightData, http, settings, NOW)
+        resumed = await account_balances.account_status(BrightData, http, settings, paused_until)
+    assert paused.account_label == "Backup account 1"
+    assert paused.accounts[0].paused_until == paused_until
+    assert paused.accounts[1].paused_until is None
+    assert resumed.account_label == "Primary account"
+    assert resumed.accounts[0].paused_until is None

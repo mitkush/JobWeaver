@@ -294,3 +294,26 @@ it("shows backup account credits and each account's remaining allowance", async 
   expect(screen.getByText(/Backup account 1: 500 US cents available/)).toBeInTheDocument();
   await expectAccessible();
 });
+
+it("shows a paused primary and the backup selected before its first fetch", async () => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: {
+        ...linkedin.budget!, tracked_account: "Backup account 1", spent: 0,
+        account: {
+          status: "unsupported", account_label: "Backup account 1", unit: "credits",
+          message: "Free credits are not available through the API.",
+          accounts: [
+            { label: "Primary account", status: "unsupported", paused_until: "2026-11-01T00:00:00Z" },
+            { label: "Backup account 1", status: "unsupported" },
+          ],
+        },
+      },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("Tracked search costs: Backup account 1")).toBeInTheDocument();
+  expect(screen.getByText(/Primary account: paused until .*01 Nov 2026.*UTC/)).toBeInTheDocument();
+});
