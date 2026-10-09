@@ -368,10 +368,14 @@ async def fail_running_fetches(
 
 
 async def recover_running_fetches(sessionmaker: async_sessionmaker[AsyncSession]) -> int:
-    """No fetch from this process survives a restart; close its unfinished runs."""
-    async with sessionmaker() as session:
-        count = await fail_running_fetches(session, utcnow())
-        await session.commit()
+    """Close unfinished runs only when no other instance owns the fetch lock."""
+    async with fetch_lock(sessionmaker) as got:
+        if not got:
+            logger.info("Fetch recovery skipped: another instance is running a fetch")
+            return 0
+        async with sessionmaker() as session:
+            count = await fail_running_fetches(session, utcnow())
+            await session.commit()
     if count:
         logger.warning("Marked %s interrupted fetch runs as failed after restart", count)
     return count
@@ -499,9 +503,12 @@ class Fetcher:
                 elif isinstance(adapter, SnapshotSourceAdapter):
                     await self._run_snapshot(session, adapter, trigger, outcome)
             except asyncio.CancelledError:
-                await session.rollback()
-                await fail_running_fetches(session, self.clock(), source=name)
-                await session.commit()
+                try:
+                    await session.rollback()
+                    await fail_running_fetches(session, self.clock(), source=name)
+                    await session.commit()
+                except Exception:
+                    logger.exception("Could not close cancelled fetch runs for %s", name)
                 raise
             except SourceError as exc:
                 await self._mark_degraded(session, source, exc, now)

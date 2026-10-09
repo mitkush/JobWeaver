@@ -21,6 +21,7 @@ from app.models import AtsBoard, FetchRun, Posting, Preference, RunStatus, Sourc
 from app.services.fetching import (
     FETCH_LOCK_ID,
     Fetcher,
+    fetch_lock,
     next_renewal,
     period_start,
     queries_from_preferences,
@@ -582,6 +583,39 @@ async def test_restart_recovers_only_unfinished_fetch_runs(db):
     assert rows["active"].finished_at is not None
     assert rows["done"].status == RunStatus.SUCCEEDED
     assert await recover_running_fetches(get_sessionmaker()) == 0
+
+
+async def test_restart_does_not_close_another_instances_live_run(db):
+    active = FetchRun(source="fake-search", status=RunStatus.RUNNING)
+    db.add(active)
+    await db.commit()
+    active_id = active.id
+
+    async with fetch_lock(get_sessionmaker()) as got:
+        assert got
+        assert await recover_running_fetches(get_sessionmaker()) == 0
+        db.expire_all()
+        assert (await db.get(FetchRun, active_id)).status == RunStatus.RUNNING
+
+
+async def test_cancellation_still_propagates_if_cleanup_fails(db, fetcher, monkeypatch):
+    await add_preferences(db)
+    started = asyncio.Event()
+
+    async def fetch_window(self, query, window):
+        started.set()
+        await asyncio.Event().wait()
+
+    async def fail_cleanup(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", fetch_window)
+    monkeypatch.setattr("app.services.fetching.fail_running_fetches", fail_cleanup)
+    task = asyncio.create_task(fetcher.run_source("fake-search"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_board_run_is_persisted_before_provider_call(db, fetcher, monkeypatch):
