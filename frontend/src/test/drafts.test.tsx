@@ -105,6 +105,19 @@ it("adds a Fact from the Fact Bank with its trace", async () => {
   expect(body.content.resume[1]).toMatchObject({ text: "PostgreSQL", fact_refs: ["F2"], manual: true });
 });
 
+it("marks an Experience line as a role title line", async () => {
+  const calls = setup();
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  expect(screen.queryByLabelText("Title line")).not.toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("Section for line 1"), "Experience");
+  await user.click(screen.getByLabelText("Title line"));
+  await user.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText("Version 2");
+  const body = await calls.find((r) => r.method === "PUT")?.json();
+  expect(body.content.resume[0]).toMatchObject({ section: "Experience", heading: true });
+});
+
 it("creates a chat version and requires confirmation before changing manual edits", async () => {
   const calls = setup();
   const user = userEvent.setup();

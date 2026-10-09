@@ -1,6 +1,7 @@
 """Small single-column PDFs with selectable, embedded Unicode text."""
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -9,25 +10,31 @@ from fontTools.ttLib import TTFont
 from fpdf import FPDF
 
 from app.core.errors import ValidationFailedError
-from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
+from app.tailoring.content import DraftContent, DraftLine, FactSnapshot, names_group
 
 # Sections whose lines sit under the employer, project or school they come from.
 _GROUPED = {"Experience", "Projects", "Education"}
+# The order a resume reads in, whatever order the lines were written in.
+_ORDER = ["Summary", "Experience", "Projects", "Education", "Skills", "Links", "Additional"]
+# Printed under the name rather than as sections of their own.
+_HEADER = {"Headline", "Contact"}
+
+Layout = list[tuple[str, list[tuple[str, list[DraftLine]]]]]
 
 
-def _layout(
-    lines: list[DraftLine], facts: list[FactSnapshot]
-) -> list[tuple[str, list[tuple[str, list[DraftLine]]]]]:
-    """Sections in order of first use; inside each, lines grouped by the employer,
-    project or school of their cited Facts (a Fact group, so never invented)."""
+def _layout(lines: list[DraftLine], facts: list[FactSnapshot]) -> Layout:
+    """Sections in reading order; inside each, lines grouped by the employer, project or
+    school of their cited Facts (a Fact group, so never invented), in order of first use."""
     group_of = {fact.ref: fact.group.strip() for fact in facts if fact.kind != "skill"}
     sections: dict[str, dict[str, list[DraftLine]]] = {}
     for line in lines:
+        if line.section in _HEADER:
+            continue
         heading = ""
         if line.section in _GROUPED:
             heading = next((group_of[r] for r in line.fact_refs if group_of.get(r)), "")
         sections.setdefault(line.section, {}).setdefault(heading, []).append(line)
-    return [(section, list(groups.items())) for section, groups in sections.items()]
+    return [(name, list(sections[name].items())) for name in _ORDER if name in sections]
 
 
 FONTS = Path(__file__).with_name("fonts")
@@ -91,6 +98,207 @@ def filename(name: str, company: str, title: str, kind: str = "resume") -> str:
     return "_".join(parts) + suffix + ".pdf"
 
 
+# Web addresses and emails in a line, printed as clickable links.
+_LINK = re.compile(
+    r"(https?://[^\s|,;()]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    # A bare .io/.dev/.app/.ai name needs a path: "Socket.io" is a library, not a link.
+    r"|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\."
+    r"(?:(?:com|org|net|in|me|co)(?:/[^\s|,;()]*)?|(?:io|dev|app|ai)/[^\s|,;()]*))",
+    re.IGNORECASE,
+)
+_LABEL = re.compile(r"^([^:]{1,40}):\s")
+LINK_COLOUR = (26, 61, 140)
+RULE_COLOUR = (150, 150, 150)
+
+
+@dataclass(frozen=True)
+class _Style:
+    size: float
+    height: float
+    margin: float
+    gap: float
+
+
+_STYLES = {
+    "standard": _Style(size=10, height=4.7, margin=15, gap=2.2),
+    "compact": _Style(size=9.5, height=4.3, margin=12, gap=1.6),
+}
+
+
+def _href(target: str) -> str:
+    if "@" in target and "/" not in target:
+        return "mailto:" + target
+    return target if target.startswith("http") else "https://" + target
+
+
+class _Resume(FPDF):
+    def __init__(self, style: _Style) -> None:
+        super().__init__(format="A4")
+        self.style = style
+        self.set_margins(style.margin, style.margin * 0.8, style.margin)
+        self.set_auto_page_break(True, style.margin * 0.8)
+        self.add_font("Liberation", fname=str(FONTS / "LiberationSans-Regular.ttf"))
+        self.add_font("Liberation", style="B", fname=str(FONTS / "LiberationSans-Bold.ttf"))
+        self.add_page()
+
+    def font(self, bold: bool = False, size: float | None = None, underline: bool = False) -> None:
+        style = ("B" if bold else "") + ("U" if underline else "")
+        self.set_font("Liberation", style, size or self.style.size)
+
+    def rich(self, text: str, bold: bool = False, size: float | None = None) -> None:
+        """Writes wrapped text from the current position; links are clickable and a
+        leading "Label:" is bold. Ends at the start of the next line."""
+        height = self.style.height * (size or self.style.size) / self.style.size
+        text = pdf_text(text)
+        label = _LABEL.match(text) if not bold else None
+        if label:
+            self.font(True, size)
+            self.write(height, label.group(0))
+            text = text[label.end() :]
+        position = 0
+        for match in _LINK.finditer(text):
+            if match.start() > position:
+                self.font(bold, size)
+                self.write(height, text[position : match.start()])
+            self.font(bold, size, underline=True)
+            self.set_text_color(*LINK_COLOUR)
+            self.write(height, match.group(0), link=_href(match.group(0)))
+            self.set_text_color(0, 0, 0)
+            position = match.end()
+        if position < len(text):
+            self.font(bold, size)
+            self.write(height, text[position:])
+        self.ln(height)
+
+    def bullet(self, text: str) -> None:
+        left = self.l_margin
+        self.font()
+        self.set_x(left + 1.5)
+        self.cell(3.5, self.style.height, "\u2022")
+        self.set_left_margin(left + 5)
+        self.set_x(left + 5)
+        self.rich(text)
+        self.set_left_margin(left)
+        self.ln(0.6)
+
+    def section(self, title: str) -> None:
+        self.ln(self.style.gap)
+        self.font(True, self.style.size + 1)
+        self.cell(0, self.style.height + 0.6, title.upper(), new_x="LMARGIN", new_y="NEXT")
+        self.set_draw_color(*RULE_COLOUR)
+        self.set_line_width(0.2)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.ln(1.4)
+
+
+_PHONE = re.compile(r"(?<![\w+])\+?\d[\d ().-]{7,}\d(?!\w)")
+# A profile, not a repository: "github.com/asha", never "github.com/asha/ledger".
+_PROFILE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:linkedin\.com/in|github\.com)/[\w.-]+/?(?![\w/])",
+    re.IGNORECASE,
+)
+_CONTACT_LABEL = re.compile(
+    r"^(?:phone|mobile|tel|linkedin|github|location|portfolio|website)\s*:\s*", re.IGNORECASE
+)
+
+
+def _contact_facts(facts: list[FactSnapshot]) -> list[str]:
+    """Contact details the User reviewed as Facts, copied as written: anything filed
+    under the Contact group, and phone numbers and profile links in link Facts."""
+    parts: list[str] = []
+    for fact in facts:
+        text = " ".join(fact.text.split())
+        if fact.group.strip().casefold() == "contact":
+            parts.append(_CONTACT_LABEL.sub("", text))
+        elif fact.kind == "link":
+            parts += [m.group(0) for m in _PHONE.finditer(text)]
+            parts += [m.group(0).rstrip("/") for m in _PROFILE.finditer(text)]
+    phones = [p for p in parts if _PHONE.fullmatch(p)]
+    return list(dict.fromkeys(phones + [p for p in parts if p not in phones]))
+
+
+def _contact(lines: list[DraftLine], email: str, facts: list[FactSnapshot]) -> str:
+    """One contact line: the Draft's Contact lines, or else the User's contact Facts, with
+    their sign-in email added after the phone number."""
+    parts = [p.strip() for line in lines for p in line.text.split("|") if p.strip()]
+    parts = parts or _contact_facts(facts)
+    if email and not any(email.casefold() in p.casefold() for p in parts):
+        phones = [i for i, p in enumerate(parts) if re.fullmatch(r"[+\d\s().-]{7,}", p)]
+        parts.insert(phones[0] + 1 if phones else 0, email)
+    return " | ".join(parts)
+
+
+def _build(
+    content: DraftContent,
+    name: str,
+    email: str,
+    kind: Literal["resume", "cover_letter"],
+    template: Literal["standard", "compact"],
+    facts: list[FactSnapshot],
+) -> FPDF:
+    part = "cover letter line" if kind == "cover_letter" else "resume line"
+    labelled = [("your name", name), ("your email", email)]
+    labelled += [(f"the {part}", line.text) for line in getattr(content, kind)]
+    labelled += [
+        ("the heading", heading)
+        for _, groups in _layout(content.resume, facts)
+        for heading, _ in groups
+        if kind == "resume" and heading
+    ]
+    _check_printable(labelled)
+    pdf = _Resume(_STYLES[template])
+    size = pdf.style.size
+    pdf.font(True, size + 8)
+    pdf.multi_cell(0, 8, pdf_text(name), new_x="LMARGIN", new_y="NEXT")
+    if kind == "resume":
+        for line in content.resume:
+            if line.section == "Headline":
+                pdf.rich(line.text, bold=True, size=size + 1)
+    contact = [line for line in content.resume if line.section == "Contact"]
+    pdf.rich(_contact(contact, email, facts), size=size - 0.5)
+    if kind == "cover_letter":
+        pdf.ln(4)
+        for line in content.cover_letter:
+            pdf.font()
+            pdf.multi_cell(0, pdf.style.height + 0.6, pdf_text(line.text), align="L")
+            pdf.ln(3)
+        return pdf
+    for section, groups in _layout(content.resume, facts):
+        pdf.section(section)
+        for group, lines in groups:
+            listed = section in _GROUPED
+            # A line naming its own group is its title, so the name is not printed twice.
+            titles = {
+                line.id
+                for line in lines
+                if line.heading or (listed and names_group(line.text, group))
+            }
+            if listed and group and not titles:
+                pdf.rich(group, bold=True)
+            for line in lines:
+                if line.id in titles:
+                    pdf.ln(0.6)
+                    pdf.rich(line.text, bold=True)
+                elif listed:
+                    pdf.bullet(line.text)
+                else:
+                    pdf.rich(line.text)
+                    pdf.ln(0.6)
+            if listed:
+                pdf.ln(0.8)
+    return pdf
+
+
+def page_count(
+    content: DraftContent,
+    name: str,
+    email: str,
+    template: Literal["standard", "compact"] = "standard",
+    facts: list[FactSnapshot] | None = None,
+) -> int:
+    return _build(content, name, email, "resume", template, facts or []).pages_count
+
+
 def render_pdf(
     content: DraftContent,
     name: str,
@@ -99,47 +307,7 @@ def render_pdf(
     template: Literal["standard", "compact"] = "standard",
     facts: list[FactSnapshot] | None = None,
 ) -> bytes:
-    font_path = FONTS / "LiberationSans-Regular.ttf"
-    part = "cover letter line" if kind == "cover_letter" else "resume line"
-    labelled = [("your name", name), ("your email", email)]
-    labelled += [(f"the {part}", line.text) for line in getattr(content, kind)]
-    labelled += [
-        ("the heading", heading)
-        for _, groups in _layout(content.resume, facts or [])
-        for heading, _ in groups
-        if kind == "resume" and heading
-    ]
-    _check_printable(labelled)
-    pdf = FPDF()
-    pdf.set_margins(18, 15, 18)
-    pdf.set_auto_page_break(True, 15)
-    pdf.add_font("Liberation", fname=str(font_path))
-    pdf.add_font("Liberation", style="B", fname=str(FONTS / "LiberationSans-Bold.ttf"))
-    pdf.add_page()
-    pdf.set_font("Liberation", "B", 16)
-    pdf.multi_cell(0, 8, pdf_text(name), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Liberation", size=10)
-    pdf.multi_cell(0, 5, pdf_text(email), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-    size, height = (10, 5) if template == "compact" else (11, 5.5)
-    if kind == "cover_letter":
-        for line in content.cover_letter:
-            pdf.set_font("Liberation", size=size)
-            pdf.multi_cell(0, height, pdf_text(line.text), new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(3)
-    else:
-        for section, groups in _layout(content.resume, facts or []):
-            pdf.set_font("Liberation", "B", 11)
-            pdf.multi_cell(0, 7, section, new_x="LMARGIN", new_y="NEXT")
-            for heading, lines in groups:
-                if heading:
-                    pdf.set_font("Liberation", "B", size)
-                    pdf.multi_cell(0, height, pdf_text(heading), new_x="LMARGIN", new_y="NEXT")
-                for line in lines:
-                    pdf.set_font("Liberation", size=size)
-                    pdf.multi_cell(0, height, pdf_text(line.text), new_x="LMARGIN", new_y="NEXT")
-                    pdf.ln(1)
-            pdf.ln(1)
+    pdf = _build(content, name, email, kind, template, facts or [])
     if kind == "resume" and pdf.pages_count > 2:
         raise ValidationFailedError("The resume exceeds two pages. Shorten it or use Compact.")
     return bytes(pdf.output())

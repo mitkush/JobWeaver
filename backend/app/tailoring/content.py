@@ -3,7 +3,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Section = Literal["Summary", "Skills", "Experience", "Projects", "Education", "Links", "Additional"]
+Section = Literal[
+    "Headline",
+    "Contact",
+    "Summary",
+    "Skills",
+    "Experience",
+    "Projects",
+    "Education",
+    "Links",
+    "Additional",
+]
 
 
 class DraftLine(BaseModel):
@@ -13,6 +23,8 @@ class DraftLine(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     fact_refs: list[str] = Field(min_length=1, max_length=20)
     section: Section = "Experience"
+    # A role or project title line ("Senior Developer | Acme | 2021 to 2023"), not a bullet.
+    heading: bool = False
     manual: bool = False
 
 
@@ -32,3 +44,13 @@ class FactSnapshot(BaseModel):
     group: str
     text: str
     in_base_resume: bool
+
+
+def names_group(text: str, group: str) -> bool:
+    """The line is the group's own title: the bare employer or project name, or the name
+    followed by a role ("Acme Corp - Senior Developer"), as older Drafts wrote them."""
+    folded, name = " ".join(text.split()).casefold(), " ".join(group.split()).casefold()
+    if not name or not folded.startswith(name):
+        return False
+    rest = folded[len(name) :].strip()
+    return not rest or rest[0] in "-|:–—"

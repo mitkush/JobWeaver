@@ -225,7 +225,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC1: From a Feed card to a ready Draft in at most 2 clicks.
 - AC2: Typical generation completes in under 60 seconds on free AI tiers; progress is shown step by step (reading the job, choosing your experience, writing).
 
-**FR-E2 [V1] - Tailored Resume.** Built from the Fact Bank for this Job: chooses the most relevant Facts (including portfolio-only Facts), rewrites them to match the Job's language and ATS keywords, orders sections and bullets by relevance, and keeps to one or two pages (ADR-0005: Fact Bank, no fabrication).
+**FR-E2 [V1] - Tailored Resume.** Built from the Fact Bank for this Job: chooses the most relevant Facts (including portfolio-only Facts), rewrites them to match the Job's language and ATS keywords, orders sections and bullets by relevance, and keeps to one page where the Facts fit, two at most (ADR-0005: Fact Bank, no fabrication). Role titles, employers and dates are copied from the Facts, never taken from the Job's own title.
 - AC1: Every bullet has a Tailoring Trace to at least one Fact.
 - AC2: A code check, not the AI, rejects any skill or technology named in the output that is not in the Fact Bank; rejected lines are regenerated or removed, and the User is told.
 - AC3: On a labelled test set, zero fabricated skills, employers, dates or metrics.
@@ -244,7 +244,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E8 [V1] - Versions.** Every generation, chat change and manual save is a version; the User can compare and restore versions.
 
-**FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume. Choosing or uploading another template is optional per User.
+**FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume: a headline and contact line under the name, uppercase section headings with a rule, "Title | Employer | dates" and "Project | stack | link" title lines over bulleted work, grouped skill lines, and clickable links. The page opens on whichever of Standard or Compact fits on one page. Choosing or uploading another template is optional per User.
 - AC1: The PDF's text is selectable and parses back to the same content (ATS check).
 - AC2: The file name follows `<Name>_<Company>_<Title>.pdf`.
 

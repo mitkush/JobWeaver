@@ -13,7 +13,9 @@ They check what ADR-0005 forbids inventing, and nothing else, so ordinary reword
   ("Languages:"), a past-tense verb ("Designed"), or a word the Fact Bank or the job
   advert also writes in lower case ("conducted");
 - claims of seniority, leadership or expertise must appear in the cited Facts, and an
-  Experience or Projects line must cite work, not only skills.
+  Experience or Projects line must cite work, not only skills;
+- a Headline or Experience heading copies the role title from its cited Facts: the
+  resume never takes the job's own title ("Engineer" for a "Developer").
 
 AI lines that fail are removed. Lines the User edited are kept and flagged: they are
 the User's own words (FR-E6).
@@ -24,7 +26,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from app.tailoring.content import DraftContent, DraftLine, FactSnapshot
+from app.tailoring.content import DraftContent, DraftLine, FactSnapshot, names_group
 from app.tailoring.placeholders import PLACEHOLDER
 from app.tailoring.skills import TECHNOLOGIES, all_spellings, canonical_skill, covers, user_skills
 from app.tailoring.vocabulary import TECHNOLOGIES as COMMON_TECHNOLOGIES
@@ -65,7 +67,27 @@ _CLAIMS = [
     {"promoted", "promotion"},
     {"certified", "certification", "certificate"},
 ]
+# Job title words a Headline or Experience heading may only copy from the cited Facts.
+_ROLE_NOUNS = {
+    "engineer", "developer", "programmer", "consultant", "architect", "analyst", "manager",
+    "designer", "scientist", "administrator", "specialist", "intern", "officer", "tester",
+    "staff",
+}  # fmt: skip
 _WORD = re.compile(r"[a-z][a-z-]*")
+
+
+def _phrase(text: str) -> str:
+    """Lower-case words separated by single spaces, so punctuation and spacing differences
+    ("Developer," or a line break) do not matter when comparing phrases."""
+    return " " + " ".join(re.findall(r"[\w+#]+", text.casefold())) + " "
+
+
+def _role_titles(text: str) -> list[str]:
+    """The " | "-separated parts of a title line that name a role ("Senior Developer")."""
+    parts = [part.strip() for part in re.split(r"\s\|\s|\s[-\u2013\u2014]\s", text)]
+    return [p for p in parts if set(_WORD.findall(p.casefold())) & _ROLE_NOUNS]
+
+
 _ADDRESSING = re.compile(r"\bhiring (?:manager|managers|team|lead|leads)\b")
 
 
@@ -250,12 +272,24 @@ class Checker:
                 continue  # a label such as "Languages:" or "Tools:"
             if _looks_like_verb(folded) or folded in self._ordinary or folded in self._own_name:
                 continue
-            if folded in self._role_words or folded in self._terms or self._in_bank(word):
+            # The job's own title may be named when applying, never claimed in the resume.
+            if part != "resume" and folded in self._role_words:
+                continue
+            if folded in self._terms or self._in_bank(word):
                 continue
             if technologies_in(word, self.job_skills):
                 continue  # already checked as a technology
             reasons.append(f"{word} is not in your Fact Bank")
         cited = set(_WORD.findall(evidence.casefold()))
+        titled = line.heading or any(names_group(line.text, f.group) for f in sources)
+        if part == "resume" and (
+            line.section == "Headline" or (titled and line.section == "Experience")
+        ):
+            # A role title is copied as a whole, not upgraded to the job's ("Developer"
+            # stays), nor assembled from words found elsewhere in a Fact.
+            for title in _role_titles(text):
+                if _phrase(title) not in _phrase(evidence):
+                    reasons.append(f'The role title "{title}" is not in the Facts it cites')
         # "Dear Hiring Manager" addresses the reader; it claims nothing about the User.
         claim_text = _ADDRESSING.sub(" ", text.casefold())
         written = set(_WORD.findall(claim_text))
