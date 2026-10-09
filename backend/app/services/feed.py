@@ -214,6 +214,11 @@ async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None 
     return (await session.execute(query)).all()
 
 
+# Title-matched adverts shorter than this are always read: has_description may call them
+# too short to confirm a Core keyword (Needs review) once whitespace is trimmed.
+SHORT_DESCRIPTION_READ = MIN_DESCRIPTION_CHARS * 10
+
+
 async def _matches(
     session: AsyncSession, jobs: Sequence[Any], preferences: Sequence[Preference]
 ) -> dict[uuid.UUID, dict[uuid.UUID, FeedMatch]]:
@@ -286,8 +291,10 @@ async def _matches(
                             mentions_core,
                             and_(
                                 Posting.id.in_(titled_ids),
-                                func.length(func.btrim(Posting.description))
-                                < MIN_DESCRIPTION_CHARS,
+                                # Untrimmed and generous: PostgreSQL and Python trim
+                                # different whitespace, so the exact count is left to
+                                # has_description. Short adverts cost little to read.
+                                func.length(Posting.description) < SHORT_DESCRIPTION_READ,
                             ),
                         ),
                     )

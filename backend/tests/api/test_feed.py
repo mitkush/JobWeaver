@@ -651,3 +651,67 @@ async def test_a_title_only_rails_job_stays_under_review_even_with_extracted_ski
     assert card["matched_keywords"] == []
     title = (await client.get("/api/feed", params={"section": "link"})).json()
     assert title["items"] == []
+
+
+RAILS_CORE = {
+    "titles": ["Backend Developer", "Ruby on Rails Developer"],
+    "keywords": ["Rails"],
+    "core_keywords": ["Rails"],
+    "keyword_min_matches": 1,
+    "locations": [{"city": "Bengaluru", "country": "IN"}],
+    "work_modes": ["hybrid", "onsite"],
+}
+JAVA_ADVERT = "Java and Spring Boot services for our payments platform in Bengaluru. " * 20
+
+
+async def test_long_adverts_without_a_core_keyword_are_never_read(alice, monkeypatch):
+    """The database filters descriptions first (Neon transfer, COSTS.md); Python's
+    whole-word checks still decide, so other spellings and capitals keep matching."""
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("n1", title="Backend Developer", company="SAP", description=JAVA_ADVERT),
+        posting(
+            "n2",
+            title="Backend Developer",
+            company="Shopify",
+            description="Our checkout runs on RoR and PostgreSQL. " + JAVA_ADVERT,
+        ),
+        posting(
+            "n3",
+            title="Backend Developer",
+            company="Zoho",
+            description="WE USE RUBY ON RAILS FOR BILLING. " + JAVA_ADVERT,
+        ),
+    )
+    await process()
+    read: list[str] = []
+    real = feed_service.mentioned
+
+    def spy(text, terms):
+        read.append(text)
+        return real(text, terms)
+
+    monkeypatch.setattr(feed_service, "mentioned", spy)
+    await client.put("/api/preferences", json=RAILS_CORE)
+    items = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert {c["company"] for c in items} == {"Shopify", "Zoho"}
+    assert JAVA_ADVERT not in read
+
+
+async def test_a_short_advert_padded_with_whitespace_stays_under_review(alice, db):
+    """PostgreSQL and Python trim different characters: the short advert is still read
+    and still called too short to confirm a Core keyword."""
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("p1", title="Ruby on Rails Developer", company="Freshworks", description="x"),
+    )
+    await process()
+    padded = "Build billing services." + "\n" * 90 + " " * 10
+    await db.execute(update(Posting).values(description=padded))
+    await db.commit()
+    await client.put("/api/preferences", json=RAILS_CORE)
+    params = {"section": "link", "match": "review"}
+    [card] = (await client.get("/api/feed", params=params)).json()["items"]
+    assert (card["company"], card["match"]) == ("Freshworks", "review")
