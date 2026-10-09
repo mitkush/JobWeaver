@@ -55,6 +55,10 @@ export function useDraftActions(id: string) {
     mutationFn: (body: Schemas["DraftSave"]) => unwrap(api.PUT("/api/drafts/{draft_id}", { params: { path: { draft_id: id } }, body })),
     onSuccess: refresh,
   });
+  const recheck = useMutation({
+    mutationFn: (expected_version: number) => unwrap(api.POST("/api/drafts/{draft_id}/recheck", { params: { path: { draft_id: id } }, body: { expected_version } })),
+    onSuccess: refresh,
+  });
   const chat = useMutation({
     mutationFn: (body: Schemas["DraftChat"]) => unwrap(api.POST("/api/drafts/{draft_id}/chat", { params: { path: { draft_id: id } }, body })),
     onSuccess: refresh,
@@ -71,7 +75,7 @@ export function useDraftActions(id: string) {
     mutationFn: (number: number) => unwrap(api.POST("/api/drafts/{draft_id}/applied", { params: { path: { draft_id: id } }, body: { expected_version: number } })),
     onSuccess: () => refresh(),
   });
-  return { save, chat, restore, retry, applied, refresh };
+  return { save, recheck, chat, restore, retry, applied, refresh };
 }
 
 export function pdfHref(id: string, kind: "resume" | "cover_letter", number: number, template = "standard") {

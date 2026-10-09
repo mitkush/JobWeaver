@@ -238,7 +238,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E5 [V1] - Diff and Trace.** The Draft screen shows what changed against the Base Resume (added from portfolio, rewritten, reordered, removed) and, for any line, the Fact(s) it came from.
 
-**FR-E6 [V1] - Direct editing.** The User edits any part of the Draft inline. Manual edits are never overwritten by later AI edits without the User's confirmation.
+**FR-E6 [V1] - Direct editing.** The User edits any part of the Draft inline and can change the Facts cited by a line. Manual edits are never overwritten by later AI edits without the User's confirmation. After updating the Fact Bank, the User can recheck the saved Draft against current Facts without an AI call; this creates a restorable version, retains manual lines with warnings, and removes unsupported AI lines.
 
 **FR-E7 [V1] - Draft Chat.** A chat panel on the right of the Draft screen. The User asks for changes in plain language; each change is applied as a new Draft version, highlighted, and can be undone.
 - AC1: "Lead with the Rails work and shorten the summary" produces a new version with those changes and no new facts.

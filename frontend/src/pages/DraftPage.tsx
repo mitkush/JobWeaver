@@ -61,13 +61,14 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const [chatError, setChatError] = useState<string | undefined>();
   const [outwardBusy, setOutwardBusy] = useState(false);
   const [loadLatestConfirm, setLoadLatestConfirm] = useState(false);
+  const [recheckConfirm, setRecheckConfirm] = useState(false);
   const [resumePrompt, setResumePrompt] = useState(search.has("resume_handoff"));
   const versions = useVersions(draft.id);
   const diff = useDraftDiff(draft.id, current.number, showDiff && compare === "base");
   const actions = useDraftActions(draft.id);
   const toast = useToast();
   const dirty = JSON.stringify(content) !== JSON.stringify(current.content);
-  const busy = actions.save.isPending || actions.chat.isPending || actions.restore.isPending || outwardBusy;
+  const busy = actions.save.isPending || actions.recheck.isPending || actions.chat.isPending || actions.restore.isPending || outwardBusy;
   const hasEmail = Boolean(draft.job.contact_email);
   // Applied or any later status: Mark as applied has nothing left to do.
   const applied = Boolean(draft.application_status && draft.application_status !== "drafted");
@@ -91,6 +92,13 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
     try {
       accept(await actions.save.mutateAsync({ expected_version: current.number, content }));
       toast("success", "Draft saved");
+    } catch (failure) { setError((failure as Error).message); }
+  }
+  async function recheck() {
+    setRecheckConfirm(false);
+    try {
+      accept(await actions.recheck.mutateAsync(current.number));
+      toast("success", "Draft checked against your latest Fact Bank");
     } catch (failure) { setError((failure as Error).message); }
   }
   async function chat(message: string, overwrite: boolean) {
@@ -175,12 +183,12 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       </div>
       {error && <Alert tone="error">{error}</Alert>}
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
-      {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></Alert>}
+      {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul><p className="mt-2">Edit the line or cite a supporting Fact in its Tailoring Trace. If the Fact is missing, add it to your Fact Bank and recheck.</p><div className="mt-2 flex flex-wrap items-center gap-3"><a href="#draft-editor" className="text-sm font-medium underline" onClick={() => setPart("resume")}>Review resume lines</a><Link to="/fact-bank" className="text-sm font-medium underline">Open Fact Bank</Link><Button variant="secondary" size="sm" disabled={busy || dirty || stale} onClick={() => setRecheckConfirm(true)}>Recheck latest Facts</Button></div>{dirty && <p className="mt-2 text-xs">Save your edits before rechecking.</p>}</Alert>}
       {resumePrompt && <Alert tone="info">Gmail connection returned. Review the recipient and confirm to resume the hand-off.<Button variant="ghost" onClick={() => { setRecipient(sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? recipient); }}>Restore recipient</Button></Alert>}
       {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <button type="button" className="underline" onClick={() => void pdfFile("resume", "download")}>Download resume PDF</button></>}</Alert>}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Card className="min-w-0 space-y-5 p-4 sm:p-6">
+        <Card id="draft-editor" className="min-w-0 space-y-5 p-4 sm:p-6">
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Draft documents">
             {PARTS.filter((entry) => entry.value !== "email_body" || hasEmail).map((entry) => <Button key={entry.value} role="tab" aria-selected={part === entry.value} variant={part === entry.value ? "primary" : "secondary"} onClick={() => setPart(entry.value)}>{entry.label}</Button>)}
           </div>
@@ -230,6 +238,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
         <p className="mt-2 text-xs">You will send from Gmail after reviewing.</p>
       </ConfirmDialog>
       <ConfirmDialog open={loadLatestConfirm} title="Replace unsaved edits?" confirmLabel="Load latest version" tone="primary" onCancel={() => setLoadLatestConfirm(false)} onConfirm={() => { accept(draft); setLoadLatestConfirm(false); }}>Your unsaved edits will be replaced with the latest saved version.</ConfirmDialog>
+      <ConfirmDialog open={recheckConfirm} title="Recheck against your latest Fact Bank?" confirmLabel="Recheck draft" tone="primary" loading={actions.recheck.isPending} onCancel={() => setRecheckConfirm(false)} onConfirm={() => void recheck()}>This creates a new version. Your edited lines stay and are flagged if unsupported. AI-written lines that no longer have supporting Facts may be removed; you can restore an earlier version.</ConfirmDialog>
     </div>
   );
 }
