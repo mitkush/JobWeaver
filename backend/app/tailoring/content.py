@@ -34,6 +34,8 @@ class DraftContent(BaseModel):
     resume: list[DraftLine] = Field(min_length=1, max_length=50)
     cover_letter: list[DraftLine] = Field(min_length=1, max_length=12)
     email_subject: str = Field(default="", max_length=200)
+    # The recruiter's name for "Dear ...", only when the job advert names them.
+    email_greeting: str = Field(default="", max_length=100)
     email_body: list[DraftLine] = Field(default_factory=list, max_length=10)
 
 

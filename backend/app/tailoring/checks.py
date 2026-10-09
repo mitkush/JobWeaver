@@ -12,6 +12,7 @@ They check what ADR-0005 forbids inventing, and nothing else, so ordinary reword
   and any part may name the User. A capitalised word is not a name when it is a label
   ("Languages:"), a past-tense verb ("Designed"), or a word the Fact Bank or the job
   advert also writes in lower case ("conducted");
+- "N+ years" is allowed up to the total code counts from the User's role dates;
 - claims of seniority, leadership or expertise must appear in the cited Facts, and an
   Experience or Projects line must cite work, not only skills;
 - a Headline or Experience heading copies the role title from its cited Facts: the
@@ -74,6 +75,7 @@ _ROLE_NOUNS = {
     "staff",
 }  # fmt: skip
 _WORD = re.compile(r"[a-z][a-z-]*")
+_YEARS = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
 
 
 def _phrase(text: str) -> str:
@@ -202,6 +204,8 @@ class Checker:
     # The job advert and the User's own name: ordinary words and a name the User owns.
     job_text: str = ""
     user_name: str = ""
+    # Total years across the User's role dates, counted by code (tailoring/experience).
+    experience_years: float | None = None
     _by_ref: dict[str, FactSnapshot] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -224,6 +228,30 @@ class Checker:
         folded = word.casefold()
         forms = {folded, folded.removesuffix("s"), folded.removesuffix("es")} - {""}
         return any(re.search(rf"(?<![\w]){re.escape(form)}(?![\w])", self._bank) for form in forms)
+
+    def _experience_claims(self, text: str) -> tuple[str, list[str]]:
+        """Blanks "N+ years" claims the role dates support, so the number and "years"
+        checks below pass them; names any claim above the counted total. A claim about one
+        skill ("5+ years of Go") is left for the cited Facts to support."""
+        if self.experience_years is None:
+            return text, []
+        reasons = []
+
+        def judge(match: re.Match[str]) -> str:
+            after = text[match.end() : match.end() + 40]
+            if re.match(r"\s+(?:of|in|with|using)\b", after) and technologies_in(
+                after, self.job_skills
+            ):
+                return match.group(0)
+            claimed = float(match.group(1))
+            if claimed > self.experience_years:  # type: ignore[operator]
+                reasons.append(
+                    f'"{match.group(0)}" is more than the {self.experience_years:g} years '
+                    "your role dates show"
+                )
+            return " "
+
+        return _YEARS.sub(judge, text), reasons
 
     def problems(self, line: DraftLine, part: Part) -> list[str]:
         if len(set(line.fact_refs)) != len(line.fact_refs):
@@ -255,6 +283,8 @@ class Checker:
             for name in (self.company, self.job_title):
                 if name.strip():
                     text = re.sub(re.escape(" ".join(name.split())), " ", text, flags=re.I)
+        text, too_many = self._experience_claims(text)
+        reasons += too_many
         for canonical, written in technologies_in(text, self.job_skills).items():
             if not covers(self._skills, canonical):
                 reasons.append(f"{written} is not in your Fact Bank")
@@ -322,8 +352,11 @@ def check(
     job_skills: Iterable[str] = (),
     job_text: str = "",
     user_name: str = "",
+    experience_years: float | None = None,
 ) -> CheckResult:
-    checker = Checker(facts, job_title, company, tuple(job_skills), job_text, user_name)
+    checker = Checker(
+        facts, job_title, company, tuple(job_skills), job_text, user_name, experience_years
+    )
     checked = content.model_copy(deep=True)
     result = CheckResult(checked)
     seen: set[str] = set()

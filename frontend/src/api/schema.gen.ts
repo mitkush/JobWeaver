@@ -1227,6 +1227,11 @@ export interface components {
              * @default
              */
             email_subject?: string;
+            /**
+             * Email Greeting
+             * @default
+             */
+            email_greeting?: string;
             /** Email Body */
             email_body?: components["schemas"]["DraftLine"][];
         };

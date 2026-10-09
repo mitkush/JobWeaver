@@ -118,6 +118,18 @@ it("marks an Experience line as a role title line", async () => {
   expect(body.content.resume[0]).toMatchObject({ section: "Experience", heading: true });
 });
 
+it("edits the email greeting name with the subject", async () => {
+  const calls = setup();
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByRole("tab", { name: "Application Email" }));
+  await user.type(screen.getByLabelText("Greeting name (blank: Hiring Team)"), "Sapna");
+  await user.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText("Version 2");
+  const body = await calls.find((r) => r.method === "PUT")?.json();
+  expect(body.content).toMatchObject({ email_greeting: "Sapna", email_subject: "Application for Backend Engineer" });
+});
+
 it("creates a chat version and requires confirmation before changing manual edits", async () => {
   const calls = setup();
   const user = userEvent.setup();

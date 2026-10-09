@@ -10,6 +10,10 @@ from email_validator import EmailNotValidError, validate_email
 from app.schemas.drafts import EmailCheck
 
 _NO_REPLY = re.compile(r"(?:no[._-]?reply|do[._-]?not[._-]?reply)", re.I)
+# Addresses an advert gives for something else: accommodation requests, privacy, support.
+_NOT_FOR_APPLICATIONS = re.compile(
+    r"(accommodation|accessibility|privacy|dpo|legal|support|abuse|security)", re.I
+)
 
 
 async def check_recipient(recipient: str) -> EmailCheck:
@@ -20,6 +24,11 @@ async def check_recipient(recipient: str) -> EmailCheck:
         return EmailCheck(recipient=recipient, valid=False, warnings=["Invalid email format"])
     if _NO_REPLY.search(address.local_part):
         warnings.append("This looks like a no-reply address")
+    not_for = _NOT_FOR_APPLICATIONS.search(address.local_part)
+    if not_for:
+        warnings.append(
+            f"This looks like a {not_for.group(1).lower()} address, not one for applications"
+        )
     try:
         answers = await dns.asyncresolver.resolve(address.ascii_domain, "MX", lifetime=3)
         if not any(str(answer.exchange) != "." for answer in answers):

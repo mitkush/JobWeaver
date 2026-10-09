@@ -365,7 +365,13 @@ async def test_handoff_creates_only_a_gmail_draft_with_pdf_and_reuses_it(
     attachment = list(mime.iter_attachments())[0]
     assert attachment.get_filename() == draft["attachment_name"]
     assert attachment.get_payload(decode=True).startswith(b"%PDF")
-    assert "resume attached" in mime.get_body().get_content()
+    assert mime["Subject"] == f"{draft['job']['title']} - {draft['job']['name']}"
+    plain = mime.get_body(preferencelist=("plain",)).get_content()
+    assert plain.startswith("Dear Hiring Team,")
+    assert "resume attached" in plain
+    assert f"Kind regards,\n{draft['job']['name']}" in plain
+    page = mime.get_body(preferencelist=("html",)).get_content()
+    assert 'class="gmail_signature"' in page
     assert (
         await client.post(f"/api/drafts/{draft['id']}/handoff", json=body)
     ).json() == result.json()

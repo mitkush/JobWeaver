@@ -334,3 +334,23 @@ def test_an_unflagged_line_naming_its_employer_is_checked_as_a_title():
     assert line_problem(line, [*FACTS, ROLE]) is not None
     line = DraftLine(text="Acme Corp — Senior Software Developer", fact_refs=["F9"])
     assert line_problem(line, [*FACTS, ROLE]) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "years", "truthful"),
+    [
+        ("Developer with 5+ years building billing APIs", 5.5, True),
+        ("Developer with 3.5+ years building billing APIs", 5.5, True),
+        ("Developer with 6+ years building billing APIs", 5.5, False),
+        # Years with one skill need a Fact that says so, whatever the total.
+        ("Developer with 5+ years of Python", 5.5, False),
+        # Without role dates, years need a Fact as before.
+        ("Developer with 5+ years building billing APIs", None, False),
+    ],
+)
+def test_years_are_allowed_up_to_the_counted_total(text, years, truthful):
+    from app.tailoring.checks import Checker
+
+    line = DraftLine(text=text, fact_refs=["F2"], section="Summary")
+    reasons = Checker(FACTS, experience_years=years).problems(line, "resume")
+    assert (not reasons) is truthful, reasons

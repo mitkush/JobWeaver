@@ -50,6 +50,8 @@ from app.tailoring.checks import CheckResult, check
 from app.tailoring.completeness import include_supported_skills
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import moved
+from app.tailoring.email import body_html, body_text, greeting_name, signature, subject
+from app.tailoring.experience import experience_years
 from app.tailoring.placeholders import fill_placeholders
 from app.tailoring.skills import requested_missing_skills, user_skills
 
@@ -148,6 +150,7 @@ def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
         description=str(job["description"]),
         facts=facts,
         has_email=bool(job.get("contact_email")),
+        experience_years=experience_years(facts),
     )
 
 
@@ -168,6 +171,16 @@ def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> Ch
         job_skills=[str(s) for s in job.get("required_skills") or []],
         job_text=str(job.get("description") or ""),
         user_name=str(job.get("name") or ""),
+        experience_years=experience_years(facts),
+    )
+
+
+def _email_header(draft: Draft, content: DraftContent) -> None:
+    """Subject and greeting for AI output: facts about the job and the User, set by code."""
+    job = draft.job_snapshot
+    content.email_subject = subject(content, str(job["title"]), str(job.get("name") or ""))
+    content.email_greeting = greeting_name(
+        content.email_greeting, str(job.get("description") or "")
     )
 
 
@@ -344,7 +357,7 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             content, warnings = checked.content, [*warnings, *checked.warnings]
             if not content.resume or not content.cover_letter:
                 raise _Unverified()
-            content.email_subject = "Application for " + str(draft.job_snapshot["title"])
+            _email_header(draft, content)
             if draft.job_snapshot.get("contact_email") and not content.email_body:
                 raise _Unverified()
             try:
@@ -590,6 +603,7 @@ async def chat(
             for line in getattr(proposal, part):
                 line.manual = False
     proposal.email_subject = content.email_subject
+    proposal.email_greeting = content.email_greeting
     # Your kept lines are checked again (a Fact may have changed) and flagged, not removed.
     final = _check(draft, proposal, facts)
     await _save_version(
@@ -685,11 +699,15 @@ async def handoff(
     row = await version(session, draft)
     content = DraftContent.model_validate(row.content)
     job = draft.job_snapshot
-    subject = " ".join(content.email_subject.split())
-    text = "\n\n".join(line.text for line in content.email_body)
-    message_body = (
-        f"Dear hiring team,\n\n{text}\n\nPlease find my resume attached.\n\n{job['name']}"
+    email_subject = " ".join(content.email_subject.split())
+    sign = signature(
+        content,
+        str(job["name"]),
+        user.email,
+        [FactSnapshot.model_validate(fact) for fact in row.facts],
     )
+    message_body = body_text(content, content.email_greeting, sign)
+    message_html = body_html(content, content.email_greeting, sign)
     attachment = filename(str(job["name"]), str(job["company"]), str(job["title"]))
     application = await applications.ensure(session, user, draft.job_id, draft.id)
     existing = await session.scalar(
@@ -705,7 +723,7 @@ async def handoff(
         .order_by(GmailHandoff.created_at.desc())
         .limit(1)
     )
-    url = compose_url(user.email, recipient, subject, message_body)
+    url = compose_url(user.email, recipient, email_subject, message_body)
     mode = "fallback"
     # Reuse only a hand-off that reached Gmail; after a Gmail failure, try Gmail again.
     if existing is None or not existing.gmail_draft_id:
@@ -717,10 +735,11 @@ async def handoff(
                 raw_message(
                     user.email,
                     recipient,
-                    subject,
+                    email_subject,
                     message_body,
                     data,
                     attachment,
+                    html=message_html,
                 ),
             )
         except GoogleFlowError:

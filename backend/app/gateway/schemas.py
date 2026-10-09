@@ -115,6 +115,8 @@ class TailorDraftRequest(BaseModel):
     description: str
     facts: list[FactSnapshot] = Field(min_length=1, max_length=200)
     has_email: bool
+    # Counted by code from the User's role dates; the AI may claim this many years, no more.
+    experience_years: float | None = None
 
 
 class ReviseDraftRequest(TailorDraftRequest):
