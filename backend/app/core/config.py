@@ -1,5 +1,6 @@
 """Settings from the environment (12-factor). Nothing else reads os.environ."""
 
+from datetime import datetime
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -42,6 +43,9 @@ class Settings(BaseSettings):
     # Job Sources (Phase 2). A Source without its key is reported as not configured.
     brightdata_api_key: str = ""
     brightdata_api_keys: str = Field(default="", repr=False)
+    # Bright Data does not expose free-tier credits. Pause an exhausted primary
+    # until its next renewal while keeping it first in the credential list.
+    brightdata_primary_paused_until: datetime | None = None
     brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"
     rapidapi_key: str = ""
     # Phase 5 Sources. Apify's free $5 a month is shared by Naukri and LinkedIn (Apify).
@@ -94,6 +98,13 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = True
     max_upload_bytes: int = 5 * 1024 * 1024
+
+    @field_validator("brightdata_primary_paused_until")
+    @classmethod
+    def _pause_date_needs_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("BRIGHTDATA_PRIMARY_PAUSED_UNTIL needs a timezone, such as Z")
+        return value
 
     @field_validator("admin_emails", mode="before")
     @classmethod

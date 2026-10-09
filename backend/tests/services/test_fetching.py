@@ -1078,6 +1078,39 @@ async def test_only_unbilled_start_quota_rejection_can_retry_with_backup(
     )
 
 
+async def test_paused_primary_uses_backup_then_returns_after_renewal(db, fetcher, clock):
+    from app.models.fetch import QueryWatermark
+
+    calls = []
+
+    class Accounts(FakeSearch):
+        name = "linkedin"
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+        primary_credential_pause_setting = "brightdata_primary_paused_until"
+        monthly_allowance = 5000
+
+        async def fetch_window(self, query, window):
+            calls.append((self.settings.brightdata_api_key, window))
+            return FetchResult(postings=[posting("same-job")], credits_used=1)
+
+    registry.register_adapter(Accounts)
+    fetcher.settings.brightdata_api_key = "primary"
+    fetcher.settings.brightdata_api_keys = "backup"
+    fetcher.settings.brightdata_primary_paused_until = START + timedelta(days=1)
+    await add_preferences(db)
+
+    assert (await fetcher.run_source(Accounts.name)).status == "succeeded"
+    assert calls and all(token == "backup" for token, _ in calls)
+    assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 2
+    calls.clear()
+
+    clock.now += timedelta(days=1)
+    assert (await fetcher.run_source(Accounts.name)).status == "succeeded"
+    assert calls and all(token == "primary" for token, _ in calls)
+    assert all(window.since == START - timedelta(hours=2) for _, window in calls)
+    assert await db.scalar(select(func.count()).select_from(Posting)) == 1
+
+
 async def test_brightdata_primary_and_backup_have_separate_spend(db, fetcher):
     from app.services.fetching import budget_for
     from app.services.provider_credentials import credentials

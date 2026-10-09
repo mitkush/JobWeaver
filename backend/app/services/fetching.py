@@ -558,6 +558,11 @@ class Fetcher:
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
         options = credentials(type(adapter), self.settings)
         for credential in options:
+            pause_setting = adapter.primary_credential_pause_setting
+            if credential.primary and pause_setting:
+                paused_until = getattr(self.settings, pause_setting)
+                if paused_until is not None and self.clock() < paused_until:
+                    continue
             if credential.fingerprint in adapter.exhausted_credentials:
                 continue
             if adapter.account_balance_required:

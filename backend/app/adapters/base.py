@@ -133,6 +133,7 @@ class FetchResult(BaseModel):
 class SourceAdapter(ABC):
     # Each provider declares its own key fields and account-balance capabilities.
     credential_settings: tuple[str, str] | None = None
+    primary_credential_pause_setting: str | None = None
     account_balance_required: bool = False
     name: str
     label: str
