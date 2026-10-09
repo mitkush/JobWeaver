@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,13 +17,15 @@ from app.adapters.base import (
 from app.adapters.errors import BoardNotFound, SourceUnavailable
 from app.core.config import Settings
 from app.core.db import get_sessionmaker
-from app.models import AtsBoard, FetchRun, Posting, Preference, Source, SourceState
+from app.models import AtsBoard, FetchRun, Posting, Preference, RunStatus, Source, SourceState
 from app.services.fetching import (
     FETCH_LOCK_ID,
     Fetcher,
+    fetch_lock,
     next_renewal,
     period_start,
     queries_from_preferences,
+    recover_running_fetches,
 )
 from tests.conftest import signed_in
 
@@ -516,6 +519,120 @@ async def test_spend_on_a_failed_call_is_recorded(db, fetcher):
     await fetcher.run_source("fake-search")
     run = (await db.execute(select(FetchRun))).scalars().first()
     assert (run.status.value, run.credits_used) == ("failed", 1)
+
+
+async def test_windowed_run_is_persisted_before_provider_call(db, fetcher, monkeypatch):
+    await add_preferences(db)
+
+    async def fetch_window(self, query, window):
+        async with get_sessionmaker()() as observer:
+            run = await observer.scalar(
+                select(FetchRun).where(
+                    FetchRun.source == "fake-search", FetchRun.status == RunStatus.RUNNING
+                )
+            )
+            assert run is not None and run.status.value == "running"
+        return FetchResult(postings=[])
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", fetch_window)
+    assert (await fetcher.run_source("fake-search")).status == "succeeded"
+
+
+async def test_unexpected_provider_error_closes_persisted_run(db, fetcher):
+    await add_preferences(db)
+    FakeSearch.results = [RuntimeError("provider bug")]
+
+    assert (await fetcher.run_source("fake-search")).status == "failed"
+    run = await db.scalar(select(FetchRun).where(FetchRun.source == "fake-search"))
+    assert run is not None and run.status == RunStatus.FAILED
+    assert run.error == "Stopped unexpectedly; retry on the next run"
+    assert run.finished_at is not None
+
+
+async def test_cancelled_provider_call_closes_persisted_run(db, fetcher, monkeypatch):
+    await add_preferences(db)
+    started = asyncio.Event()
+
+    async def fetch_window(self, query, window):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", fetch_window)
+    task = asyncio.create_task(fetcher.run_source("fake-search"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    db.expire_all()
+    run = await db.scalar(select(FetchRun).where(FetchRun.source == "fake-search"))
+    assert run is not None and run.status == RunStatus.FAILED
+    assert run.finished_at is not None
+
+
+async def test_restart_recovers_only_unfinished_fetch_runs(db):
+    active = FetchRun(source="fake-search", status=RunStatus.RUNNING, query_key="active")
+    done = FetchRun(source="fake-search", status=RunStatus.SUCCEEDED, query_key="done")
+    db.add_all([active, done])
+    await db.commit()
+
+    assert await recover_running_fetches(get_sessionmaker()) == 1
+    db.expire_all()
+    rows = {row.query_key: row for row in (await db.execute(select(FetchRun))).scalars()}
+    assert rows["active"].status == RunStatus.FAILED
+    assert rows["active"].finished_at is not None
+    assert rows["done"].status == RunStatus.SUCCEEDED
+    assert await recover_running_fetches(get_sessionmaker()) == 0
+
+
+async def test_restart_does_not_close_another_instances_live_run(db):
+    active = FetchRun(source="fake-search", status=RunStatus.RUNNING)
+    db.add(active)
+    await db.commit()
+    active_id = active.id
+
+    async with fetch_lock(get_sessionmaker()) as got:
+        assert got
+        assert await recover_running_fetches(get_sessionmaker()) == 0
+        db.expire_all()
+        assert (await db.get(FetchRun, active_id)).status == RunStatus.RUNNING
+
+
+async def test_cancellation_still_propagates_if_cleanup_fails(db, fetcher, monkeypatch):
+    await add_preferences(db)
+    started = asyncio.Event()
+
+    async def fetch_window(self, query, window):
+        started.set()
+        await asyncio.Event().wait()
+
+    async def fail_cleanup(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", fetch_window)
+    monkeypatch.setattr("app.services.fetching.fail_running_fetches", fail_cleanup)
+    task = asyncio.create_task(fetcher.run_source("fake-search"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_board_run_is_persisted_before_provider_call(db, fetcher, monkeypatch):
+    await add_boards(db, "acme")
+
+    async def fetch_board(self, slug):
+        async with get_sessionmaker()() as observer:
+            run = await observer.scalar(
+                select(FetchRun).where(
+                    FetchRun.source == "fake-board", FetchRun.status == RunStatus.RUNNING
+                )
+            )
+            assert run is not None and run.status.value == "running"
+        return FetchResult(postings=[])
+
+    monkeypatch.setattr(FakeBoard, "fetch_board", fetch_board)
+    assert (await fetcher.run_source("fake-board")).status == "succeeded"
 
 
 async def test_cron_after_the_daily_run_repeats_nothing(db, fetcher, clock):

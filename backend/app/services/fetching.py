@@ -348,6 +348,39 @@ async def daily_run_missed(session: AsyncSession, now: datetime) -> bool:
     return last is None or now - last > timedelta(hours=26)
 
 
+async def fail_running_fetches(
+    session: AsyncSession, now: datetime, *, source: str | None = None
+) -> int:
+    """Close persisted runs left open by an error or an interrupted process."""
+    conditions = [FetchRun.status == RunStatus.RUNNING]
+    if source is not None:
+        conditions.append(FetchRun.source == source)
+    result = await session.execute(
+        update(FetchRun)
+        .where(*conditions)
+        .values(
+            status=RunStatus.FAILED,
+            error="Stopped unexpectedly; retry on the next run",
+            finished_at=now,
+        )
+    )
+    return result.rowcount or 0
+
+
+async def recover_running_fetches(sessionmaker: async_sessionmaker[AsyncSession]) -> int:
+    """Close unfinished runs only when no other instance owns the fetch lock."""
+    async with fetch_lock(sessionmaker) as got:
+        if not got:
+            logger.info("Fetch recovery skipped: another instance is running a fetch")
+            return 0
+        async with sessionmaker() as session:
+            count = await fail_running_fetches(session, utcnow())
+            await session.commit()
+    if count:
+        logger.warning("Marked %s interrupted fetch runs as failed after restart", count)
+    return count
+
+
 # --- Runner -----------------------------------------------------------------------------
 
 
@@ -469,6 +502,14 @@ class Fetcher:
                     await self._run_windowed(session, adapter, trigger, outcome)
                 elif isinstance(adapter, SnapshotSourceAdapter):
                     await self._run_snapshot(session, adapter, trigger, outcome)
+            except asyncio.CancelledError:
+                try:
+                    await session.rollback()
+                    await fail_running_fetches(session, self.clock(), source=name)
+                    await session.commit()
+                except Exception:
+                    logger.exception("Could not close cancelled fetch runs for %s", name)
+                raise
             except SourceError as exc:
                 await self._mark_degraded(session, source, exc, now)
                 outcome.status = "failed"
@@ -480,6 +521,7 @@ class Fetcher:
                 logger.exception("Unexpected error while fetching %s", name)
                 await session.rollback()
                 source = await self._source_row(session, name)
+                await fail_running_fetches(session, self.clock(), source=name)
                 error = SourceError(f"{cls.label} failed unexpectedly; see the server logs")
                 await self._mark_degraded(session, source, error, now)
                 await session.commit()
@@ -607,6 +649,9 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # Provider polling can take many minutes. Persist the running state and
+            # release the database connection before waiting for the provider.
+            await session.commit()
             try:
                 while True:
                     run.credential_fingerprint = adapter.credential_fingerprint
@@ -689,6 +734,8 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # A slow board must not keep a database connection idle during HTTP calls.
+            await session.commit()
             try:
                 result = await _guarded(adapter, adapter.fetch_board(board.slug))
             except BoardNotFound as exc:
