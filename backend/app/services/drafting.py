@@ -47,6 +47,7 @@ from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
+from app.tailoring.completeness import include_supported_skills
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import moved
 from app.tailoring.placeholders import fill_placeholders
@@ -336,6 +337,11 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
                     line.manual = False  # only the User's own edits are protected
             checked = _check(draft, generated, facts)
             content, warnings = checked.content, checked.warnings
+            content = include_supported_skills(
+                content, facts, [str(s) for s in draft.job_snapshot.get("required_skills") or []]
+            )
+            checked = _check(draft, content, facts)
+            content, warnings = checked.content, [*warnings, *checked.warnings]
             if not content.resume or not content.cover_letter:
                 raise _Unverified()
             content.email_subject = "Application for " + str(draft.job_snapshot["title"])

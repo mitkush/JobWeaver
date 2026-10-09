@@ -14,14 +14,15 @@ import { KIND_LABELS, KIND_ORDER } from "./labels";
 
 function AddFact({ kind }: { kind: FactKind }) {
   const [text, setText] = useState("");
+  const [group, setGroup] = useState("");
   const create = useCreateFact();
   const toast = useToast();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || (["experience", "project", "education"].includes(kind) && !group.trim())) return;
     try {
-      await create.mutateAsync({ kind, text: text.trim() });
+      await create.mutateAsync({ kind, text: text.trim(), group: group.trim() });
       setText("");
     } catch (error) {
       toast("error", (error as Error).message);
@@ -29,14 +30,23 @@ function AddFact({ kind }: { kind: FactKind }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex gap-2 px-4 py-3">
+    <form onSubmit={submit} className="flex flex-wrap gap-2 px-4 py-3">
+      {["experience", "project", "education", "achievement", "link"].includes(kind) && (
+        <Input
+          value={group}
+          onChange={(e) => setGroup(e.target.value)}
+          placeholder={kind === "experience" ? "Employer" : kind === "project" ? "Project name" : "Group (optional)"}
+          aria-label={`Group for ${KIND_LABELS[kind]}`}
+          required={["experience", "project", "education"].includes(kind)}
+        />
+      )}
       <Input
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={`Add to ${KIND_LABELS[kind].toLowerCase()}`}
         aria-label={`Add to ${KIND_LABELS[kind]}`}
       />
-      <Button type="submit" variant="secondary" loading={create.isPending} disabled={!text.trim()}>
+      <Button type="submit" variant="secondary" loading={create.isPending} disabled={!text.trim() || (["experience", "project", "education"].includes(kind) && !group.trim())}>
         <Plus className="size-4" aria-hidden />
         Add
       </Button>
@@ -66,6 +76,10 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
   }
 
   const selectedFacts = facts.filter((f) => selected.includes(f.id));
+  const firstSelected = selectedFacts[0];
+  const sameGroup = !firstSelected || selectedFacts.every(
+    (fact) => fact.kind === firstSelected.kind && fact.group.trim().toLowerCase() === firstSelected.group.trim().toLowerCase(),
+  );
 
   return (
     <div className="space-y-6">
@@ -76,10 +90,11 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
             <Button size="sm" variant="ghost" onClick={() => setPicked([])}>
               Clear
             </Button>
-            <Button size="sm" onClick={() => setMergeText(selectedFacts.map((f) => f.text).join("; "))}>
+              <Button size="sm" disabled={!sameGroup} onClick={() => setMergeText(selectedFacts.map((f) => f.text).join("; "))}>
               Merge into one
             </Button>
           </div>
+          {!sameGroup && <span className="text-xs text-amber-800">Select Facts from the same section and employer or project to merge.</span>}
         </div>
       )}
 

@@ -18,22 +18,33 @@ Each line: {"id": "unique line id", "text": "...", "fact_refs": ["F1"],
 Use an actual section name, not the pipe-separated list. Copy short Fact refs exactly.
 Every line needs at least one source Fact. Select relevant Facts, including portfolio
 Facts, and order them by relevance.
-Write the resume like a professional one-page resume (about 450 to 550 words; two pages
-only when the Facts cannot fit):
+Write a focused, professional one-page resume. Use the available page when there is
+relevant evidence: include 2 to 4 substantial projects and the supported job skills;
+do not stop after a few generic bullets or leave a large empty area. Two pages are
+acceptable when the strongest evidence cannot fit legibly on one page.
 - Headline: one line under the name, the User's own role title from the Facts plus the
   job's main matching skills, e.g. "Senior Software Developer | Ruby on Rails, Python".
 - Contact: one line from contact Facts only (phone, profile links, location), parts
   separated by " | ". Leave it out if there are no such Facts; code adds the email.
 - Summary: one line of 2 to 4 sentences in the job's language: focus, strongest evidence
   and what the User offers for this role. No "I", no buzzwords without evidence.
+- Match the experience emphasis to the role without changing history. For a role asking
+  for more years, show the documented earlier and current roles and state total tenure
+  only when a Fact supports it. For a role asking for fewer years, the Summary may
+  highlight tenure in the current role, but must say "in this role" or equivalent;
+  never present current-role tenure as total career experience or alter role dates.
 - Experience: per role, one heading line ("heading": true) "Job title | Employer | dates",
   with the title, employer and dates copied exactly from the Facts, never the job's own
   title; then 2 to 6 bullets, strongest and most relevant first, each one achievement or
   responsibility starting with a verb, metrics kept exactly. A short bold-style label
   ("Performance: ...") is fine when it matches a job requirement.
+- Keep contract work under its own employer, never under a concurrent full-time role.
+  A client project is not the employer; keep the contract employer in the heading.
 - Projects: per project, a heading line "Name | main technologies | link if a Fact has
   one", then 1 to 3 bullets. Order projects by relevance to the job.
 - Skills: 2 to 4 lines grouped like the job's stack, "Category: skill, skill, ...".
+  Include every major job skill that is supported by the Facts, especially the core
+  language and framework. A skill line must cite its skill Facts.
 - Education, Links and Additional only when the Facts have them and space allows.
 Never invent skills, technology, employers, dates, metrics, responsibilities or expertise.
 Rewording Facts in the job's language is encouraged; adding anything new is not. Code checks
@@ -71,6 +82,12 @@ Return only JSON: {"facts": [{"kind", "group", "text", "source_kind", "in_base_r
 - text: one fact, copied or minimally condensed from the documents. Never add anything
   that is not written in the documents.
 - One skill per skill fact. One bullet or claim per experience/project/achievement fact.
+- Never classify a job title (for example "Senior Software Developer") as a skill.
+- Keep each Fact with the employer or project named in its source. Contract work for
+  one employer is separate from another employer's full-time role. Do not combine
+  claims from different employers in one Fact.
+- Deduplicate repeated claims across documents. Do not merge unrelated bullets into
+  a semicolon-separated Fact.
 - For each role, also one experience fact with the job title and dates exactly as written
   ("Senior Software Developer, March 2023 to Present").
 - For each project, also one project fact naming its technologies and its link, if given.
