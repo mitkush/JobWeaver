@@ -717,6 +717,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts/{draft_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recheck */
+        post: operations["recheck_api_drafts__draft_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/drafts/{draft_id}/chat": {
         parameters: {
             query?: never;
@@ -1300,6 +1317,11 @@ export interface components {
              * @enum {string}
              */
             template?: "standard" | "compact";
+        };
+        /** DraftRecheck */
+        DraftRecheck: {
+            /** Expected Version */
+            expected_version: number;
         };
         /** DraftSave */
         DraftSave: {
@@ -3646,6 +3668,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_api_drafts__draft_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRecheck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

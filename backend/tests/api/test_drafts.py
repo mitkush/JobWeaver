@@ -30,6 +30,7 @@ from app.models import (
     OAuthCredential,
     Posting,
 )
+from app.models.fact import FactKind, FactOrigin
 from app.schemas.drafts import EmailCheck
 from app.services import drafting
 from app.services.correspondence import merge_jobs, source_priorities
@@ -212,6 +213,43 @@ async def test_manual_edits_naming_missing_skills_are_kept_and_flagged(prepared)
     assert any(
         w.startswith("Your edit in the resume") and "Kubernetes" in w for w in version["warnings"]
     )
+
+
+async def test_recheck_uses_current_fact_bank_without_replacing_manual_edits(prepared, db):
+    draft = await generated(prepared)
+    user, client, _, _ = prepared
+    content = copy.deepcopy(draft["version"]["content"])
+    content["resume"][0]["text"] = "Python and Kubernetes"
+    saved = (
+        await client.put(
+            f"/api/drafts/{draft['id']}",
+            json={"expected_version": 1, "content": content},
+        )
+    ).json()
+    assert any("Kubernetes" in warning for warning in saved["version"]["warnings"])
+    db.add(
+        Fact(
+            user_id=user.id,
+            kind=FactKind.SKILL,
+            group="",
+            text="Kubernetes",
+            origin=FactOrigin.USER,
+            in_base_resume=False,
+        )
+    )
+    await db.commit()
+
+    response = await client.post(f"/api/drafts/{draft['id']}/recheck", json={"expected_version": 2})
+    assert response.status_code == 200
+    result = response.json()["version"]
+    assert result["number"] == 3 and result["source"] == "recheck"
+    assert result["warnings"] == []
+    assert result["content"]["resume"][0]["text"] == "Python and Kubernetes"
+    assert result["content"]["resume"][0]["manual"] is True
+    assert any(fact["text"] == "Kubernetes" for fact in result["facts"])
+    assert (
+        await client.post(f"/api/drafts/{draft['id']}/recheck", json={"expected_version": 2})
+    ).status_code == 409
 
 
 async def test_manual_rewording_is_saved_without_warnings(prepared):

@@ -17,6 +17,10 @@ class DraftSave(BaseModel):
     content: DraftContent
 
 
+class DraftRecheck(BaseModel):
+    expected_version: int = Field(ge=1)
+
+
 class DraftChat(BaseModel):
     expected_version: int = Field(ge=1)
     message: str = Field(min_length=1, max_length=2000)

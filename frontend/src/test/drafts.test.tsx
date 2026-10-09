@@ -81,6 +81,41 @@ it("saves edits locally without triggering Gmail and protects unsaved edits", as
   expect(calls.some((r) => r.url.includes("/handoff"))).toBe(false);
 });
 
+it("offers a confirmed Fact Bank recheck and updates the warning", async () => {
+  const draft = makeDraft();
+  draft.version!.warnings = ['Your edit in the resume: "senior" is not stated in the Facts it cites'];
+  const calls = setup(draft, {
+    "POST /api/drafts/draft-1/recheck": () => {
+      draft.current_version = 2;
+      draft.version = { ...draft.version!, number: 2, source: "recheck", warnings: [] };
+      return json(draft);
+    },
+  });
+  const user = userEvent.setup();
+  await screen.findByText(/"senior" is not stated/);
+  expect(screen.getByRole("link", { name: "Open Fact Bank" })).toHaveAttribute("href", "/fact-bank");
+  await user.click(screen.getByRole("button", { name: "Recheck latest Facts" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("AI-written lines that no longer have supporting Facts may be removed");
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Recheck draft" }));
+  await waitFor(() => expect(screen.queryByText(/"senior" is not stated/)).not.toBeInTheDocument());
+  const request = calls.find((call) => call.url.endsWith("/recheck"));
+  expect(await request?.json()).toEqual({ expected_version: 1 });
+});
+
+it("lets a user cite another Fact for an edited line", async () => {
+  const draft = makeDraft();
+  draft.version!.warnings = ['Your edit in the resume: "senior" is not stated in the Facts it cites'];
+  const calls = setup(draft);
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByText("Tailoring Trace (1 Facts)"));
+  await user.click(screen.getByRole("button", { name: "Cite Fact" }));
+  expect(screen.getByRole("button", { name: "Recheck latest Facts" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Save draft" }));
+  const request = calls.find((call) => call.method === "PUT");
+  expect(await request?.json()).toMatchObject({ content: { resume: [{ fact_refs: ["F1", "F2"] }] } });
+});
+
 it("shows the source Fact and the Base Resume diff", async () => {
   setup();
   const user = userEvent.setup();

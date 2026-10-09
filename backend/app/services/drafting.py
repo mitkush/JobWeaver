@@ -139,6 +139,22 @@ async def _facts(session: AsyncSession, user: User) -> list[FactSnapshot]:
     ]
 
 
+async def _updated_facts(
+    session: AsyncSession, user: User, previous: list[FactSnapshot]
+) -> list[FactSnapshot]:
+    """Refresh Fact text without changing the references already used by this Draft."""
+    existing = {fact.id: fact.ref for fact in previous}
+    next_ref = max((int(fact.ref[1:]) for fact in previous), default=0) + 1
+    latest = await _facts(session, user)
+    for fact in latest:
+        if fact.id in existing:
+            fact.ref = existing[fact.id]
+        else:
+            fact.ref = f"F{next_ref}"
+            next_ref += 1
+    return latest
+
+
 def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
     job = draft.job_snapshot
     return TailorDraftRequest(
@@ -526,6 +542,30 @@ async def save(
     await _save_version(session, draft, checked.content, facts, "manual", checked.warnings)
 
 
+async def recheck(session: AsyncSession, user: User, draft_id: uuid.UUID, expected: int) -> None:
+    draft = await owned_draft(session, user, draft_id, lock=True)
+    ready(draft, expected)
+    previous = await version(session, draft)
+    facts = await _updated_facts(
+        session, user, [FactSnapshot.model_validate(fact) for fact in previous.facts]
+    )
+    checked = _check(draft, DraftContent.model_validate(previous.content), facts)
+    if not checked.content.resume or not checked.content.cover_letter:
+        raise ValidationFailedError(
+            "The current Fact Bank cannot support this Draft. Restore the missing Facts "
+            "or edit the Draft before rechecking."
+        )
+    await _save_version(
+        session,
+        draft,
+        checked.content,
+        facts,
+        "recheck",
+        checked.warnings,
+        "Rechecked against the current Fact Bank",
+    )
+
+
 async def chat(
     session: AsyncSession,
     user: User,
@@ -540,16 +580,9 @@ async def chat(
     ready(draft, expected)
     ensure_ai_allowed(user)
     current = await version(session, draft)
-    previous_facts = [FactSnapshot.model_validate(fact) for fact in current.facts]
-    previous_refs = {fact.id: fact.ref for fact in previous_facts}
-    facts = await _facts(session, user)
-    next_ref = max((int(fact.ref[1:]) for fact in previous_facts), default=0) + 1
-    for fact in facts:
-        if fact.id in previous_refs:
-            fact.ref = previous_refs[fact.id]
-        else:
-            fact.ref = f"F{next_ref}"
-            next_ref += 1
+    facts = await _updated_facts(
+        session, user, [FactSnapshot.model_validate(fact) for fact in current.facts]
+    )
     content = DraftContent.model_validate(current.content)
     skills = user_skills(
         [fact.text for fact in facts if fact.kind == "skill"],
