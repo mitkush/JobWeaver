@@ -53,6 +53,8 @@ def test_city_aliases(raw, city):
         ("Remote - India", None, "IN", True),
         ("Bengaluru (WFH), India", "Bengaluru", "IN", True),
         ("WFH - India", None, "IN", True),
+        ("Mumbai, India (No WFH)", "Mumbai", "IN", False),
+        ("Mumbai, India (WFH not available)", "Mumbai", "IN", False),
         ("London, United Kingdom (Hybrid)", "London", "GB", False),
         ("India", None, "IN", False),
         ("Anywhere", None, None, True),
@@ -68,6 +70,11 @@ def test_work_mode():
     assert work_mode_from("Fully remote") == WorkMode.REMOTE
     assert work_mode_from("WFH - India") == WorkMode.REMOTE
     assert work_mode_from("Hybrid with WFH days") == WorkMode.HYBRID
+    assert work_mode_from("Work from office only. No WFH.") == WorkMode.ONSITE
+    assert work_mode_from("WFH not available") is None
+    assert work_mode_from("No remote work") is None
+    assert work_mode_from("Remote work is not available") is None
+    assert work_mode_from("No WFH, but remote roles are available") == WorkMode.REMOTE
     assert work_mode_from("On-site") == WorkMode.ONSITE
     assert work_mode_from(None, remote_flag=True) == WorkMode.REMOTE
     assert work_mode_from("Full-time") is None
