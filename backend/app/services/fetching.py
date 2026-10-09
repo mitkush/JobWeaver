@@ -51,7 +51,7 @@ from app.models.preference import Preference
 from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
 from app.services.account_balances import account_balance
-from app.services.provider_credentials import credentials
+from app.services.provider_credentials import active_primary_pause, credentials
 
 logger = logging.getLogger(__name__)
 
@@ -557,7 +557,10 @@ class Fetcher:
 
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
         options = credentials(type(adapter), self.settings)
+        paused_until = active_primary_pause(type(adapter), self.settings, self.clock())
         for credential in options:
+            if credential.primary and paused_until is not None:
+                continue
             if credential.fingerprint in adapter.exhausted_credentials:
                 continue
             if adapter.account_balance_required:
@@ -585,6 +588,11 @@ class Fetcher:
             adapter.allowance_left = remaining
             return
         if options:
+            if paused_until is not None:
+                raise SourceErrorBudget(
+                    "All available backup accounts have exhausted their credits or tracked "
+                    f"allowance. Primary is paused until {paused_until:%d %b %Y %H:%M %Z}."
+                )
             raise SourceErrorBudget(
                 "All configured accounts have exhausted their credits or tracked "
                 "allowance. Primary is checked again on the next run."

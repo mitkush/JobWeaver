@@ -23,7 +23,7 @@ from app.schemas.sources import (
 )
 from app.services.account_balances import account_status
 from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
-from app.services.provider_credentials import credentials
+from app.services.provider_credentials import active_primary_pause, credentials
 
 NOTICE_AFTER = timedelta(days=1)
 
@@ -70,7 +70,13 @@ async def list_statuses(
                 .limit(1)
             )
             tracked = next((c for c in options if c.fingerprint == latest), options[0])
-            if cls.account_balance_required and account:
+            if account and (
+                cls.account_balance_required
+                or (
+                    cls.primary_credential_pause_setting
+                    and active_primary_pause(cls, get_settings(), now)
+                )
+            ):
                 tracked = next((c for c in options if c.label == account.account_label), tracked)
         budget = await budget_for(
             session,

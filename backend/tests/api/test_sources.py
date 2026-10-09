@@ -227,3 +227,70 @@ async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypat
     assert budget["spent"] == 281
     assert budget["account"]["spent"] == 500
     assert budget["account"]["remaining"] == 0
+
+
+async def test_source_status_tracks_backup_before_first_backup_fetch(db, monkeypatch):
+    from app.core.config import Settings
+    from app.schemas.account_balances import AccountBalance
+    from app.services import source_status
+
+    paused_until = datetime(2026, 11, 1, tzinfo=UTC)
+    settings = Settings(
+        brightdata_api_key="primary",
+        brightdata_api_keys="backup",
+        brightdata_primary_paused_until=paused_until,
+    )
+    monkeypatch.setattr(Board, "credential_settings", ("brightdata_api_key", "brightdata_api_keys"))
+    monkeypatch.setattr(
+        Board, "primary_credential_pause_setting", "brightdata_primary_paused_until"
+    )
+    monkeypatch.setattr(Board, "monthly_allowance", 5000)
+    monkeypatch.setattr(source_status, "get_settings", lambda: settings)
+
+    async def account_balance(self, now, *, force=False):
+        return AccountBalance(status="unsupported", message="Free credits unknown")
+
+    monkeypatch.setattr(Board, "account_balance", account_balance)
+    db.add(FetchRun(source=Board.name, status="succeeded", credits_used=30))
+    await db.commit()
+
+    status = (await source_status.list_statuses(db, datetime(2026, 10, 9, tzinfo=UTC)))[0]
+    assert status.budget.account.account_label == "Backup account 1"
+    assert status.budget.tracked_account == "Backup account 1"
+    assert status.budget.spent == 0
+    assert status.budget.account.accounts[0].paused_until == paused_until
+
+
+async def test_source_status_tracks_latest_backup_without_pause(db, monkeypatch):
+    from app.core.config import Settings
+    from app.schemas.account_balances import AccountBalance
+    from app.services import source_status
+    from app.services.provider_credentials import credentials
+
+    settings = Settings(brightdata_api_key="primary", brightdata_api_keys="backup")
+    monkeypatch.setattr(Board, "credential_settings", ("brightdata_api_key", "brightdata_api_keys"))
+    monkeypatch.setattr(
+        Board, "primary_credential_pause_setting", "brightdata_primary_paused_until"
+    )
+    monkeypatch.setattr(Board, "monthly_allowance", 5000)
+    monkeypatch.setattr(source_status, "get_settings", lambda: settings)
+
+    async def account_balance(self, now, *, force=False):
+        return AccountBalance(status="unsupported", message="Free credits unknown")
+
+    monkeypatch.setattr(Board, "account_balance", account_balance)
+    backup = credentials(Board, settings)[1]
+    db.add(
+        FetchRun(
+            source=Board.name,
+            status="succeeded",
+            credits_used=30,
+            credential_fingerprint=backup.fingerprint,
+        )
+    )
+    await db.commit()
+
+    status = (await source_status.list_statuses(db, datetime(2026, 10, 9, tzinfo=UTC)))[0]
+    assert status.budget.account.account_label == "Primary account"
+    assert status.budget.tracked_account == "Backup account 1"
+    assert status.budget.spent == 30

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class AccountCredit(BaseModel):
     label: str
     status: Literal["live", "unavailable", "unsupported"]
+    paused_until: datetime | None = None
     allowance: int | None = None
     spent: int | None = None
     remaining: int | None = None

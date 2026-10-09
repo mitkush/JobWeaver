@@ -27,7 +27,7 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
         <ul className="text-xs text-slate-500">
           {account.accounts.map((a) => (
             <li key={a.label}>
-              {a.label}: {a.status === "live" ? `${a.remaining?.toLocaleString()} ${account.unit} available` : "account allowance and remaining credits unknown"}
+              {a.label}: {a.paused_until && `paused until ${new Date(a.paused_until).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })} UTC; `}{a.status === "live" ? `${a.remaining?.toLocaleString()} ${account.unit} available` : "account allowance and remaining credits unknown"}
               {a.renews_on && ` · renews ${shortDate(a.renews_on)}`}
             </li>
           ))}

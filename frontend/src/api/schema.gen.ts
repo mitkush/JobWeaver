@@ -1018,6 +1018,8 @@ export interface components {
              * @enum {string}
              */
             status: "live" | "unavailable" | "unsupported";
+            /** Paused Until */
+            paused_until?: string | null;
             /** Allowance */
             allowance?: number | null;
             /** Spent */
