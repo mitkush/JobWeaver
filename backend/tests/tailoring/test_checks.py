@@ -278,3 +278,42 @@ def test_skill_matches_and_gaps_split_required_skills_with_aliases():
     required = ["RoR", "PostgreSQL", "Redis", "REST APIs", "Elasticsearch", "Kubernetes"]
     assert skill_matches(required, skills) == ["RoR", "PostgreSQL", "Redis", "REST APIs"]
     assert skill_gaps(required, skills) == ["Elasticsearch", "Kubernetes"]
+
+
+ROLE = FactSnapshot(
+    ref="F9",
+    id=uuid.uuid4(),
+    kind="experience",
+    group="Acme Corp",
+    text="Senior Software Developer, March 2023 to Present",
+    in_base_resume=True,
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "section", "truthful"),
+    [
+        ("Senior Software Developer | Acme Corp | March 2023 to Present", "Experience", True),
+        ("Senior Software Engineer | Acme Corp | March 2023 to Present", "Experience", False),
+        ("Staff Software Developer | Acme Corp | March 2023 to Present", "Experience", False),
+        ("Senior Software Developer | Python", "Headline", True),
+        ("Senior Backend Engineer | Python", "Headline", False),
+    ],
+)
+def test_role_titles_are_copied_not_upgraded(text, section, truthful):
+    line = DraftLine(text=text, fact_refs=["F9"], section=section, heading=True)
+    assert (line_problem(line, [*FACTS, ROLE]) is None) is truthful
+
+
+def test_the_jobs_title_is_never_claimed_in_the_resume():
+    """The cover letter may name the job applied for; the resume may not take its title."""
+    from app.tailoring.checks import check
+
+    line = "Staff Developer with Python"
+    content = DraftContent(
+        resume=[DraftLine(id="r", text=line, fact_refs=["F1"], section="Summary")],
+        cover_letter=[DraftLine(id="c", text="I am applying for the Staff role", fact_refs=["F1"])],
+    )
+    result = check(content, FACTS, job_title="Staff Engineer", company="Scribd")
+    assert [line.id for line in result.content.resume] == []
+    assert [line.id for line in result.content.cover_letter] == ["c"]

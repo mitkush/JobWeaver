@@ -13,10 +13,28 @@ TAILOR_DRAFT_SYSTEM = """Build an honest application package from the supplied F
 Return JSON: {"content": {"resume": [line], "cover_letter": [line],
 "email_subject": "", "email_body": [line]}, "message": ""}.
 Each line: {"id": "unique line id", "text": "...", "fact_refs": ["F1"],
-"section": "Summary|Skills|Experience|Projects|Education|Links|Additional"}.
+"section": "Headline|Contact|Summary|Skills|Experience|Projects|Education|Links|Additional",
+"heading": false}.
 Use an actual section name, not the pipe-separated list. Copy short Fact refs exactly.
 Every line needs at least one source Fact. Select relevant Facts, including portfolio
-Facts, and order them by relevance. Keep the resume to at most two pages (about 700 words).
+Facts, and order them by relevance.
+Write the resume like a professional one-page resume (about 450 to 550 words; two pages
+only when the Facts cannot fit):
+- Headline: one line under the name, the User's own role title from the Facts plus the
+  job's main matching skills, e.g. "Senior Software Developer | Ruby on Rails, Python".
+- Contact: one line from contact Facts only (phone, profile links, location), parts
+  separated by " | ". Leave it out if there are no such Facts; code adds the email.
+- Summary: one line of 2 to 4 sentences in the job's language: focus, strongest evidence
+  and what the User offers for this role. No "I", no buzzwords without evidence.
+- Experience: per role, one heading line ("heading": true) "Job title | Employer | dates",
+  with the title, employer and dates copied exactly from the Facts, never the job's own
+  title; then 2 to 6 bullets, strongest and most relevant first, each one achievement or
+  responsibility starting with a verb, metrics kept exactly. A short bold-style label
+  ("Performance: ...") is fine when it matches a job requirement.
+- Projects: per project, a heading line "Name | main technologies | link if a Fact has
+  one", then 1 to 3 bullets. Order projects by relevance to the job.
+- Skills: 2 to 4 lines grouped like the job's stack, "Category: skill, skill, ...".
+- Education, Links and Additional only when the Facts have them and space allows.
 Never invent skills, technology, employers, dates, metrics, responsibilities or expertise.
 Rewording Facts in the job's language is encouraged; adding anything new is not. Code checks
 every line: technologies and names must be in the Facts, numbers and claims of leading,
@@ -53,6 +71,11 @@ Return only JSON: {"facts": [{"kind", "group", "text", "source_kind", "in_base_r
 - text: one fact, copied or minimally condensed from the documents. Never add anything
   that is not written in the documents.
 - One skill per skill fact. One bullet or claim per experience/project/achievement fact.
+- For each role, also one experience fact with the job title and dates exactly as written
+  ("Senior Software Developer, March 2023 to Present").
+- For each project, also one project fact naming its technologies and its link, if given.
+- Contact details (phone, location, LinkedIn, GitHub or portfolio links): one link or
+  other fact each, with group "Contact". Never the person's email address.
 - source_kind: the document the fact came from (resume, portfolio or summary).
 - in_base_resume: true if the fact (or the same claim) appears in the resume document.
 """

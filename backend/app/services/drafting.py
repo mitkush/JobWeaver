@@ -23,7 +23,7 @@ from app.core.errors import (
     PreconditionError,
     ValidationFailedError,
 )
-from app.documents.pdf import filename, render_pdf
+from app.documents.pdf import filename, page_count, render_pdf
 from app.gateway.base import BaseAIGateway
 from app.gateway.schemas import ReviseDraftRequest, TailorDraftRequest
 from app.models import (
@@ -427,20 +427,22 @@ _TEMPLATE_FITS: dict[tuple[uuid.UUID, int], Literal["standard", "compact"]] = {}
 
 
 async def _fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
+    """Standard when it fits one page, else Compact when that fits one page; past that,
+    whichever fits two pages. A second page holding a few lines looks unfinished."""
     key = (draft.id, row.number)
     if key not in _TEMPLATE_FITS:
+        content = DraftContent.model_validate(row.content)
+        facts = [FactSnapshot.model_validate(fact) for fact in row.facts]
+        name, email = str(draft.job_snapshot["name"]), str(draft.job_snapshot["email"])
         try:
-            await asyncio.to_thread(
-                render_pdf,
-                DraftContent.model_validate(row.content),
-                str(draft.job_snapshot["name"]),
-                str(draft.job_snapshot["email"]),
-                "resume",
-                "standard",
-                [FactSnapshot.model_validate(fact) for fact in row.facts],
-            )
-            fits: Literal["standard", "compact"] = "standard"
+            pages = {
+                template: await asyncio.to_thread(page_count, content, name, email, template, facts)
+                for template in ("standard", "compact")
+            }
         except ValidationFailedError:
+            pages = {"standard": 3, "compact": 3}
+        fits: Literal["standard", "compact"] = "standard"
+        if pages["standard"] > 1 and pages["compact"] < pages["standard"]:
             fits = "compact"
         if len(_TEMPLATE_FITS) > 2000:
             _TEMPLATE_FITS.clear()
@@ -507,6 +509,7 @@ async def save(
                 or line.text != old[line.id].text
                 or line.fact_refs != old[line.id].fact_refs
                 or line.section != old[line.id].section
+                or line.heading != old[line.id].heading
                 or i in shifted
             ):
                 line.manual = True

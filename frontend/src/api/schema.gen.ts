@@ -1251,7 +1251,12 @@ export interface components {
              * @default Experience
              * @enum {string}
              */
-            section?: "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional";
+            section?: "Headline" | "Contact" | "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional";
+            /**
+             * Heading
+             * @default false
+             */
+            heading?: boolean;
             /**
              * Manual
              * @default false

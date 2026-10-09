@@ -6,7 +6,7 @@ import { Select, Textarea } from "@/components/ui/field";
 
 import type { Content, Line, Part, Version } from "./api";
 
-const SECTIONS: NonNullable<Line["section"]>[] = ["Summary", "Skills", "Experience", "Projects", "Education", "Links", "Additional"];
+const SECTIONS: NonNullable<Line["section"]>[] = ["Headline", "Contact", "Summary", "Skills", "Experience", "Projects", "Education", "Links", "Additional"];
 
 export function DraftEditor({ content, part, facts, onChange, disabled }: {
   content: Content; part: Part; facts: Version["facts"]; onChange: (content: Content) => void; disabled: boolean;
@@ -31,6 +31,10 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
             {part === "resume" && <Select aria-label={`Section for line ${index + 1}`} value={line.section ?? "Experience"} disabled={disabled} className="w-40" onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, section: event.target.value as Line["section"] } : entry))}>
               {SECTIONS.map((section) => <option key={section}>{section}</option>)}
             </Select>}
+            {part === "resume" && (line.section === "Experience" || line.section === "Projects" || line.section === "Education") && <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+              <input type="checkbox" checked={line.heading ?? false} disabled={disabled} onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, heading: event.target.checked } : entry))} />
+              Title line
+            </label>}
             <div className="flex gap-1">
               {line.manual && <span className="self-center text-xs text-slate-500">Your edit</span>}
               <Button size="sm" variant="ghost" aria-label={`Move line ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp className="size-4" /></Button>
@@ -53,7 +57,7 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
         </Select>
         <Button variant="secondary" disabled={disabled || !factToAdd} onClick={() => {
           const fact = facts.find((entry) => entry.ref === factToAdd);
-          if (fact) update([...lines, { id: crypto.randomUUID(), text: fact.text, fact_refs: [fact.ref], section: fact.kind === "skill" ? "Skills" : fact.kind === "project" ? "Projects" : fact.kind === "education" ? "Education" : "Experience", manual: true }]);
+          if (fact) update([...lines, { id: crypto.randomUUID(), text: fact.text, fact_refs: [fact.ref], section: fact.group === "Contact" ? "Contact" : fact.kind === "skill" ? "Skills" : fact.kind === "project" ? "Projects" : fact.kind === "education" ? "Education" : "Experience", manual: true }]);
         }}>Add Fact</Button>
       </div>
     </div>

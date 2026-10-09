@@ -597,17 +597,26 @@ async def test_ai_cannot_mark_its_own_lines_as_manual_edits(prepared, monkeypatc
 
 
 async def test_page_opens_on_the_template_the_resume_fits_in(prepared, monkeypatch):
-    real = drafting.render_pdf
+    """Compact when only Compact fits on one page: a second page with a few lines on it
+    looks unfinished."""
 
-    def compact_only(content, name, email, kind="resume", template="standard", facts=None):
-        if template == "standard":
-            raise ValidationFailedError("The resume exceeds two pages. Shorten it or use Compact.")
-        return real(content, name, email, kind, template, facts)
+    def pages(content, name, email, template="standard", facts=None):
+        return 2 if template == "standard" else 1
 
-    monkeypatch.setattr(drafting, "render_pdf", compact_only)
+    monkeypatch.setattr(drafting, "page_count", pages)
     drafting._TEMPLATE_FITS.clear()
     draft = await generated(prepared)
     assert draft["template"] == "compact"
+
+
+async def test_page_keeps_standard_when_compact_saves_no_page(prepared, monkeypatch):
+    def pages(content, name, email, template="standard", facts=None):
+        return 2
+
+    monkeypatch.setattr(drafting, "page_count", pages)
+    drafting._TEMPLATE_FITS.clear()
+    draft = await generated(prepared)
+    assert draft["template"] == "standard"
 
 
 async def test_a_pdf_problem_never_fails_generation(prepared, monkeypatch):
