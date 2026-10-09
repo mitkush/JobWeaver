@@ -37,6 +37,7 @@ from app.schemas.feed import (
     SourceBadge,
 )
 from app.tailoring.keywords import (
+    MIN_DESCRIPTION_CHARS,
     KeywordMatch,
     KeywordRule,
     has_core,
@@ -51,6 +52,7 @@ from app.tailoring.skills import (
     canonical_skill,
     skill_gaps,
     skill_matches,
+    spellings,
     user_skills,
 )
 
@@ -212,6 +214,11 @@ async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None 
     return (await session.execute(query)).all()
 
 
+# Title-matched adverts shorter than this are always read: has_description may call them
+# too short to confirm a Core keyword (Needs review) once whitespace is trimmed.
+SHORT_DESCRIPTION_READ = MIN_DESCRIPTION_CHARS * 10
+
+
 async def _matches(
     session: AsyncSession, jobs: Sequence[Any], preferences: Sequence[Preference]
 ) -> dict[uuid.UUID, dict[uuid.UUID, FeedMatch]]:
@@ -226,7 +233,8 @@ async def _matches(
         confirmed match;
       - a differently titled Job whose description names a Core keyword and
         keyword_min_matches keywords in total: "keywords".
-    Descriptions are read only for Jobs that need a keyword check, a chunk at a time."""
+    Descriptions are read only for Jobs whose advert may name a Core keyword or whose
+    title matches but whose advert is too short to confirm one."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
     rules = {p.user_id: rule_of(p) for p in preferences}
     # Job id -> (user id, rule, whether the title matched) for each keyword check.
@@ -245,19 +253,59 @@ async def _matches(
     if not pending:
         return result
     terms = frozenset().union(*(r.terms for r in rules.values() if r is not None))
+    # A Core mention is required for every confirmed match. Check the literal spellings
+    # in PostgreSQL first so unrelated multi-KB descriptions never cross the network.
+    # ILIKE is deliberately a broad filter; Python's whole-word and capitalization
+    # checks below remain the final authority.
+    core_spellings = {
+        spelling
+        for rule in rules.values()
+        if rule is not None
+        for keyword in rule.keywords
+        if keyword.core
+        for spelling in spellings(keyword.canonical)
+        if spelling
+    }
+    mentions_core = or_(
+        *(
+            Posting.description.ilike(f"%{_like_literal(term)}%", escape="\\")
+            for term in core_spellings
+        )
+    )
     by_id = {job.id: job for job in jobs}
     ids = list(pending)
     for start in range(0, len(ids), LINK_CHUNK):
         chunk = [by_id[i] for i in ids[start : start + LINK_CHUNK]]
         posting_ids = [j.primary_posting_id for j in chunk if j.primary_posting_id]
+        titled_ids = [
+            j.primary_posting_id
+            for j in chunk
+            if j.primary_posting_id and any(titled for _, _, titled in pending[j.id])
+        ]
         descriptions = dict(
             (
                 await session.execute(
-                    select(Posting.id, Posting.description).where(Posting.id.in_(posting_ids))
+                    select(Posting.id, Posting.description).where(
+                        Posting.id.in_(posting_ids),
+                        or_(
+                            mentions_core,
+                            and_(
+                                Posting.id.in_(titled_ids),
+                                # Untrimmed and generous: PostgreSQL and Python trim
+                                # different whitespace, so the exact count is left to
+                                # has_description. Short adverts cost little to read.
+                                func.length(Posting.description) < SHORT_DESCRIPTION_READ,
+                            ),
+                        ),
+                    )
                 )
             ).all()
         )
         for job in chunk:
+            if job.primary_posting_id and job.primary_posting_id not in descriptions:
+                # The advert is long and names none of the Core keywords. It cannot be
+                # a confirmed match or a short-description review match.
+                continue
             required = list(job.required_skills or [])
             in_requirements = mentioned(", ".join(required), terms) | {
                 canonical_skill(s) for s in required

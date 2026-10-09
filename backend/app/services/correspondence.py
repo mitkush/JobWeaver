@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import defer
 
 from app.adapters.base import Location, NormalizedPosting, WorkMode
 from app.adapters.normalize import extract_contact_email, parse_location
@@ -135,6 +136,7 @@ async def refresh_jobs(
         postings = (
             await session.execute(
                 select(Posting)
+                .options(defer(Posting.description))
                 .where(Posting.job_id.in_(chunk))
                 .execution_options(populate_existing=True)
             )
