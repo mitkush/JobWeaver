@@ -80,6 +80,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC2: No Draft can be generated until the User has reviewed the Fact Bank at least once.
 - AC3: Re-uploading a document shows what changed and keeps the User's manual edits.
 - AC4: A User can export and delete their Fact Bank and documents.
+- AC5: Experience, project and education Facts keep their employer, project or school group when added or edited. Merging Facts from different groups or kinds is rejected so a Draft cannot credit work to the wrong employer.
 
 **FR-A3 [V1] - Preferences.** Multi-select target titles and keywords, locations (India cities; other countries and cities) and work modes (onsite, hybrid, remote). Editable at any time.
 - Location choices are India, other country (with optional city), or Global (no country/city restriction, including India). Job locations are optional: an empty list means Global. Work mode is separate: remote means WFH, hybrid means some days in the office, and onsite means office. A posting can list India and be remote; its listed place is the office location. Location and work mode must both match. For a remote (WFH) Job only the country has to match a chosen place (a remote Job listed in Pune matches a User who chose Bengaluru); for onsite and hybrid Jobs the city must match too.
@@ -229,6 +230,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC1: Every bullet has a Tailoring Trace to at least one Fact.
 - AC2: A code check, not the AI, rejects any skill or technology named in the output that is not in the Fact Bank; rejected lines are regenerated or removed, and the User is told.
 - AC3: On a labelled test set, zero fabricated skills, employers, dates or metrics.
+- AC4: A Draft names supported required job skills in its Skills section even if the AI overlooks them. Years of experience are stated with the correct scope: total career tenure or tenure in a specific role, as supported by the Facts.
 
 **FR-E3 [V1] - Cover Letter.** A Job-specific cover letter, same Fact Bank rule and trace.
 
