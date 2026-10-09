@@ -234,7 +234,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E3 [V1] - Cover Letter.** A Job-specific cover letter, same Fact Bank rule and trace.
 
-**FR-E4 [V1] - Application Email.** For Jobs with a contact email: subject and short body, written to the hiring contact, same Fact Bank rule. The email body refers to the attached resume.
+**FR-E4 [V1] - Application Email.** For Jobs with a contact email: subject and short body, written to the hiring contact, same Fact Bank rule. The email body refers to the attached resume. The body opens with the role and who the User is, then 3 to 5 "Why I fit this role" lines labelled with the Job's own requirements, an optional fit note and a closing line. Code, not the AI, sets the parts that are facts: the subject ("Job title - Name", or the advert's own format when it names the job and the User), the greeting (a person only when the advert names them, else "Dear Hiring Team"), the attachment note and a signature built from the User's contact Facts. The Gmail draft is HTML (bold labels, links) with a plain-text copy. Years of experience are counted by code from the role dates in the Fact Bank, overlapping roles once and a year without a month as the shortest span; a "N+ years" claim may not exceed that total. The recipient check warns about addresses meant for something else (accommodations, privacy, support).
 
 **FR-E5 [V1] - Diff and Trace.** The Draft screen shows what changed against the Base Resume (added from portfolio, rewritten, reordered, removed) and, for any line, the Fact(s) it came from.
 

@@ -10,6 +10,7 @@ from fontTools.ttLib import TTFont
 from fpdf import FPDF
 
 from app.core.errors import ValidationFailedError
+from app.tailoring.contact import LINK, contact_facts, href
 from app.tailoring.content import DraftContent, DraftLine, FactSnapshot, names_group
 
 # Sections whose lines sit under the employer, project or school they come from.
@@ -99,13 +100,6 @@ def filename(name: str, company: str, title: str, kind: str = "resume") -> str:
 
 
 # Web addresses and emails in a line, printed as clickable links.
-_LINK = re.compile(
-    r"(https?://[^\s|,;()]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
-    # A bare .io/.dev/.app/.ai name needs a path: "Socket.io" is a library, not a link.
-    r"|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\."
-    r"(?:(?:com|org|net|in|me|co)(?:/[^\s|,;()]*)?|(?:io|dev|app|ai)/[^\s|,;()]*))",
-    re.IGNORECASE,
-)
 _LABEL = re.compile(r"^([^:]{1,40}):\s")
 LINK_COLOUR = (26, 61, 140)
 RULE_COLOUR = (150, 150, 150)
@@ -123,12 +117,6 @@ _STYLES = {
     "standard": _Style(size=10, height=4.7, margin=15, gap=2.2),
     "compact": _Style(size=9.5, height=4.3, margin=12, gap=1.6),
 }
-
-
-def _href(target: str) -> str:
-    if "@" in target and "/" not in target:
-        return "mailto:" + target
-    return target if target.startswith("http") else "https://" + target
 
 
 class _Resume(FPDF):
@@ -156,13 +144,13 @@ class _Resume(FPDF):
             self.write(height, label.group(0))
             text = text[label.end() :]
         position = 0
-        for match in _LINK.finditer(text):
+        for match in LINK.finditer(text):
             if match.start() > position:
                 self.font(bold, size)
                 self.write(height, text[position : match.start()])
             self.font(bold, size, underline=True)
             self.set_text_color(*LINK_COLOUR)
-            self.write(height, match.group(0), link=_href(match.group(0)))
+            self.write(height, match.group(0), link=href(match.group(0)))
             self.set_text_color(0, 0, 0)
             position = match.end()
         if position < len(text):
@@ -191,37 +179,11 @@ class _Resume(FPDF):
         self.ln(1.4)
 
 
-_PHONE = re.compile(r"(?<![\w+])\+?\d[\d ().-]{7,}\d(?!\w)")
-# A profile, not a repository: "github.com/asha", never "github.com/asha/ledger".
-_PROFILE = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:linkedin\.com/in|github\.com)/[\w.-]+/?(?![\w/])",
-    re.IGNORECASE,
-)
-_CONTACT_LABEL = re.compile(
-    r"^(?:phone|mobile|tel|linkedin|github|location|portfolio|website)\s*:\s*", re.IGNORECASE
-)
-
-
-def _contact_facts(facts: list[FactSnapshot]) -> list[str]:
-    """Contact details the User reviewed as Facts, copied as written: anything filed
-    under the Contact group, and phone numbers and profile links in link Facts."""
-    parts: list[str] = []
-    for fact in facts:
-        text = " ".join(fact.text.split())
-        if fact.group.strip().casefold() == "contact":
-            parts.append(_CONTACT_LABEL.sub("", text))
-        elif fact.kind == "link":
-            parts += [m.group(0) for m in _PHONE.finditer(text)]
-            parts += [m.group(0).rstrip("/") for m in _PROFILE.finditer(text)]
-    phones = [p for p in parts if _PHONE.fullmatch(p)]
-    return list(dict.fromkeys(phones + [p for p in parts if p not in phones]))
-
-
 def _contact(lines: list[DraftLine], email: str, facts: list[FactSnapshot]) -> str:
     """One contact line: the Draft's Contact lines, or else the User's contact Facts, with
     their sign-in email added after the phone number."""
     parts = [p.strip() for line in lines for p in line.text.split("|") if p.strip()]
-    parts = parts or _contact_facts(facts)
+    parts = parts or contact_facts(facts)
     if email and not any(email.casefold() in p.casefold() for p in parts):
         phones = [i for i, p in enumerate(parts) if re.fullmatch(r"[+\d\s().-]{7,}", p)]
         parts.insert(phones[0] + 1 if phones else 0, email)

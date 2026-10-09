@@ -184,7 +184,10 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Draft documents">
             {PARTS.filter((entry) => entry.value !== "email_body" || hasEmail).map((entry) => <Button key={entry.value} role="tab" aria-selected={part === entry.value} variant={part === entry.value ? "primary" : "secondary"} onClick={() => setPart(entry.value)}>{entry.label}</Button>)}
           </div>
-          {part === "email_body" && <Field label="Email subject" htmlFor="email-subject"><Input id="email-subject" value={content.email_subject ?? ""} maxLength={200} onChange={(event) => setContent({ ...content, email_subject: event.target.value })} disabled={busy} /></Field>}
+          {part === "email_body" && <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+            <Field label="Email subject" htmlFor="email-subject"><Input id="email-subject" value={content.email_subject ?? ""} maxLength={200} onChange={(event) => setContent({ ...content, email_subject: event.target.value })} disabled={busy} /></Field>
+            <Field label="Greeting name (blank: Hiring Team)" htmlFor="email-greeting"><Input id="email-greeting" value={content.email_greeting ?? ""} maxLength={100} onChange={(event) => setContent({ ...content, email_greeting: event.target.value })} disabled={busy} /></Field>
+          </div>}
           <DraftEditor content={content} part={part} facts={current.facts} onChange={setContent} disabled={busy} />
           <div className="flex flex-wrap items-center gap-3"><Button variant="secondary" loading={actions.save.isPending} disabled={busy || !dirty || stale} onClick={() => void save()}>Save draft</Button><span className="text-xs text-slate-500">{dirty ? "Unsaved edits. Save before downloading or opening Gmail." : "Saved in JobWeaver. Nothing has been sent."}</span></div>
           <details><summary className="cursor-pointer text-sm font-medium">Base Resume</summary><pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-600 dark:text-slate-400">{draft.base_resume || "No Base Resume text is available."}</pre></details>
