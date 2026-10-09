@@ -607,6 +607,9 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # Provider polling can take many minutes. Persist the running state and
+            # release the database connection before waiting for the provider.
+            await session.commit()
             try:
                 while True:
                     run.credential_fingerprint = adapter.credential_fingerprint
@@ -689,6 +692,8 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # A slow board must not keep a database connection idle during HTTP calls.
+            await session.commit()
             try:
                 result = await _guarded(adapter, adapter.fetch_board(board.slug))
             except BoardNotFound as exc:

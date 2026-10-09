@@ -16,7 +16,7 @@ from app.adapters.base import (
 from app.adapters.errors import BoardNotFound, SourceUnavailable
 from app.core.config import Settings
 from app.core.db import get_sessionmaker
-from app.models import AtsBoard, FetchRun, Posting, Preference, Source, SourceState
+from app.models import AtsBoard, FetchRun, Posting, Preference, RunStatus, Source, SourceState
 from app.services.fetching import (
     FETCH_LOCK_ID,
     Fetcher,
@@ -516,6 +516,40 @@ async def test_spend_on_a_failed_call_is_recorded(db, fetcher):
     await fetcher.run_source("fake-search")
     run = (await db.execute(select(FetchRun))).scalars().first()
     assert (run.status.value, run.credits_used) == ("failed", 1)
+
+
+async def test_windowed_run_is_persisted_before_provider_call(db, fetcher, monkeypatch):
+    await add_preferences(db)
+
+    async def fetch_window(self, query, window):
+        async with get_sessionmaker()() as observer:
+            run = await observer.scalar(
+                select(FetchRun).where(
+                    FetchRun.source == "fake-search", FetchRun.status == RunStatus.RUNNING
+                )
+            )
+            assert run is not None and run.status.value == "running"
+        return FetchResult(postings=[])
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", fetch_window)
+    assert (await fetcher.run_source("fake-search")).status == "succeeded"
+
+
+async def test_board_run_is_persisted_before_provider_call(db, fetcher, monkeypatch):
+    await add_boards(db, "acme")
+
+    async def fetch_board(self, slug):
+        async with get_sessionmaker()() as observer:
+            run = await observer.scalar(
+                select(FetchRun).where(
+                    FetchRun.source == "fake-board", FetchRun.status == RunStatus.RUNNING
+                )
+            )
+            assert run is not None and run.status.value == "running"
+        return FetchResult(postings=[])
+
+    monkeypatch.setattr(FakeBoard, "fetch_board", fetch_board)
+    assert (await fetcher.run_source("fake-board")).status == "succeeded"
 
 
 async def test_cron_after_the_daily_run_repeats_nothing(db, fetcher, clock):
