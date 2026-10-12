@@ -10,6 +10,18 @@ exec 9>/home/ubuntu/.jobweaver-deploy.lock
 flock -n 9 || { echo 'Another deployment is running'; exit 1; }
 test -f backend/.env
 sudo -n docker info >/dev/null
+db_network=jobweaver-net
+db_container=jobweaver-postgres
+sudo -n docker network inspect "$db_network" >/dev/null || {
+  echo "Required Docker network $db_network is missing"; exit 1;
+}
+db_running=$(sudo -n docker inspect --format '{{.State.Running}}' "$db_container" 2>/dev/null || true)
+test "$db_running" = true || {
+  echo "Required PostgreSQL container $db_container is not running"; exit 1;
+}
+sudo -n docker exec "$db_container" pg_isready -U jobweaver -d jobweaver >/dev/null || {
+  echo "PostgreSQL container $db_container is not ready"; exit 1;
+}
 git diff --quiet
 git diff --cached --quiet
 test "$(git branch --show-current)" = main
@@ -47,6 +59,7 @@ fi
 trap rollback ERR
 sudo -n docker run -d \
   --name jobweaver --restart unless-stopped \
+  --network "$db_network" \
   --env-file backend/.env -p 127.0.0.1:8000:8000 \
   --log-opt max-size=10m --log-opt max-file=3 \
   --label "org.opencontainers.image.revision=$commit" \
