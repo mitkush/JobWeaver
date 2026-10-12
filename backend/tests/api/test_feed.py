@@ -715,3 +715,27 @@ async def test_a_short_advert_padded_with_whitespace_stays_under_review(alice, d
     params = {"section": "link", "match": "review"}
     [card] = (await client.get("/api/feed", params=params)).json()["items"]
     assert (card["company"], card["match"]) == ("Freshworks", "review")
+
+
+async def test_blocked_publisher_hidden_from_existing_feed_without_deleting_history(alice, db):
+    from app.models.posting import Company
+
+    _, client = alice
+    await add("adzuna", posting("legacy", company="Previously allowed"))
+    await process()
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    before = (await client.get("/api/feed", params={"section": "link"})).json()
+    [card] = before["items"]
+    # Simulate an existing record imported before the publisher exclusion was deployed.
+    await db.execute(
+        update(Company).where(Company.normalized_name == "previously allowed")
+        .values(name="vmysmartpros", normalized_name="vmysmartpros")
+    )
+    await db.commit()
+    after = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert after["items"] == []
+    assert (await client.get(f'/api/jobs/{card["job_id"]}')).status_code == 200
+    assert await db.scalar(select(Posting.id).where(Posting.source_job_id == "legacy"))
+    # Matching must not bring it back on the next preferences update either.
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    assert (await client.get("/api/feed", params={"section": "link"})).json()["items"] == []

@@ -36,6 +36,7 @@ def date_posted_for(window: FetchWindow) -> str:
 @register_adapter
 class JSearchAdapter(WindowedSourceAdapter):
     name = "jsearch"
+    default_enabled = False
     label = "JSearch"
     priority = 5
     monthly_allowance = 200
