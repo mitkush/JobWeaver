@@ -47,13 +47,36 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_oracle
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_oracle ~/.ssh/known_hosts
-      - name: Upload and deploy image
+      - name: Prepare remote deployment directory
         run: |
           set -euo pipefail
           remote_dir="/tmp/jobweaver-deploy-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          ssh -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "ubuntu@$ORACLE_HOST" "umask 077; mkdir -p '$remote_dir'"
-          scp -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/jobweaver-image.tar.gz" scripts/deploy-oracle.sh "ubuntu@$ORACLE_HOST:$remote_dir/"
-          ssh -i ~/.ssh/id_oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "ubuntu@$ORACLE_HOST" "bash '$remote_dir/deploy-oracle.sh' '$remote_dir/jobweaver-image.tar.gz' '$DEPLOY_COMMIT'"
+          echo "REMOTE_DIR=$remote_dir" >> "$GITHUB_ENV"
+          timeout 60s ssh -i ~/.ssh/id_oracle \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            "ubuntu@$ORACLE_HOST" "umask 077; mkdir -p '$remote_dir'"
+      - name: Upload deployment script
+        run: |
+          set -euo pipefail
+          timeout 90s scp -i ~/.ssh/id_oracle \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            scripts/deploy-oracle.sh "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
+      - name: Upload production image
+        run: |
+          set -euo pipefail
+          timeout 10m scp -i ~/.ssh/id_oracle \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            "$RUNNER_TEMP/jobweaver-image.tar.gz" "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
+      - name: Run deployment script
+        run: |
+          set -euo pipefail
+          timeout 20m ssh -i ~/.ssh/id_oracle \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/deploy-oracle.sh' '$REMOTE_DIR/jobweaver-image.tar.gz' '$DEPLOY_COMMIT'"
       - name: Verify public HTTPS
         run: curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 15 https://jobweaver.duckdns.org/health
       - name: Remove runner SSH key
