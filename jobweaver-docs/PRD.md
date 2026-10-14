@@ -463,3 +463,17 @@ None for the product. Facts were checked on 5 Oct 2026 (details and figures in `
 
 ---
 *Capitalised domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Design rationale lives in [`docs/adr/`](./docs/adr/): this PRD states the what; the ADRs defend the why.*
+
+### Source exclusions (12 October 2026)
+
+JSearch and SerpApi are disabled by default; migration 0010 also disables existing
+Source rows. Other providers remain unchanged, including Adzuna and Foundit.
+Administrators can explicitly re-enable a provider through Sources.
+
+Postings whose normalized company identity is `vmysmartpros` or `remotepromsp`
+are excluded before ingestion, including automatic ATS-board discovery. Existing
+jobs from those companies are excluded from Feed results and matching. Historical
+postings, drafts and applications are retained. The exclusion matches company
+identity, not mentions in descriptions, and does not label every posting fraudulent.
+Disabling a provider stops future fetches; it does not delete its historical jobs.
+Migration rollback preserves enabled/disabled choices rather than re-enabling sources.

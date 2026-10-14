@@ -36,6 +36,7 @@ def date_chip_for(window: FetchWindow) -> str:
 @register_adapter
 class SerpApiAdapter(WindowedSourceAdapter):
     name = "serpapi"
+    default_enabled = False
     label = "SerpApi Google Jobs"
     priority = 6
     standby_for = "jsearch"

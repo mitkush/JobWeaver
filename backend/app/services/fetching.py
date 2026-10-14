@@ -36,6 +36,7 @@ from app.adapters.errors import (
     SourceUnavailable,
 )
 from app.adapters.normalize import normalize_company
+from app.adapters.posting_policy import blocked_company
 from app.adapters.registry import (
     family_of,
     get_adapter_class,
@@ -252,6 +253,8 @@ async def save_postings(
         if item.source_job_id in seen:
             continue
         seen.add(item.source_job_id)
+        if blocked_company(item.company):
+            continue
         company = await _company(session, item.company, companies)
         posting = (
             await session.execute(

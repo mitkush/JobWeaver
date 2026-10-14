@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.normalize import normalize_city
+from app.adapters.posting_policy import BLOCKED_COMPANIES
 from app.adapters.registry import registered_adapters
 from app.core.db import among
 from app.core.errors import NotFoundError
@@ -22,7 +23,7 @@ from app.models.draft import Application, Draft
 from app.models.fact import Fact, FactKind
 from app.models.fetch import FetchRun, RunStatus
 from app.models.job import Job, MatchPair, PairStatus, UserJob
-from app.models.posting import Posting
+from app.models.posting import Company, Posting
 from app.models.preference import Preference
 from app.models.user import User
 from app.schemas.feed import (
@@ -200,6 +201,12 @@ REVIEW_MATCH = FeedMatch("review")
 # --- Linking --------------------------------------------------------------------------------
 
 
+def _allowed_company():  # noqa: ANN202
+    return ~Job.company_id.in_(
+        select(Company.id).where(Company.normalized_name.in_(BLOCKED_COMPANIES))
+    )
+
+
 async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None = None):  # noqa: ANN202
     query = select(
         Job.id,
@@ -208,7 +215,7 @@ async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None 
         Job.work_mode,
         Job.required_skills,
         Job.primary_posting_id,
-    ).where(Job.expired_at.is_(None))
+    ).where(Job.expired_at.is_(None), _allowed_company())
     if job_ids is not None:
         query = query.where(Job.id.in_(list(job_ids)))
     return (await session.execute(query)).all()
@@ -426,7 +433,7 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
     stmt = (
         select(Job, UserJob)
         .join(UserJob, UserJob.job_id == Job.id)
-        .where(UserJob.user_id == user.id, Job.expired_at.is_(None))
+        .where(UserJob.user_id == user.id, Job.expired_at.is_(None), _allowed_company())
     )
     stmt = stmt.where(
         UserJob.hidden_at.is_not(None) if query.hidden else UserJob.hidden_at.is_(None)
