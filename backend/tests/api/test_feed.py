@@ -25,6 +25,7 @@ from app.models import (
 from app.services import feed as feed_service
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from app.services.feed import sync_all_feeds
+from app.tailoring.job_experience import experience_requirement
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
 
@@ -38,7 +39,7 @@ from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, pos
     ],
 )
 def test_extract_experience_requirement(description, expected):
-    assert feed_service._experience_requirement(description) == expected
+    assert experience_requirement(description) == expected
 
 
 BACKEND_BLR = {
@@ -187,14 +188,14 @@ async def test_sections_filters_and_search(alice, db):
     assert await total(q="globex") == 1
     assert await total(q="nothing like this") == 0
     assert await total(source="linkedin") == 1
-    assert await total(source="linkedin-all") == 1
+    assert await total(source="site:LinkedIn") == 1
     assert await total(source="greenhouse") == 0
     for linkedin_source in ("linkedin-apify", "linkedin-piloterr"):
         await db.execute(
             update(Job).where(Job.company_name == "Globex").values(sources=[linkedin_source])
         )
         await db.commit()
-        assert await total(source="linkedin-all") == 1
+        assert await total(source="site:LinkedIn") == 1
     assert await total(location="bengaluru") == 1
     assert await total(location="IN") == 1
     assert await total(location="Pune") == 0

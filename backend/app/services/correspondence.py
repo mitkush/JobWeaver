@@ -55,6 +55,7 @@ from app.models.raw_advert import RawAdvert
 from app.models.user import User
 from app.services import applications, feed
 from app.services.fetching import save_postings
+from app.tailoring.job_experience import experience_requirement
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,22 @@ async def refresh_jobs(
                 await session.delete(job)
                 continue
             _derive(job, group, priorities, names)
+        primary_ids = [job.primary_posting_id for job in jobs.values() if job.primary_posting_id]
+        descriptions = (
+            dict(
+                (
+                    await session.execute(
+                        select(Posting.id, Posting.description).where(Posting.id.in_(primary_ids))
+                    )
+                ).all()
+            )
+            if primary_ids
+            else {}
+        )
+        for job in jobs.values():
+            job.experience_requirement = experience_requirement(
+                descriptions.get(job.primary_posting_id, "")
+            )
     await session.flush()
 
 

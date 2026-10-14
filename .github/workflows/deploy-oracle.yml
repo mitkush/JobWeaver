@@ -71,16 +71,6 @@ jobs:
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
             "ubuntu@$ORACLE_HOST" "umask 077; mkdir -p '$remote_dir'"
-      - name: Configure Piloterr API key
-        env:
-          PILOTERR_API_KEY: ${{ secrets.PILOTERR_API_KEY }}
-        run: |
-          set -euo pipefail
-          test -n "$PILOTERR_API_KEY" || { echo 'PILOTERR_API_KEY Actions secret is missing'; exit 1; }
-          printf '%s' "$PILOTERR_API_KEY" | timeout 60s ssh -i ~/.ssh/id_oracle \
-            -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            "ubuntu@$ORACLE_HOST" "python3 -c 'import os,pathlib,stat,sys; p=pathlib.Path(\"/home/ubuntu/JobWeaver/backend/.env\"); key=sys.stdin.read().strip(); assert key, \"empty Piloterr key\"; lines=[line for line in p.read_text().splitlines() if not line.startswith(\"PILOTERR_API_KEY=\")]; lines.append(\"PILOTERR_API_KEY=\"+key); tmp=p.with_name(p.name+\".tmp\"); tmp.write_text(\"\\n\".join(lines)+\"\\n\"); os.chmod(tmp,stat.S_IMODE(p.stat().st_mode)); os.replace(tmp,p)'"
       - name: Upload deployment script
         run: |
           set -euo pipefail

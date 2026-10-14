@@ -107,6 +107,7 @@ async def list_statuses(
             SourceStatusOut(
                 name=cls.name,
                 label=cls.label,
+                site=cls.site,
                 priority=cls.priority,
                 mode=cls.mode.value,
                 enabled=enabled,

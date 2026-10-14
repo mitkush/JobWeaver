@@ -31,6 +31,7 @@ class BudgetOut(BaseModel):
 class SourceStatusOut(BaseModel):
     name: str
     label: str
+    site: str | None = None
     priority: int
     mode: str
     enabled: bool
