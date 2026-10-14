@@ -9,7 +9,7 @@ from app.adapters.registry import get_adapter_class, pool_of, registered_adapter
 from app.core.config import get_settings
 from app.core.db import among
 from app.core.errors import NotFoundError, ValidationFailedError
-from app.models.fetch import FetchRun
+from app.models.fetch import FetchRun, RunStatus
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.source import Source, SourceState
 from app.models.user import User
@@ -193,7 +193,7 @@ async def recent_runs(
 
 
 async def notices(session: AsyncSession, now: datetime | None = None) -> list[SourceNotice]:
-    """Short, non-alarming notices for Sources Degraded for over a day (FR-B6 AC3)."""
+    """Explain prolonged source failures, distinguishing a full outage from partial success."""
     now = now or datetime.now(UTC)
     rows = (
         await session.execute(
@@ -206,14 +206,39 @@ async def notices(session: AsyncSession, now: datetime | None = None) -> list[So
     ).scalars()
     labels = {cls.name: cls.label for cls in registered_adapters()}
     covered = await _covered_by_standby(session)
+    affected = [
+        source
+        for source in rows
+        if source.degraded_since is not None and source.name not in covered
+    ]
+    latest_success: dict[str, datetime] = {}
+    if affected:
+        latest_success = dict(
+            (
+                await session.execute(
+                    select(FetchRun.source, func.max(FetchRun.finished_at))
+                    .where(
+                        FetchRun.source.in_([source.name for source in affected]),
+                        FetchRun.status == RunStatus.SUCCEEDED,
+                    )
+                    .group_by(FetchRun.source)
+                )
+            ).all()
+        )
     return [
         SourceNotice(
             label=labels.get(s.name, s.name),
             since=s.degraded_since,
-            message=f"{labels.get(s.name, s.name)} jobs are delayed; other sources are up to date.",
+            message=(
+                f"Some {labels.get(s.name, s.name)} searches are failing; successful searches "
+                "are still updating."
+                if latest_success.get(s.name) is not None
+                and now - latest_success[s.name] < NOTICE_AFTER
+                else f"No successful {labels.get(s.name, s.name)} searches in over a day; "
+                "jobs from this source may be delayed."
+            ),
         )
-        for s in rows
-        if s.degraded_since is not None and s.name not in covered
+        for s in affected
     ]
 
 
