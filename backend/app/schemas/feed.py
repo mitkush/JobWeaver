@@ -51,6 +51,7 @@ class FeedCard(BaseModel):
     locations: list[LocationOut]
     work_mode: str | None
     posted_at: datetime | None
+    experience_requirement: str | None = None
     # "Available on": every Source in the Job's stack, highest priority first (FR-C6).
     sources: list[SourceBadge]
     contact_email: str | None

@@ -74,6 +74,28 @@ it("sends filters and search to the API", async () => {
   expect(last.get("posted_within_days")).toBe("7");
 });
 
+it("offers all LinkedIn providers as one source filter", async () => {
+  const calls = mockFetch({
+    "GET /api/sources/notices": () => json([]),
+    "GET /api/feed": () => json(makeFeed([makeCard()], {
+      sources: [
+        { name: "linkedin", label: "LinkedIn (Bright Data)" },
+        { name: "linkedin-apify", label: "LinkedIn (Apify)" },
+        { name: "linkedin-piloterr", label: "LinkedIn (Piloterr)" },
+        { name: "greenhouse", label: "Greenhouse" },
+      ],
+    })),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  const source = screen.getByLabelText("Source");
+  expect(within(source).getByRole("option", { name: "LinkedIn" })).toHaveValue("linkedin-all");
+  expect(within(source).queryByRole("option", { name: "LinkedIn (Apify)" })).not.toBeInTheDocument();
+  expect(within(source).queryByRole("option", { name: "LinkedIn (Piloterr)" })).not.toBeInTheDocument();
+  await userEvent.selectOptions(source, "linkedin-all");
+  await waitFor(() => expect(calls.some((call) => queryOf(call).get("source") === "linkedin-all")).toBe(true));
+});
+
 it("says when filters hide everything and clears them", async () => {
   mockFetch({
     "GET /api/sources/notices": () => json([]),

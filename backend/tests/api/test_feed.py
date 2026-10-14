@@ -27,6 +27,20 @@ from app.services.correspondence import Correspondence, merge_jobs, source_prior
 from app.services.feed import sync_all_feeds
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Requires 5+ years of relevant experience.", "5+ years"),
+        ("3-5 years of professional experience required.", "3–5 years"),
+        ("At least 2 years experience preferred.", "2+ years"),
+        ("Experience with Python is required.", None),
+    ],
+)
+def test_extract_experience_requirement(description, expected):
+    assert feed_service._experience_requirement(description) == expected
+
+
 BACKEND_BLR = {
     "titles": ["Backend Engineer"],
     "locations": [{"city": "Bengaluru", "country": "IN"}],
@@ -160,7 +174,7 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     ) is not None
 
 
-async def test_sections_filters_and_search(alice):
+async def test_sections_filters_and_search(alice, db):
     _, client = alice
     await client.put("/api/preferences", json=BACKEND_BLR)
     await seed()
@@ -173,7 +187,14 @@ async def test_sections_filters_and_search(alice):
     assert await total(q="globex") == 1
     assert await total(q="nothing like this") == 0
     assert await total(source="linkedin") == 1
+    assert await total(source="linkedin-all") == 1
     assert await total(source="greenhouse") == 0
+    for linkedin_source in ("linkedin-apify", "linkedin-piloterr"):
+        await db.execute(
+            update(Job).where(Job.company_name == "Globex").values(sources=[linkedin_source])
+        )
+        await db.commit()
+        assert await total(source="linkedin-all") == 1
     assert await total(location="bengaluru") == 1
     assert await total(location="IN") == 1
     assert await total(location="Pune") == 0

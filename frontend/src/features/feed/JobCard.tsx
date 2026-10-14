@@ -64,6 +64,7 @@ export function JobCard({ job }: { job: FeedCard }) {
           </span>
         )}
         {mode && <Badge>{mode}</Badge>}
+        {job.experience_requirement && <Badge>{job.experience_requirement} experience</Badge>}
         {job.posted_at && <span>Posted {fromNow(job.posted_at)}</span>}
         {job.possible_duplicate && (
           <Link to={`/jobs/${job.job_id}#possible-duplicates`}>
