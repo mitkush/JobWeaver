@@ -40,11 +40,12 @@ class LinkedInPiloterrAdapter(WindowedSourceAdapter):
     credential_settings = None
     name = "linkedin-piloterr"
     label = "LinkedIn (Piloterr)"
-    priority = 1
+    site = "LinkedIn"
+    priority = 20
     default_enabled = False
     disabled_reason = "Unofficial third-party LinkedIn data provider; enable only after testing."
-    monthly_allowance = None
-    allowance_unit = "requests"
+    monthly_allowance = 500
+    allowance_unit = "credits"
 
     def is_configured(self) -> bool:
         return bool(self.settings.piloterr_api_key)
@@ -70,7 +71,15 @@ class LinkedInPiloterrAdapter(WindowedSourceAdapter):
 
         postings: list[NormalizedPosting] = []
         spent = 0
-        for page in range(1, max(1, self.settings.piloterr_linkedin_pages_per_query) + 1):
+        configured_pages = max(1, self.settings.piloterr_linkedin_pages_per_query)
+        page_limit = (
+            min(configured_pages, self.allowance_left)
+            if self.allowance_left is not None
+            else configured_pages
+        )
+        if page_limit <= 0:
+            raise SourceQuotaExhausted(f"{self.label} local credit allowance is exhausted")
+        for page in range(1, page_limit + 1):
             params["page"] = page
             try:
                 response = await self.http.get(
@@ -128,6 +137,8 @@ class LinkedInPiloterrAdapter(WindowedSourceAdapter):
         if not (job_id and title and company):
             return None
         description = html_to_text(record.get("description") or record.get("job_description") or "")
+        if not description:
+            return None
         location = record.get("location")
         return NormalizedPosting(
             source_job_id=str(job_id),

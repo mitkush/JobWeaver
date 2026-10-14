@@ -26,6 +26,7 @@ class User(Base):
     # ISO 3166-1 alpha-2, asked in onboarding (FR-A1 AC4).
     country: Mapped[str | None] = mapped_column(String(2))
     ai_notice_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ai_notice_version: Mapped[str | None] = mapped_column(String(32))
     fact_bank_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Days an Application may stay Applied before a Follow-up Reminder (FR-F2).
     follow_up_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7")

@@ -36,6 +36,7 @@ class LocationOut(BaseModel):
 class SourceBadge(BaseModel):
     name: str
     label: str
+    site: str | None = None
 
 
 class MatchedKeyword(BaseModel):

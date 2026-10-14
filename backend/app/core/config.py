@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
+    mistral_api_key: str = Field(default="", repr=False)
     # While on Gemini's free tier, users in the EEA, CH and UK cannot be served (ADR-0012).
     gemini_free_tier: bool = True
 

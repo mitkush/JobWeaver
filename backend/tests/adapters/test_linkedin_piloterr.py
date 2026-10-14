@@ -27,6 +27,7 @@ RECORD = {
     "list_date": "2026-10-13 00:00:00",
     "company_url": "https://www.linkedin.com/company/example",
     "company_name": "Example Tech",
+    "description": "Build reliable software products.",
 }
 
 
@@ -108,9 +109,37 @@ class TestLinkedInPiloterr:
 
     def test_adapter_is_opt_in_and_search_result_supports_work_mode(self):
         assert LinkedInPiloterrAdapter.default_enabled is False
+        assert LinkedInPiloterrAdapter.priority > 1
+        assert LinkedInPiloterrAdapter.monthly_allowance == 500
+        assert LinkedInPiloterrAdapter.allowance_unit == "credits"
         posting = LinkedInPiloterrAdapter.to_posting(
             {**RECORD, "workplace_type": "Remote", "description": "Build products."}
         )
         assert posting is not None
         assert posting.work_mode == WorkMode.REMOTE
         assert posting.description == "Build products."
+        assert (
+            LinkedInPiloterrAdapter.to_posting(
+                {key: value for key, value in RECORD.items() if key != "description"}
+            )
+            is None
+        )
+
+    async def test_caps_pages_to_remaining_allowance(self):
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(200, json=[RECORD | {"description": "Build products."}] * 25)
+
+        async with http(handler) as client:
+            adapter = LinkedInPiloterrAdapter(
+                client,
+                Settings(piloterr_api_key="key", piloterr_linkedin_pages_per_query=5),
+            )
+            adapter.allowance_left = 2
+            result = await adapter.fetch_window(QUERY, DAY)
+
+        assert len(requests) == 2
+        assert [request.url.params["page"] for request in requests] == ["1", "2"]
+        assert result.credits_used == 2

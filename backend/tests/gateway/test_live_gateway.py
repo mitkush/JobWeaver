@@ -20,8 +20,16 @@ GOOD = json.dumps(
 
 
 def test_provider_timeouts_are_short_only_for_interactive_draft_tasks():
-    assert {route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]} == {25}
-    assert {route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]} == {25}
+    from app.services.drafting import DRAFT_GENERATION_TIMEOUT_SECONDS
+
+    assert {route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]} == {20}
+    assert {route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]} == {20}
+    assert sum(route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]) <= (
+        DRAFT_GENERATION_TIMEOUT_SECONDS
+    )
+    assert sum(route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]) <= (
+        DRAFT_GENERATION_TIMEOUT_SECONDS
+    )
     for task in ("parse_documents", "extract_skills", "extract_adverts"):
         assert {route.timeout_seconds for route in ROUTING_TABLE[task]} == {90}
 

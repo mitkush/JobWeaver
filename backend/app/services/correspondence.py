@@ -175,6 +175,7 @@ def _derive(
     job.company_id = primary.company_id
     job.company_name = company_names.get(primary.company_id, "")[:255]
     job.title = primary.title
+    job.experience_requirement = primary.experience_requirement
     job.apply_url = next((p.apply_url for p in postings if p.apply_url), None)
     job.contact_email = next((p.contact_email for p in postings if p.contact_email), None)
     job.work_mode = next((p.work_mode for p in postings if p.work_mode), None)

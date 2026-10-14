@@ -17,7 +17,7 @@ def test_adverts_run_on_flash_lite_first_with_text_fallbacks():
     # COSTS.md: HN extraction is high-volume work, Flash-Lite first.
     routes = [(r.provider, r.model) for r in ROUTING_TABLE["extract_adverts"]]
     assert routes[0] == ("gemini", "gemini-flash-lite-latest")
-    assert [p for p, _ in routes] == ["gemini", "groq", "openrouter"]
+    assert [p for p, _ in routes] == ["gemini", "groq", "openrouter", "mistral"]
 
 
 def test_adverts_prompt_bounds_each_comment():

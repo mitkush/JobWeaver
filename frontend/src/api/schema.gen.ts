@@ -1998,6 +1998,8 @@ export interface components {
             name: string;
             /** Label */
             label: string;
+            /** Site */
+            site?: string | null;
         };
         /** SourceNotice */
         SourceNotice: {
@@ -2022,6 +2024,8 @@ export interface components {
             name: string;
             /** Label */
             label: string;
+            /** Site */
+            site?: string | null;
             /** Priority */
             priority: number;
             /** Mode */

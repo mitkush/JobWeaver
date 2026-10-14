@@ -137,6 +137,8 @@ class SourceAdapter(ABC):
     account_balance_required: bool = False
     name: str
     label: str
+    # Optional provider site used to group adapters in user-facing source filters.
+    site: str | None = None
     priority: int
     mode: FetchMode
     # Local monthly tracking guard; provider-reported limits come from account_balance.

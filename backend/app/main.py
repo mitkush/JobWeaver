@@ -55,7 +55,17 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
             {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status_code
         )
 
-    modules = (health, auth, me, fact_bank, preferences, sources, feed, drafts, applications)
+    modules = (
+        health,
+        auth,
+        me,
+        fact_bank,
+        preferences,
+        sources,
+        feed,
+        drafts,
+        applications,
+    )
     for module in modules:
         app.include_router(module.router)
 

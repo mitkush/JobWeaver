@@ -47,6 +47,7 @@ def search_url(query: SourceQuery, window: FetchWindow) -> str:
 class LinkedInApifyAdapter(ApifyAdapter):
     name = "linkedin-apify"
     label = "LinkedIn (Apify)"
+    site = "LinkedIn"
     priority = 1
     standby_for = "linkedin"
 

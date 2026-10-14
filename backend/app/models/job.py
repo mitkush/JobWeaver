@@ -40,6 +40,8 @@ class Job(Base):
     # Extracted once per Job by AI (ADR-0010); None until extracted.
     required_skills: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)), default=None)
     skills_extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Parsed from the primary Posting when correspondence derives this Job.
+    experience_requirement: Mapped[str | None] = mapped_column(String(100))
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

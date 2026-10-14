@@ -79,9 +79,9 @@ it("offers all LinkedIn providers as one source filter", async () => {
     "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard()], {
       sources: [
-        { name: "linkedin", label: "LinkedIn (Bright Data)" },
-        { name: "linkedin-apify", label: "LinkedIn (Apify)" },
-        { name: "linkedin-piloterr", label: "LinkedIn (Piloterr)" },
+        { name: "linkedin", label: "LinkedIn (Bright Data)", site: "LinkedIn" },
+        { name: "linkedin-apify", label: "LinkedIn (Apify)", site: "LinkedIn" },
+        { name: "linkedin-piloterr", label: "LinkedIn (Piloterr)", site: "LinkedIn" },
         { name: "greenhouse", label: "Greenhouse" },
       ],
     })),
@@ -89,11 +89,11 @@ it("offers all LinkedIn providers as one source filter", async () => {
   renderWithApp(feedRoutes(), { route: "/feed" });
   await screen.findByRole("link", { name: "Backend Engineer" });
   const source = screen.getByLabelText("Source");
-  expect(within(source).getByRole("option", { name: "LinkedIn" })).toHaveValue("linkedin-all");
+  expect(within(source).getByRole("option", { name: "LinkedIn" })).toHaveValue("site:LinkedIn");
   expect(within(source).queryByRole("option", { name: "LinkedIn (Apify)" })).not.toBeInTheDocument();
   expect(within(source).queryByRole("option", { name: "LinkedIn (Piloterr)" })).not.toBeInTheDocument();
-  await userEvent.selectOptions(source, "linkedin-all");
-  await waitFor(() => expect(calls.some((call) => queryOf(call).get("source") === "linkedin-all")).toBe(true));
+  await userEvent.selectOptions(source, "site:LinkedIn");
+  await waitFor(() => expect(calls.some((call) => queryOf(call).get("source") === "site:LinkedIn")).toBe(true));
 });
 
 it("says when filters hide everything and clears them", async () => {

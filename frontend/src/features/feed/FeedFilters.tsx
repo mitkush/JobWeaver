@@ -16,8 +16,6 @@ const WITHIN = [
 ];
 
 const TYPING_PAUSE_MS = 350;
-const LINKEDIN_SOURCES = new Set(["linkedin", "linkedin-apify", "linkedin-piloterr"]);
-
 export function FeedFilters({
   params,
   onChange,
@@ -51,12 +49,14 @@ export function FeedFilters({
     return () => clearTimeout(timer);
   }, [location, onChange]);
 
-  const sourceOptions = [
-    ...(sources.some((source) => LINKEDIN_SOURCES.has(source.name))
-      ? [{ name: "linkedin-all", label: "LinkedIn" }]
-      : []),
-    ...sources.filter((source) => !LINKEDIN_SOURCES.has(source.name)),
-  ];
+  const sourceOptions = sources.reduce<{ name: string; label: string }[]>((options, source) => {
+    if (!source.site) {
+      options.push({ name: source.name, label: source.label });
+    } else if (!options.some((option) => option.name === `site:${source.site}`)) {
+      options.push({ name: `site:${source.site}`, label: source.site });
+    }
+    return options;
+  }, []);
 
   return (
     <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_auto]">

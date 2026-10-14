@@ -86,6 +86,14 @@ async def test_every_posting_becomes_a_job_at_once(db):
     assert len(await jobs(db)) == 2
 
 
+async def test_experience_hint_is_cached_when_jobs_are_derived(db):
+    await add("linkedin", posting("experience", description="Requires 3-5 years of experience."))
+    await build().process()
+
+    [job] = await jobs(db)
+    assert job.experience_requirement == "3–5 years"
+
+
 async def test_same_apply_url_groups_across_sources_with_merged_fields(db):
     # FR-C2: primary by Source priority; email and locations merged from all Postings.
     await add(

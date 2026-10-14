@@ -25,6 +25,7 @@ from app.models import (
 from app.services import feed as feed_service
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from app.services.feed import sync_all_feeds
+from app.tailoring.job_experience import experience_requirement
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
 
 
@@ -38,7 +39,7 @@ from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, pos
     ],
 )
 def test_extract_experience_requirement(description, expected):
-    assert feed_service._experience_requirement(description) == expected
+    assert experience_requirement(description) == expected
 
 
 BACKEND_BLR = {
@@ -174,6 +175,19 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     ) is not None
 
 
+async def test_feed_card_uses_the_cached_experience_hint(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("experience-hint", description=ADVERT + " Requires 3-5 years of experience."),
+    )
+    await process()
+    await client.put("/api/preferences", json=BACKEND_BLR)
+
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert cards[0]["experience_requirement"] == "3–5 years"
+
+
 async def test_sections_filters_and_search(alice, db):
     _, client = alice
     await client.put("/api/preferences", json=BACKEND_BLR)
@@ -187,14 +201,14 @@ async def test_sections_filters_and_search(alice, db):
     assert await total(q="globex") == 1
     assert await total(q="nothing like this") == 0
     assert await total(source="linkedin") == 1
-    assert await total(source="linkedin-all") == 1
+    assert await total(source="site:LinkedIn") == 1
     assert await total(source="greenhouse") == 0
     for linkedin_source in ("linkedin-apify", "linkedin-piloterr"):
         await db.execute(
             update(Job).where(Job.company_name == "Globex").values(sources=[linkedin_source])
         )
         await db.commit()
-        assert await total(source="linkedin-all") == 1
+        assert await total(source="site:LinkedIn") == 1
     assert await total(location="bengaluru") == 1
     assert await total(location="IN") == 1
     assert await total(location="Pune") == 0

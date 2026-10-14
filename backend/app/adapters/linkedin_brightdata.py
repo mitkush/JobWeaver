@@ -64,6 +64,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     primary_credential_pause_setting = "brightdata_primary_paused_until"
     name = "linkedin"
     label = "LinkedIn (Bright Data)"
+    site = "LinkedIn"
     priority = 1
     monthly_allowance = 5000
     allowance_unit = "credits"
