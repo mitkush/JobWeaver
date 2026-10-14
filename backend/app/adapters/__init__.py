@@ -13,6 +13,7 @@ from app.adapters import (  # noqa: F401
     lever,
     linkedin_apify,
     linkedin_brightdata,
+    linkedin_piloterr,
     naukri_apify,
     recruitee,
     remoteok,
