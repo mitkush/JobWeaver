@@ -53,6 +53,7 @@ from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
 from app.services.account_balances import account_balance
 from app.services.provider_credentials import active_primary_pause, credentials
+from app.tailoring.job_experience import experience_requirement
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,7 @@ async def save_postings(
         posting.ats_board_id = board.id if board else posting.ats_board_id
         posting.title = title
         posting.description = item.description
+        posting.experience_requirement = experience_requirement(item.description)
         posting.locations = [loc.model_dump() for loc in item.locations]
         posting.work_mode = item.work_mode.value if item.work_mode else None
         posting.apply_url = item.apply_url[:2048] if item.apply_url else None

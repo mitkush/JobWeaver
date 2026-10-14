@@ -59,6 +59,8 @@ class Posting(Base):
     )
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
+    # Parsed when the description is already in memory; Jobs copy this on derivation.
+    experience_requirement: Mapped[str | None] = mapped_column(String(100))
     # [{"city": .., "country": .., "remote": bool}]
     locations: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list)
     work_mode: Mapped[str | None] = mapped_column(String(16))
