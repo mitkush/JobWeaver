@@ -28,4 +28,8 @@ def build_gateway() -> BaseAIGateway:
         clients["openrouter"] = OpenAICompatibleClient(
             "openrouter", "https://openrouter.ai/api/v1", settings.openrouter_api_key, _http
         )
+    if settings.mistral_api_key:
+        clients["mistral"] = OpenAICompatibleClient(
+            "mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, _http
+        )
     return LiveAIGateway(clients, UsageLedger(get_sessionmaker()))

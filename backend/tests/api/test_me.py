@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from tests.conftest import onboard
 
 
@@ -38,6 +40,28 @@ async def test_no_document_reaches_ai_before_the_notice_is_accepted(alice):
     )
     assert response.status_code == 409
     assert "AI data notice" in response.json()["error"]["message"]
+
+
+async def test_old_ai_notice_acceptance_must_be_renewed(alice, db):
+    user, client = alice
+    user.ai_notice_accepted_at = datetime.now(UTC)
+    user.ai_notice_version = "1"
+    await db.commit()
+    me = (await client.get("/api/me")).json()
+    assert me["onboarding"]["ai_notice_accepted"] is False
+    assert me["onboarding"]["next_step"] == "ai_notice"
+
+    blocked = await client.post(
+        "/api/documents/text",
+        json={"kind": "summary", "text": "Backend engineer, ten years."},
+    )
+    assert blocked.status_code == 409
+
+    accepted = await client.post("/api/me/ai-notice")
+    assert accepted.status_code == 200
+    me = (await client.get("/api/me")).json()
+    assert me["onboarding"]["ai_notice_accepted"] is True
+    assert me["onboarding"]["next_step"] == "country"
 
 
 async def test_country_must_be_a_two_letter_code(alice):

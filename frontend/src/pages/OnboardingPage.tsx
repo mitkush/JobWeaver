@@ -54,9 +54,12 @@ function NoticeStep() {
       <CardHeader title="How your documents are used" />
       <CardBody className="space-y-4 text-sm">
         <p>
-          JobWeaver reads your resume and portfolio with free AI services (Google Gemini, Groq and
-          OpenRouter) to build your Fact Bank and, later, to tailor applications. On their free tiers,
-          these providers may use what is sent to them to improve their products.
+          JobWeaver reads your resume and portfolio with the AI services configured by its operator
+          (Google Gemini, Groq, OpenRouter and, when enabled, Mistral) to build your Fact Bank and
+          tailor applications. When a provider fails or reaches its quota, later providers in the
+          fallback chain may receive the same text. Free-tier providers may use inputs and outputs to
+          improve their products. Mistral Studio's Free mode may use inputs and outputs to train its
+          models; review the provider's data controls before continuing.
         </p>
         <p className="text-slate-600 dark:text-slate-400">
           Nothing is sent to any AI provider until you accept. You can delete your documents and
@@ -65,8 +68,13 @@ function NoticeStep() {
         <Button
           loading={accept.isPending}
           onClick={async () => {
-            await accept.mutateAsync();
-            navigate("/onboarding/country");
+            const updated = await accept.mutateAsync();
+            const next = updated.onboarding.next_step;
+            navigate(
+              next === "done"
+                ? "/feed"
+                : `/onboarding/${next === "region_blocked" ? "country" : next}`,
+            );
           }}
         >
           I understand, continue

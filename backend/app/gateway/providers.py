@@ -89,7 +89,7 @@ class GeminiClient:
 
 
 class OpenAICompatibleClient:
-    """Groq and OpenRouter both speak the OpenAI chat completions format."""
+    """Groq, OpenRouter and Mistral speak the OpenAI chat completions format."""
 
     def __init__(self, name: str, base_url: str, api_key: str, http: httpx.AsyncClient) -> None:
         self.name = name

@@ -56,6 +56,8 @@ Recorded AI fixtures exercise unsupported skills and fabricated metrics. Truthfu
 - **Company history:** select a Company name on a Job or an Application to see every Application you made there.
 - **Admin:** the Sources page also shows AI calls today against each provider's free quota, and the last week by task.
 
+Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the AI gateway. The gateway applies the configured per-model daily cap and records usage. On Mistral Studio's Free mode, Mistral may use input and output data to train its models; review its data controls before enabling it for users' resumes.
+
 ## Checks
 
 ```bash
@@ -72,7 +74,7 @@ Backend tests need a Postgres database `jobweaver_test` (user/password `jobweave
 2. **Google Cloud:** create an OAuth client (Web application) with the redirect URI `https://<your-app>/api/auth/google/callback`. On the OAuth consent screen choose External, keep it in Testing, add the Gmail scope `gmail.compose`, and add every user's Gmail address under Test users (up to 100). Testing-mode Gmail access lasts 7 days; the app reminds users to reconnect.
 3. **Render:** create a Blueprint from this repo (`render.yaml`) and fill in the secret values. Generate `CREDENTIALS_ENCRYPTION_KEY` with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and never change it afterwards. Production refuses to start without its secrets.
 4. **Keep warm:** add an [UptimeRobot](https://uptimerobot.com) HTTP monitor on `https://<your-app>/health` every 5 minutes. `/health` never touches the database, so Neon can still sleep.
-5. **AI keys:** add `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` and `OPENROUTER_API_KEY`. Any missing provider is skipped by the fallback chain.
+5. **AI keys:** add `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` and `OPENROUTER_API_KEY`. Any missing provider is skipped by the fallback chain. `MISTRAL_API_KEY` is an optional additional fallback. The AI notice is versioned; users must accept the updated notice before documents are sent to Mistral.
 6. **Job source keys:** add `BRIGHTDATA_API_KEY` (LinkedIn), `RAPIDAPI_KEY` (JSearch), `APIFY_TOKEN` (Naukri and the LinkedIn standby), `SERPAPI_KEY` (the JSearch standby) and `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Do not attach a payment method to any of these accounts (zero budget). Any missing key just shows that source as "Not configured". The daily fetch runs at 01:17 UTC; check the admin **Sources** page after the first run.
 7. **Error reporting (optional):** create a free [Sentry](https://sentry.io) project and set `SENTRY_DSN`. Only exception types, stack traces, routes and log templates are sent: error messages, request bodies, cookies, headers and local variables are stripped first, because a database error can quote a resume or a Draft. Server logs show database errors as their type and SQL only.
 8. **Cron fallback (optional):** if the host ever sleeps through the daily run, add a free cron job (e.g. cron-job.org) that sends `POST https://<your-app>/api/internal/fetch` with header `X-Cron-Secret: <INTERNAL_CRON_SECRET>` once a day.

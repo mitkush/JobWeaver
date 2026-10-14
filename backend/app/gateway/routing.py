@@ -21,6 +21,7 @@ GROQ_LARGE = "openai/gpt-oss-120b"
 # Free OpenRouter models come and go: gpt-oss-20b:free was withdrawn on 7 Oct 2026 (HTTP 404).
 # Gemma answers without hidden reasoning, so its whole output budget goes to the JSON.
 OPENROUTER_FREE = "google/gemma-4-31b-it:free"
+MISTRAL_SMALL = "mistral-small-latest"
 # The only embedding model (ADR-0014). Changing it means re-embedding every Posting.
 GEMINI_EMBEDDING = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
@@ -31,20 +32,25 @@ DAILY_QUOTAS: dict[tuple[str, str], int] = {
     ("gemini", GEMINI_FLASH_LITE): 450,
     ("groq", GROQ_LARGE): 900,
     ("openrouter", OPENROUTER_FREE): 45,
+    # Application-side safety cap for the Mistral fallback; provider limits are
+    # account-specific and must be checked in Mistral Studio.
+    ("mistral", MISTRAL_SMALL): 50,
     # Embedding limits are not published in a table; confirm in AI Studio (COSTS.md).
     ("gemini", GEMINI_EMBEDDING): 900,
 }
 
 ROUTING_TABLE: dict[str, list[Route]] = {
     "tailor_draft": [
-        Route("gemini", GEMINI_FLASH, timeout_seconds=25),
-        Route("groq", GROQ_LARGE, timeout_seconds=25),
-        Route("openrouter", OPENROUTER_FREE, timeout_seconds=25),
+        Route("gemini", GEMINI_FLASH, timeout_seconds=20),
+        Route("groq", GROQ_LARGE, timeout_seconds=20),
+        Route("openrouter", OPENROUTER_FREE, timeout_seconds=20),
+        Route("mistral", MISTRAL_SMALL, timeout_seconds=20),
     ],
     "revise_draft": [
-        Route("gemini", GEMINI_FLASH, timeout_seconds=25),
-        Route("groq", GROQ_LARGE, timeout_seconds=25),
-        Route("openrouter", OPENROUTER_FREE, timeout_seconds=25),
+        Route("gemini", GEMINI_FLASH, timeout_seconds=20),
+        Route("groq", GROQ_LARGE, timeout_seconds=20),
+        Route("openrouter", OPENROUTER_FREE, timeout_seconds=20),
+        Route("mistral", MISTRAL_SMALL, timeout_seconds=20),
     ],
     # Flash (about 20 calls a day) is reserved for Drafts and Draft Chat (FR-G4 AC1,
     # COSTS.md); parsing is extraction work, so Flash-Lite goes first.
@@ -52,17 +58,20 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("gemini", GEMINI_FLASH_LITE),
         Route("groq", GROQ_LARGE),
         Route("openrouter", OPENROUTER_FREE),
+        Route("mistral", MISTRAL_SMALL),
     ],
     # High volume and simple: Flash-Lite first, Groq as the bulk fallback (COSTS.md).
     "extract_skills": [
         Route("gemini", GEMINI_FLASH_LITE, 4096),
         Route("groq", GROQ_LARGE, 4096),
         Route("openrouter", OPENROUTER_FREE, 4096),
+        Route("mistral", MISTRAL_SMALL, 4096),
     ],
     # Hacker News "Who is hiring" comments into Postings: same volume profile as skills.
     "extract_adverts": [
         Route("gemini", GEMINI_FLASH_LITE, 8192),
         Route("groq", GROQ_LARGE, 8192),
         Route("openrouter", OPENROUTER_FREE, 8192),
+        Route("mistral", MISTRAL_SMALL, 8192),
     ],
 }

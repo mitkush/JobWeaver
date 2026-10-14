@@ -13,11 +13,13 @@ from app.services.google_oauth import GoogleOAuthClient
 from app.services.preferences import get_preferences
 from app.services.regions import ai_region_blocked
 
+CURRENT_AI_NOTICE_VERSION = "2"
+
 
 def ensure_ai_allowed(user: User) -> None:
     """No document reaches an AI provider before these checks pass (FR-A5 AC2, FR-A1 AC4)."""
-    if user.ai_notice_accepted_at is None:
-        raise PreconditionError("Accept the AI data notice before uploading documents")
+    if user.ai_notice_accepted_at is None or user.ai_notice_version != CURRENT_AI_NOTICE_VERSION:
+        raise PreconditionError("Accept the current AI data notice before uploading documents")
     if user.country is None:
         raise PreconditionError("Tell us which country you are in first")
     if ai_region_blocked(user.country, get_settings().gemini_free_tier):
@@ -28,9 +30,9 @@ def ensure_ai_allowed(user: User) -> None:
 
 
 async def accept_ai_notice(session: AsyncSession, user: User) -> None:
-    if user.ai_notice_accepted_at is None:
-        user.ai_notice_accepted_at = datetime.now(UTC)
-        await session.flush()
+    user.ai_notice_accepted_at = datetime.now(UTC)
+    user.ai_notice_version = CURRENT_AI_NOTICE_VERSION
+    await session.flush()
 
 
 async def set_country(session: AsyncSession, user: User, country: str) -> None:
@@ -46,7 +48,10 @@ async def build_me(session: AsyncSession, user: User) -> MeOut:
     gmail_state, gmail_expires = await gmail_status(session, user)
     blocked = ai_region_blocked(user.country, get_settings().gemini_free_tier)
     status = {
-        "ai_notice_accepted": user.ai_notice_accepted_at is not None,
+        "ai_notice_accepted": (
+            user.ai_notice_accepted_at is not None
+            and user.ai_notice_version == CURRENT_AI_NOTICE_VERSION
+        ),
         "country_set": user.country is not None,
         "ai_region_blocked": blocked,
         "documents_uploaded": bool(documents),
