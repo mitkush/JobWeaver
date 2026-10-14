@@ -9,7 +9,7 @@ from app.api.sources import get_fetcher
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.main import app
-from app.models import AtsBoard, FetchRun, Source, SourceState
+from app.models import AtsBoard, FetchRun, RunStatus, Source, SourceState
 from app.services.fetching import Fetcher
 from tests.conftest import signed_in
 
@@ -95,7 +95,43 @@ async def test_users_see_notices_only_after_a_day_of_degradation(alice, db):
     source.degraded_since = datetime.now(UTC) - timedelta(days=2)
     await db.commit()
     notice = (await client.get("/api/sources/notices")).json()[0]
-    assert notice["message"] == "Greenhouse (test) jobs are delayed; other sources are up to date."
+    assert notice["message"] == (
+        "No successful Greenhouse (test) searches in over a day; "
+        "jobs from this source may be delayed."
+    )
+
+
+async def test_notice_reports_recent_partial_success_without_claiming_all_jobs_are_delayed(
+    alice, db
+):
+    _, client = alice
+    now = datetime.now(UTC)
+    db.add_all(
+        [
+            Source(
+                name="greenhouse-test",
+                state=SourceState.DEGRADED,
+                degraded_since=now - timedelta(days=2),
+            ),
+            FetchRun(
+                source="greenhouse-test",
+                status=RunStatus.SUCCEEDED,
+                finished_at=now - timedelta(hours=1),
+            ),
+            FetchRun(
+                source="greenhouse-test",
+                status=RunStatus.FAILED,
+                finished_at=now,
+            ),
+        ]
+    )
+    await db.commit()
+
+    notices = (await client.get("/api/sources/notices")).json()
+    assert len(notices) == 1
+    assert notices[0]["message"] == (
+        "Some Greenhouse (test) searches are failing; successful searches are still updating."
+    )
 
 
 class Standby(Board):
