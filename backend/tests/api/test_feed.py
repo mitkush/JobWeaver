@@ -175,6 +175,19 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
     ) is not None
 
 
+async def test_feed_card_uses_the_cached_experience_hint(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting("experience-hint", description=ADVERT + " Requires 3-5 years of experience."),
+    )
+    await process()
+    await client.put("/api/preferences", json=BACKEND_BLR)
+
+    cards = (await client.get("/api/feed", params={"section": "link"})).json()["items"]
+    assert cards[0]["experience_requirement"] == "3–5 years"
+
+
 async def test_sections_filters_and_search(alice, db):
     _, client = alice
     await client.put("/api/preferences", json=BACKEND_BLR)
