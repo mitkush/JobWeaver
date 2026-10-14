@@ -31,10 +31,12 @@ from app.adapters.errors import (
     SourceError,
     SourceNotConfigured,
     SourceQuotaExhausted,
+    SourceQuotaRejected,
     SourceRateLimited,
     SourceUnavailable,
 )
 from app.adapters.normalize import normalize_company
+from app.adapters.posting_policy import blocked_company
 from app.adapters.registry import (
     family_of,
     get_adapter_class,
@@ -49,6 +51,8 @@ from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
 from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
+from app.services.account_balances import account_balance
+from app.services.provider_credentials import active_primary_pause, credentials
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +149,12 @@ class Budget:
 
 
 async def budget_for(
-    session: AsyncSession, adapter: type[SourceAdapter], now: datetime
+    session: AsyncSession,
+    adapter: type[SourceAdapter],
+    now: datetime,
+    *,
+    credential_fingerprint: str | None = None,
+    include_legacy: bool = False,
 ) -> Budget | None:
     """Spend, month-end projection and the most expensive queries (FR-B5)."""
     if adapter.monthly_allowance is None:
@@ -153,6 +162,11 @@ async def budget_for(
     start = period_start(now, adapter.renewal_day)
     renews = next_renewal(now, adapter.renewal_day)
     in_period = (among(FetchRun.source, pool_of(adapter), String()), FetchRun.created_at >= start)
+    if credential_fingerprint is not None:
+        scope = FetchRun.credential_fingerprint == credential_fingerprint
+        if include_legacy:
+            scope = or_(scope, FetchRun.credential_fingerprint.is_(None))
+        in_period += (scope,)
     spent = int(
         await session.scalar(
             select(func.coalesce(func.sum(FetchRun.credits_used), 0)).where(*in_period)
@@ -239,6 +253,8 @@ async def save_postings(
         if item.source_job_id in seen:
             continue
         seen.add(item.source_job_id)
+        if blocked_company(item.company):
+            continue
         company = await _company(session, item.company, companies)
         posting = (
             await session.execute(
@@ -333,6 +349,39 @@ async def daily_run_missed(session: AsyncSession, now: datetime) -> bool:
         select(func.max(FetchRun.created_at)).where(FetchRun.trigger.in_(("schedule", "cron")))
     )
     return last is None or now - last > timedelta(hours=26)
+
+
+async def fail_running_fetches(
+    session: AsyncSession, now: datetime, *, source: str | None = None
+) -> int:
+    """Close persisted runs left open by an error or an interrupted process."""
+    conditions = [FetchRun.status == RunStatus.RUNNING]
+    if source is not None:
+        conditions.append(FetchRun.source == source)
+    result = await session.execute(
+        update(FetchRun)
+        .where(*conditions)
+        .values(
+            status=RunStatus.FAILED,
+            error="Stopped unexpectedly; retry on the next run",
+            finished_at=now,
+        )
+    )
+    return result.rowcount or 0
+
+
+async def recover_running_fetches(sessionmaker: async_sessionmaker[AsyncSession]) -> int:
+    """Close unfinished runs only when no other instance owns the fetch lock."""
+    async with fetch_lock(sessionmaker) as got:
+        if not got:
+            logger.info("Fetch recovery skipped: another instance is running a fetch")
+            return 0
+        async with sessionmaker() as session:
+            count = await fail_running_fetches(session, utcnow())
+            await session.commit()
+    if count:
+        logger.warning("Marked %s interrupted fetch runs as failed after restart", count)
+    return count
 
 
 # --- Runner -----------------------------------------------------------------------------
@@ -456,6 +505,14 @@ class Fetcher:
                     await self._run_windowed(session, adapter, trigger, outcome)
                 elif isinstance(adapter, SnapshotSourceAdapter):
                     await self._run_snapshot(session, adapter, trigger, outcome)
+            except asyncio.CancelledError:
+                try:
+                    await session.rollback()
+                    await fail_running_fetches(session, self.clock(), source=name)
+                    await session.commit()
+                except Exception:
+                    logger.exception("Could not close cancelled fetch runs for %s", name)
+                raise
             except SourceError as exc:
                 await self._mark_degraded(session, source, exc, now)
                 outcome.status = "failed"
@@ -467,6 +524,7 @@ class Fetcher:
                 logger.exception("Unexpected error while fetching %s", name)
                 await session.rollback()
                 source = await self._source_row(session, name)
+                await fail_running_fetches(session, self.clock(), source=name)
                 error = SourceError(f"{cls.label} failed unexpectedly; see the server logs")
                 await self._mark_degraded(session, source, error, now)
                 await session.commit()
@@ -501,6 +559,47 @@ class Fetcher:
             logger.warning("Source %s degraded: %s", source.name, exc.message)
 
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
+        options = credentials(type(adapter), self.settings)
+        paused_until = active_primary_pause(type(adapter), self.settings, self.clock())
+        for credential in options:
+            if credential.primary and paused_until is not None:
+                continue
+            if credential.fingerprint in adapter.exhausted_credentials:
+                continue
+            if adapter.account_balance_required:
+                account = await account_balance(
+                    type(adapter), self.http, credential.settings, self.clock(), force=True
+                )
+                if account is None or account.status != "live":
+                    raise SourceUnavailable(
+                        account.message if account else "Account balance could not be verified"
+                    )
+                remaining = account.remaining
+            else:
+                budget = await budget_for(
+                    session,
+                    type(adapter),
+                    self.clock(),
+                    credential_fingerprint=credential.fingerprint,
+                    include_legacy=credential.primary,
+                )
+                remaining = max(budget.allowance - budget.spent, 0)
+            if not remaining:
+                continue
+            adapter.settings = credential.settings
+            adapter.credential_fingerprint = credential.fingerprint
+            adapter.allowance_left = remaining
+            return
+        if options:
+            if paused_until is not None:
+                raise SourceErrorBudget(
+                    "All available backup accounts have exhausted their credits or tracked "
+                    f"allowance. Primary is paused until {paused_until:%d %b %Y %H:%M %Z}."
+                )
+            raise SourceErrorBudget(
+                "All configured accounts have exhausted their credits or tracked "
+                "allowance. Primary is checked again on the next run."
+            )
         budget = await budget_for(session, type(adapter), self.clock())
         adapter.allowance_left = budget.allowance - budget.spent if budget else None
         if budget and budget.exhausted:
@@ -526,7 +625,6 @@ class Fetcher:
         # comes: otherwise slow searches before it push each day's window past 24 hours.
         started = self.clock()
         for query in queries:
-            await self._check_budget(session, adapter)
             key = query.key if query else "all"
             now = self.clock()
             marks = list(
@@ -550,6 +648,7 @@ class Fetcher:
                 if trigger != MANUAL and now - last_until < ALREADY_FETCHED:
                     continue
                 since = last_until - timedelta(hours=self.settings.window_overlap_hours)
+            await self._check_budget(session, adapter)
             window = FetchWindow(since=since, until=started)
             run = FetchRun(
                 source=adapter.name,
@@ -561,8 +660,20 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # Provider polling can take many minutes. Persist the running state and
+            # release the database connection before waiting for the provider.
+            await session.commit()
             try:
-                result = await _guarded(adapter, adapter.fetch_window(query, window))
+                while True:
+                    run.credential_fingerprint = adapter.credential_fingerprint
+                    try:
+                        result = await _guarded(adapter, adapter.fetch_window(query, window))
+                        break
+                    except SourceQuotaRejected as exc:
+                        if exc.credits_used or adapter.credential_fingerprint is None:
+                            raise
+                        adapter.exhausted_credentials.add(adapter.credential_fingerprint)
+                        await self._check_budget(session, adapter)
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 run.credits_used = exc.credits_used
@@ -634,6 +745,8 @@ class Fetcher:
             )
             session.add(run)
             await session.flush()
+            # A slow board must not keep a database connection idle during HTTP calls.
+            await session.commit()
             try:
                 result = await _guarded(adapter, adapter.fetch_board(board.slug))
             except BoardNotFound as exc:

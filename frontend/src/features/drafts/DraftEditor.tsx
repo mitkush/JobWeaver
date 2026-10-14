@@ -6,14 +6,19 @@ import { Select, Textarea } from "@/components/ui/field";
 
 import type { Content, Line, Part, Version } from "./api";
 
-const SECTIONS: NonNullable<Line["section"]>[] = ["Summary", "Skills", "Experience", "Projects", "Education", "Links", "Additional"];
+const SECTIONS: NonNullable<Line["section"]>[] = ["Headline", "Contact", "Summary", "Skills", "Experience", "Projects", "Education", "Links", "Additional"];
 
 export function DraftEditor({ content, part, facts, onChange, disabled }: {
   content: Content; part: Part; facts: Version["facts"]; onChange: (content: Content) => void; disabled: boolean;
 }) {
   const [factToAdd, setFactToAdd] = useState(facts[0]?.ref ?? "");
+  const [citationToAdd, setCitationToAdd] = useState<Record<string, string>>({});
   const lines = content[part] ?? [];
   const update = (next: Line[]) => onChange({ ...content, [part]: next });
+  const citationFor = (line: Line, index: number) => {
+    const selected = citationToAdd[line.id ?? String(index)];
+    return selected && !line.fact_refs.includes(selected) ? selected : facts.find((fact) => !line.fact_refs.includes(fact.ref))?.ref ?? "";
+  };
   const move = (index: number, offset: number) => {
     const next = [...lines];
     const here = next[index];
@@ -31,6 +36,10 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
             {part === "resume" && <Select aria-label={`Section for line ${index + 1}`} value={line.section ?? "Experience"} disabled={disabled} className="w-40" onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, section: event.target.value as Line["section"] } : entry))}>
               {SECTIONS.map((section) => <option key={section}>{section}</option>)}
             </Select>}
+            {part === "resume" && (line.section === "Experience" || line.section === "Projects" || line.section === "Education") && <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+              <input type="checkbox" checked={line.heading ?? false} disabled={disabled} onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, heading: event.target.checked } : entry))} />
+              Title line
+            </label>}
             <div className="flex gap-1">
               {line.manual && <span className="self-center text-xs text-slate-500">Your edit</span>}
               <Button size="sm" variant="ghost" aria-label={`Move line ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp className="size-4" /></Button>
@@ -42,7 +51,8 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
           <details className="mt-2 text-xs text-slate-600 dark:text-slate-400">
             <summary className="cursor-pointer font-medium">Tailoring Trace ({line.fact_refs.length} Facts)</summary>
             <div className="mt-2 space-y-2">
-              {facts.filter((fact) => line.fact_refs.includes(fact.ref)).map((fact) => <p key={fact.ref}><strong>{fact.ref} · {fact.group || fact.kind}</strong> · {fact.in_base_resume ? "Base Resume" : "Fact Bank addition"}<br />{fact.text}</p>)}
+              {facts.filter((fact) => line.fact_refs.includes(fact.ref)).map((fact) => <div key={fact.ref} className="flex items-start justify-between gap-2"><p><strong>{fact.ref} · {fact.group || fact.kind}</strong> · {fact.in_base_resume ? "Base Resume" : "Fact Bank addition"}<br />{fact.text}</p><Button size="sm" variant="ghost" aria-label={`Remove citation ${fact.ref} from line ${index + 1}`} disabled={disabled || line.fact_refs.length <= 1} onClick={() => update(lines.map((entry, i) => i === index ? { ...entry, fact_refs: entry.fact_refs.filter((ref) => ref !== fact.ref) } : entry))}>Remove</Button></div>)}
+              {facts.some((fact) => !line.fact_refs.includes(fact.ref)) && <div className="flex flex-wrap items-center gap-2"><Select aria-label={`Fact to cite for line ${index + 1}`} value={citationFor(line, index)} disabled={disabled} onChange={(event) => setCitationToAdd({ ...citationToAdd, [line.id ?? String(index)]: event.target.value })}>{facts.filter((fact) => !line.fact_refs.includes(fact.ref)).map((fact) => <option key={fact.ref} value={fact.ref}>{fact.ref}: {fact.text.slice(0, 90)}</option>)}</Select><Button size="sm" variant="secondary" disabled={disabled || line.fact_refs.length >= 20} onClick={() => { const ref = citationFor(line, index); if (ref) update(lines.map((entry, i) => i === index ? { ...entry, fact_refs: [...entry.fact_refs, ref] } : entry)); }}>Cite Fact</Button></div>}
             </div>
           </details>
         </div>
@@ -53,7 +63,7 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
         </Select>
         <Button variant="secondary" disabled={disabled || !factToAdd} onClick={() => {
           const fact = facts.find((entry) => entry.ref === factToAdd);
-          if (fact) update([...lines, { id: crypto.randomUUID(), text: fact.text, fact_refs: [fact.ref], section: fact.kind === "skill" ? "Skills" : fact.kind === "project" ? "Projects" : fact.kind === "education" ? "Education" : "Experience", manual: true }]);
+          if (fact) update([...lines, { id: crypto.randomUUID(), text: fact.text, fact_refs: [fact.ref], section: fact.group === "Contact" ? "Contact" : fact.kind === "skill" ? "Skills" : fact.kind === "project" ? "Projects" : fact.kind === "education" ? "Education" : "Experience", manual: true }]);
         }}>Add Fact</Button>
       </div>
     </div>

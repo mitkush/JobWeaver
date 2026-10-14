@@ -21,6 +21,13 @@ class SourceQuotaExhausted(SourceError):
     pass
 
 
+class SourceQuotaRejected(SourceQuotaExhausted):
+    """Provider rejected a start request for credits; no actor/snapshot started.
+
+    Only this error permits retrying a search with another account.
+    """
+
+
 class SourceUnavailable(SourceError):
     pass
 
@@ -31,3 +38,23 @@ class SourceBadResponse(SourceError):
 
 class BoardNotFound(SourceError):
     """The company no longer has a board at this slug; the board is disabled."""
+
+
+def quota_rejected(response) -> bool:
+    """Explicit spending errors only, never general 429 rate limits or HTTP timeouts."""
+    if response.status_code == 402:
+        return True
+    if response.status_code not in (400, 403, 429):
+        return False
+    body = response.text.lower()
+    return any(
+        term in body
+        for term in (
+            "insufficient credits",
+            "not enough credits",
+            "credit limit exceeded",
+            "free credits exhausted",
+            "monthly usage limit exceeded",
+            "insufficient balance",
+        )
+    )

@@ -165,21 +165,29 @@ class LiveAIGateway(BaseAIGateway):
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
                 continue
             try:
-                started = self.clock()
                 try:
-                    completion = await client.complete_json(
-                        route.model, system, user, route.max_output_tokens
-                    )
-                except ProviderBusy as exc:
-                    # Only a quick refusal is retried: a slow one would spend the time the
-                    # next provider needs within the caller's deadline (60 s for a Draft).
-                    if self.clock() - started > BUSY_RETRY_WITHIN:
-                        raise
-                    logger.info("AI route %s/%s busy, retrying once: %s", *route_of(route), exc)
-                    await self.sleep(self.busy_retry_delay)
-                    completion = await client.complete_json(
-                        route.model, system, user, route.max_output_tokens
-                    )
+                    async with asyncio.timeout(route.timeout_seconds):
+                        started = self.clock()
+                        try:
+                            completion = await client.complete_json(
+                                route.model, system, user, route.max_output_tokens
+                            )
+                        except ProviderBusy as exc:
+                            # Retry only a quick refusal, and keep the retry inside this
+                            # route's time budget so fallbacks still have time to run.
+                            if self.clock() - started > BUSY_RETRY_WITHIN:
+                                raise
+                            logger.info(
+                                "AI route %s/%s busy, retrying once: %s", *route_of(route), exc
+                            )
+                            await self.sleep(self.busy_retry_delay)
+                            completion = await client.complete_json(
+                                route.model, system, user, route.max_output_tokens
+                            )
+                except TimeoutError as exc:
+                    raise GatewayError(
+                        f"{route.provider} timed out after {route.timeout_seconds:g}s"
+                    ) from exc
                 result = parse_output(completion.text, result_type)
             except GatewayError as exc:
                 logger.warning(

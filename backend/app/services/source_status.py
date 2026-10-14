@@ -9,7 +9,7 @@ from app.adapters.registry import get_adapter_class, pool_of, registered_adapter
 from app.core.config import get_settings
 from app.core.db import among
 from app.core.errors import NotFoundError, ValidationFailedError
-from app.models.fetch import FetchRun
+from app.models.fetch import FetchRun, RunStatus
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.source import Source, SourceState
 from app.models.user import User
@@ -21,7 +21,9 @@ from app.schemas.sources import (
     SourceNotice,
     SourceStatusOut,
 )
+from app.services.account_balances import account_status
 from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
+from app.services.provider_credentials import active_primary_pause, credentials
 
 NOTICE_AFTER = timedelta(days=1)
 
@@ -53,7 +55,41 @@ async def list_statuses(
     for cls in registered_adapters():
         source = rows.get(cls.name)
         adapter = cls(get_sources_http(), get_settings())
-        budget = await budget_for(session, cls, now)
+        account = (
+            await account_status(cls, get_sources_http(), get_settings(), now)
+            if adapter.is_configured()
+            else None
+        )
+        options = credentials(cls, get_settings())
+        tracked = None
+        if options:
+            latest = await session.scalar(
+                select(FetchRun.credential_fingerprint)
+                .where(FetchRun.source.in_(pool_of(cls)))
+                .order_by(FetchRun.created_at.desc())
+                .limit(1)
+            )
+            tracked = next((c for c in options if c.fingerprint == latest), options[0])
+            if account and (
+                cls.account_balance_required
+                or (
+                    cls.primary_credential_pause_setting
+                    and active_primary_pause(cls, get_settings(), now)
+                )
+            ):
+                tracked = next((c for c in options if c.label == account.account_label), tracked)
+            # When the provider cannot verify balances, its default account label is not
+            # evidence of which key was last used. Keep the account summary aligned with
+            # the credential whose JobWeaver spend is shown below it.
+            if account and account.status != "live" and tracked:
+                account = account.model_copy(update={"account_label": tracked.label})
+        budget = await budget_for(
+            session,
+            cls,
+            now,
+            credential_fingerprint=tracked.fingerprint if tracked else None,
+            include_legacy=tracked.primary if tracked else False,
+        )
         boards = None
         if issubclass(cls, SnapshotSourceAdapter):
             boards = int(
@@ -88,6 +124,8 @@ async def list_statuses(
                 budget=None
                 if budget is None
                 else BudgetOut(
+                    account=account,
+                    tracked_account=tracked.label if tracked else None,
                     allowance=budget.allowance,
                     unit=budget.unit,
                     spent=budget.spent,
@@ -155,7 +193,7 @@ async def recent_runs(
 
 
 async def notices(session: AsyncSession, now: datetime | None = None) -> list[SourceNotice]:
-    """Short, non-alarming notices for Sources Degraded for over a day (FR-B6 AC3)."""
+    """Explain prolonged source failures, distinguishing a full outage from partial success."""
     now = now or datetime.now(UTC)
     rows = (
         await session.execute(
@@ -168,14 +206,39 @@ async def notices(session: AsyncSession, now: datetime | None = None) -> list[So
     ).scalars()
     labels = {cls.name: cls.label for cls in registered_adapters()}
     covered = await _covered_by_standby(session)
+    affected = [
+        source
+        for source in rows
+        if source.degraded_since is not None and source.name not in covered
+    ]
+    latest_success: dict[str, datetime] = {}
+    if affected:
+        latest_success = dict(
+            (
+                await session.execute(
+                    select(FetchRun.source, func.max(FetchRun.finished_at))
+                    .where(
+                        FetchRun.source.in_([source.name for source in affected]),
+                        FetchRun.status == RunStatus.SUCCEEDED,
+                    )
+                    .group_by(FetchRun.source)
+                )
+            ).all()
+        )
     return [
         SourceNotice(
             label=labels.get(s.name, s.name),
             since=s.degraded_since,
-            message=f"{labels.get(s.name, s.name)} jobs are delayed; other sources are up to date.",
+            message=(
+                f"Some {labels.get(s.name, s.name)} searches are failing; successful searches "
+                "are still updating."
+                if latest_success.get(s.name) is not None
+                and now - latest_success[s.name] < NOTICE_AFTER
+                else f"No successful {labels.get(s.name, s.name)} searches in over a day; "
+                "jobs from this source may be delayed."
+            ),
         )
-        for s in rows
-        if s.degraded_since is not None and s.name not in covered
+        for s in affected
     ]
 
 

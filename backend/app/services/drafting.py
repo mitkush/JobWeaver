@@ -23,7 +23,7 @@ from app.core.errors import (
     PreconditionError,
     ValidationFailedError,
 )
-from app.documents.pdf import filename, render_pdf
+from app.documents.pdf import filename, page_count, render_pdf
 from app.gateway.base import BaseAIGateway
 from app.gateway.schemas import ReviseDraftRequest, TailorDraftRequest
 from app.models import (
@@ -47,13 +47,17 @@ from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
+from app.tailoring.completeness import include_supported_skills
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import moved
+from app.tailoring.email import body_html, body_text, greeting_name, signature, subject
+from app.tailoring.experience import experience_years
 from app.tailoring.placeholders import fill_placeholders
 from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
 AI_BUSY = "The AI services are busy right now. Retry in a few minutes."
+DRAFT_GENERATION_TIMEOUT_SECONDS = 90
 NOTHING_VERIFIED = (
     "No generated line could be traced to your Fact Bank, so nothing was kept. "
     "Check that your Fact Bank covers your experience, then retry."
@@ -138,6 +142,22 @@ async def _facts(session: AsyncSession, user: User) -> list[FactSnapshot]:
     ]
 
 
+async def _updated_facts(
+    session: AsyncSession, user: User, previous: list[FactSnapshot]
+) -> list[FactSnapshot]:
+    """Refresh Fact text without changing the references already used by this Draft."""
+    existing = {fact.id: fact.ref for fact in previous}
+    next_ref = max((int(fact.ref[1:]) for fact in previous), default=0) + 1
+    latest = await _facts(session, user)
+    for fact in latest:
+        if fact.id in existing:
+            fact.ref = existing[fact.id]
+        else:
+            fact.ref = f"F{next_ref}"
+            next_ref += 1
+    return latest
+
+
 def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
     job = draft.job_snapshot
     return TailorDraftRequest(
@@ -147,6 +167,7 @@ def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
         description=str(job["description"]),
         facts=facts,
         has_email=bool(job.get("contact_email")),
+        experience_years=experience_years(facts),
     )
 
 
@@ -167,6 +188,16 @@ def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> Ch
         job_skills=[str(s) for s in job.get("required_skills") or []],
         job_text=str(job.get("description") or ""),
         user_name=str(job.get("name") or ""),
+        experience_years=experience_years(facts),
+    )
+
+
+def _email_header(draft: Draft, content: DraftContent) -> None:
+    """Subject and greeting for AI output: facts about the job and the User, set by code."""
+    job = draft.job_snapshot
+    content.email_subject = subject(content, str(job["title"]), str(job.get("name") or ""))
+    content.email_greeting = greeting_name(
+        content.email_greeting, str(job.get("description") or "")
     )
 
 
@@ -321,7 +352,7 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             await session.commit()
             draft.progress = "Writing the Tailored Resume, Cover Letter and Application Email"
             await session.commit()
-            async with asyncio.timeout(60):
+            async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
                 result = await gateway.tailor_draft(_request(draft, facts))
             # Recheck ownership and notice before persisting provider output.
             user = await session.get(User, user_id, populate_existing=True)
@@ -336,9 +367,14 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
                     line.manual = False  # only the User's own edits are protected
             checked = _check(draft, generated, facts)
             content, warnings = checked.content, checked.warnings
+            content = include_supported_skills(
+                content, facts, [str(s) for s in draft.job_snapshot.get("required_skills") or []]
+            )
+            checked = _check(draft, content, facts)
+            content, warnings = checked.content, [*warnings, *checked.warnings]
             if not content.resume or not content.cover_letter:
                 raise _Unverified()
-            content.email_subject = "Application for " + str(draft.job_snapshot["title"])
+            _email_header(draft, content)
             if draft.job_snapshot.get("contact_email") and not content.email_body:
                 raise _Unverified()
             try:
@@ -427,20 +463,22 @@ _TEMPLATE_FITS: dict[tuple[uuid.UUID, int], Literal["standard", "compact"]] = {}
 
 
 async def _fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
+    """Standard when it fits one page, else Compact when that fits one page; past that,
+    whichever fits two pages. A second page holding a few lines looks unfinished."""
     key = (draft.id, row.number)
     if key not in _TEMPLATE_FITS:
+        content = DraftContent.model_validate(row.content)
+        facts = [FactSnapshot.model_validate(fact) for fact in row.facts]
+        name, email = str(draft.job_snapshot["name"]), str(draft.job_snapshot["email"])
         try:
-            await asyncio.to_thread(
-                render_pdf,
-                DraftContent.model_validate(row.content),
-                str(draft.job_snapshot["name"]),
-                str(draft.job_snapshot["email"]),
-                "resume",
-                "standard",
-                [FactSnapshot.model_validate(fact) for fact in row.facts],
-            )
-            fits: Literal["standard", "compact"] = "standard"
+            pages = {
+                template: await asyncio.to_thread(page_count, content, name, email, template, facts)
+                for template in ("standard", "compact")
+            }
         except ValidationFailedError:
+            pages = {"standard": 3, "compact": 3}
+        fits: Literal["standard", "compact"] = "standard"
+        if pages["standard"] > 1 and pages["compact"] < pages["standard"]:
             fits = "compact"
         if len(_TEMPLATE_FITS) > 2000:
             _TEMPLATE_FITS.clear()
@@ -507,6 +545,7 @@ async def save(
                 or line.text != old[line.id].text
                 or line.fact_refs != old[line.id].fact_refs
                 or line.section != old[line.id].section
+                or line.heading != old[line.id].heading
                 or i in shifted
             ):
                 line.manual = True
@@ -515,6 +554,30 @@ async def save(
     # The User's own words are flagged, never refused or deleted (FR-E6, ADR-0005).
     checked = _check(draft, edited, facts)
     await _save_version(session, draft, checked.content, facts, "manual", checked.warnings)
+
+
+async def recheck(session: AsyncSession, user: User, draft_id: uuid.UUID, expected: int) -> None:
+    draft = await owned_draft(session, user, draft_id, lock=True)
+    ready(draft, expected)
+    previous = await version(session, draft)
+    facts = await _updated_facts(
+        session, user, [FactSnapshot.model_validate(fact) for fact in previous.facts]
+    )
+    checked = _check(draft, DraftContent.model_validate(previous.content), facts)
+    if not checked.content.resume or not checked.content.cover_letter:
+        raise ValidationFailedError(
+            "The current Fact Bank cannot support this Draft. Restore the missing Facts "
+            "or edit the Draft before rechecking."
+        )
+    await _save_version(
+        session,
+        draft,
+        checked.content,
+        facts,
+        "recheck",
+        checked.warnings,
+        "Rechecked against the current Fact Bank",
+    )
 
 
 async def chat(
@@ -531,16 +594,9 @@ async def chat(
     ready(draft, expected)
     ensure_ai_allowed(user)
     current = await version(session, draft)
-    previous_facts = [FactSnapshot.model_validate(fact) for fact in current.facts]
-    previous_refs = {fact.id: fact.ref for fact in previous_facts}
-    facts = await _facts(session, user)
-    next_ref = max((int(fact.ref[1:]) for fact in previous_facts), default=0) + 1
-    for fact in facts:
-        if fact.id in previous_refs:
-            fact.ref = previous_refs[fact.id]
-        else:
-            fact.ref = f"F{next_ref}"
-            next_ref += 1
+    facts = await _updated_facts(
+        session, user, [FactSnapshot.model_validate(fact) for fact in current.facts]
+    )
     content = DraftContent.model_validate(current.content)
     skills = user_skills(
         [fact.text for fact in facts if fact.kind == "skill"],
@@ -555,7 +611,7 @@ async def chat(
         **_request(draft, facts).model_dump(), content=content, message=message
     )
     try:
-        async with asyncio.timeout(60):
+        async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
             response = await gateway.revise_draft(request)
     except TimeoutError as exc:
         raise GatewayError("Draft Chat timed out. Please retry.") from exc
@@ -581,6 +637,7 @@ async def chat(
             for line in getattr(proposal, part):
                 line.manual = False
     proposal.email_subject = content.email_subject
+    proposal.email_greeting = content.email_greeting
     # Your kept lines are checked again (a Fact may have changed) and flagged, not removed.
     final = _check(draft, proposal, facts)
     await _save_version(
@@ -676,11 +733,15 @@ async def handoff(
     row = await version(session, draft)
     content = DraftContent.model_validate(row.content)
     job = draft.job_snapshot
-    subject = " ".join(content.email_subject.split())
-    text = "\n\n".join(line.text for line in content.email_body)
-    message_body = (
-        f"Dear hiring team,\n\n{text}\n\nPlease find my resume attached.\n\n{job['name']}"
+    email_subject = " ".join(content.email_subject.split())
+    sign = signature(
+        content,
+        str(job["name"]),
+        user.email,
+        [FactSnapshot.model_validate(fact) for fact in row.facts],
     )
+    message_body = body_text(content, content.email_greeting, sign)
+    message_html = body_html(content, content.email_greeting, sign)
     attachment = filename(str(job["name"]), str(job["company"]), str(job["title"]))
     application = await applications.ensure(session, user, draft.job_id, draft.id)
     existing = await session.scalar(
@@ -696,7 +757,7 @@ async def handoff(
         .order_by(GmailHandoff.created_at.desc())
         .limit(1)
     )
-    url = compose_url(user.email, recipient, subject, message_body)
+    url = compose_url(user.email, recipient, email_subject, message_body)
     mode = "fallback"
     # Reuse only a hand-off that reached Gmail; after a Gmail failure, try Gmail again.
     if existing is None or not existing.gmail_draft_id:
@@ -708,10 +769,11 @@ async def handoff(
                 raw_message(
                     user.email,
                     recipient,
-                    subject,
+                    email_subject,
                     message_body,
                     data,
                     attachment,
+                    html=message_html,
                 ),
             )
         except GoogleFlowError:

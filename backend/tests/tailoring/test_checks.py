@@ -278,3 +278,79 @@ def test_skill_matches_and_gaps_split_required_skills_with_aliases():
     required = ["RoR", "PostgreSQL", "Redis", "REST APIs", "Elasticsearch", "Kubernetes"]
     assert skill_matches(required, skills) == ["RoR", "PostgreSQL", "Redis", "REST APIs"]
     assert skill_gaps(required, skills) == ["Elasticsearch", "Kubernetes"]
+
+
+ROLE = FactSnapshot(
+    ref="F9",
+    id=uuid.uuid4(),
+    kind="experience",
+    group="Acme Corp",
+    text="Senior Software Developer, March 2023 to Present",
+    in_base_resume=True,
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "section", "truthful"),
+    [
+        ("Senior Software Developer | Acme Corp | March 2023 to Present", "Experience", True),
+        ("Senior Software Engineer | Acme Corp | March 2023 to Present", "Experience", False),
+        ("Staff Software Developer | Acme Corp | March 2023 to Present", "Experience", False),
+        ("Senior Software Developer | Python", "Headline", True),
+        ("Senior Backend Engineer | Python", "Headline", False),
+    ],
+)
+def test_role_titles_are_copied_not_upgraded(text, section, truthful):
+    line = DraftLine(text=text, fact_refs=["F9"], section=section, heading=True)
+    assert (line_problem(line, [*FACTS, ROLE]) is None) is truthful
+
+
+def test_the_jobs_title_is_never_claimed_in_the_resume():
+    """The cover letter may name the job applied for; the resume may not take its title."""
+    from app.tailoring.checks import check
+
+    line = "Staff Developer with Python"
+    content = DraftContent(
+        resume=[DraftLine(id="r", text=line, fact_refs=["F1"], section="Summary")],
+        cover_letter=[DraftLine(id="c", text="I am applying for the Staff role", fact_refs=["F1"])],
+    )
+    result = check(content, FACTS, job_title="Staff Engineer", company="Scribd")
+    assert [line.id for line in result.content.resume] == []
+    assert [line.id for line in result.content.cover_letter] == ["c"]
+
+
+def test_a_role_title_must_be_stated_as_a_phrase():
+    """Words found elsewhere in the Fact do not make up a title it never states."""
+    fact = ROLE.model_copy(update={"text": "Senior Software Developer. Worked with an Engineer."})
+    line = DraftLine(text="Senior Software Engineer | Acme Corp", fact_refs=["F9"], heading=True)
+    assert line_problem(line, [*FACTS, fact]) == (
+        'The role title "Senior Software Engineer" is not in the Facts it cites'
+    )
+
+
+def test_an_unflagged_line_naming_its_employer_is_checked_as_a_title():
+    """Older Drafts wrote "Employer - Role" as an ordinary line."""
+    line = DraftLine(text="Acme Corp — Senior Software Engineer", fact_refs=["F9"])
+    assert line_problem(line, [*FACTS, ROLE]) is not None
+    line = DraftLine(text="Acme Corp — Senior Software Developer", fact_refs=["F9"])
+    assert line_problem(line, [*FACTS, ROLE]) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "years", "truthful"),
+    [
+        ("Developer with 5+ years building billing APIs", 5.5, True),
+        ("Developer with 3.5+ years building billing APIs", 5.5, True),
+        ("Developer with 6+ years building billing APIs", 5.5, False),
+        # Years with one skill need a Fact that says so, whatever the total.
+        ("Developer with 5+ years of Python", 5.5, False),
+        # Without role dates, years need a Fact as before.
+        ("Developer with 5+ years building billing APIs", None, False),
+    ],
+)
+def test_years_are_allowed_up_to_the_counted_total(text, years, truthful):
+    from app.tailoring.checks import Checker
+
+    line = DraftLine(text=text, fact_refs=["F2"], section="Summary")
+    reasons = Checker(FACTS, experience_years=years).problems(line, "resume")
+    assert (not reasons) is truthful, reasons

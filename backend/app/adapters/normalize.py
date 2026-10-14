@@ -208,14 +208,30 @@ def country_code(value: str | None) -> str | None:
     return None
 
 
+_NEGATED_REMOTE = re.compile(
+    r"\b(?:no|not|without)\s+(?:remote(?:\s+work)?|wfh|work from home)\b"
+    r"|\b(?:remote(?:\s+work)?|wfh|work from home)\s+"
+    r"(?:is\s+)?(?:not available|unavailable|not allowed)\b",
+    re.IGNORECASE,
+)
+
+
+def _without_negated_remote(text: str) -> str:
+    """Do not treat a rejected remote option as an offered work mode."""
+    return _NEGATED_REMOTE.sub("", text)
+
+
 def parse_location(text: str | None, default_country: str | None = None) -> Location:
     """Parses free text such as "Bangalore, Karnataka, India" or "Remote - US"."""
     if not text:
         return Location(country=default_country)
-    raw = clean_space(text)
-    remote = bool(re.search(r"\bremote\b|work from home|anywhere", raw, re.IGNORECASE))
+    raw = re.sub(r"\(\s*\)", "", _without_negated_remote(clean_space(text)))
+    remote = bool(re.search(r"\bremote\b|\bwfh\b|work from home|anywhere", raw, re.IGNORECASE))
     cleaned = re.sub(
-        r"\(?\b(remote|hybrid|on-?site|work from home|anywhere)\b\)?", "", raw, flags=re.IGNORECASE
+        r"\(?\b(remote|wfh|hybrid|on-?site|work from home|anywhere)\b\)?",
+        "",
+        raw,
+        flags=re.IGNORECASE,
     )
     parts = [p.strip(" -/") for p in re.split(r"[,;|/]| - ", cleaned) if p.strip(" -/")]
     country = None
@@ -260,12 +276,12 @@ def work_mode_from(text: str | None, *, remote_flag: bool | None = None) -> Work
         return WorkMode.REMOTE
     if not text:
         return None
-    lowered = text.lower()
+    lowered = _without_negated_remote(text).lower()
     if "hybrid" in lowered:
         return WorkMode.HYBRID
-    if "remote" in lowered or "work from home" in lowered:
+    if "remote" in lowered or "work from home" in lowered or re.search(r"\bwfh\b", lowered):
         return WorkMode.REMOTE
-    if re.search(r"on-?site|in-office|in office", lowered):
+    if re.search(r"on-?site|in-office|in office|work from office", lowered):
         return WorkMode.ONSITE
     return None
 

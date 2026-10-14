@@ -64,6 +64,8 @@ A provider that answers HTTP 503 ("high demand", common on Gemini's free models)
 
 **Storage estimate for Neon's 1 GB:** a Posting with description is a few KB, and a 768-dimension embedding is about 3 KB. Around 100,000 Postings fit with room for user data. Old Expired Jobs without Applications are pruned after 90 days. *(Gemini embeddings support a reduced output size such as 768 dimensions; unconfirmed, check when building.)*
 
+**Neon network transfer is a separate limit:** the Free project has a 5 GB monthly outbound transfer allowance. Each description read by the Oracle app counts again even when the database stores only one copy. On 9 Oct 2026, the JobWeaver database used about 54 MB of storage but Neon warned that its 5 GB transfer allowance was exhausted. Feed matching now asks PostgreSQL for descriptions that may contain a User's Core keyword, plus short adverts that need review; Job metadata refresh no longer reads descriptions. This lowers one repeat-read path, but it does not prove the entire 5 GB spike came from that path. Monitor the project's data-transfer graph in Neon after deployment. The HTTP `/health` check does not access Neon, so use a database-backed request or a small SQL query when diagnosing suspension.
+
 ## 4. Development tooling
 
 Claude Code usage for building JobWeaver comes from the founder's own plan and is outside the product budget.
@@ -76,3 +78,34 @@ Revisit this file when:
 - the AI Gateway falls back past Gemini on most days,
 - the User count grows beyond the founder's private group, or
 - before any public or paid launch (ADR-0012).
+
+### Account balances versus tracked usage (8 Oct 2026)
+
+JobWeaver's `FetchRun.credits_used` ledger only counts its own recorded searches. It misses outside activity and some provider charges after failed responses, so it is not an account balance.
+
+Apify's [private user data](https://docs.apify.com/api/v2/users-me-get) supplies included plan credits; [account limits](https://docs.apify.com/api/v2/users-me-limits-get) supplies current usage, the spending limit and the actual usage cycle. The Sources page shows account-wide usage and remaining included credits separately from local query costs. Fetches read the account again before starting each paid search, cap actor charges at the remaining included credits or spending limit, and pause if the account cannot be verified. Balances may lag recent provider charges. Nothing here enables spending above included credits.
+
+Bright Data's [balance API documentation](https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API#is-there-an-api-endpoint-for-free-tier-credit-status) explicitly states that no Account Management API returns the free-tier credit balance. Its USD balance is not the 5,000-credit pool. The Sources page labels local usage as an estimate and directs the admin to the Free credits card. The existing local allowance guard remains, but cannot guarantee account-wide credit availability.
+
+The cache is scoped to a credential fingerprint and never stores raw tokens or exposes account identity. Updating credentials does not delete jobs, search watermarks or historical spend. Credential fallback adds migration `0009`: an optional fingerprint on FetchRun for per-credential cost accounting. Legacy unlabelled runs count against the primary account only.
+
+### Retaining primary and backup accounts
+
+Keep `APIFY_TOKEN` and `BRIGHTDATA_API_KEY` as the original primary credentials. Put backup credentials in comma-separated lists in the VM's `backend/.env`:
+
+```dotenv
+APIFY_TOKENS=backup-apify-token,another-backup-token
+BRIGHTDATA_API_KEYS=backup-brightdata-key,another-backup-key
+```
+
+These are accounts with their own allowances, not extra keys for the same account. Never commit real values. Changing an environment file takes effect when the container is recreated.
+
+Apify checks the primary's actual balance first and then exhausted-account backups in order before each new search. If an account cannot be verified, searches pause instead of silently spending on another one. Account balances are displayed with Primary/Backup labels. After primary credits renew, a new balance check selects the primary again. Both Apify Sources use the same credential order and balances.
+
+Bright Data checks each credential's tracked monthly allowance. Since actual free credits are not available through its API, this is an application guard, not an assertion about a backup account's actual plan or remaining credits. Account allowance and remaining credits stay explicitly unknown in the UI. It can additionally switch when the trigger request explicitly rejects a search for credit exhaustion before returning a snapshot id. Rejected credentials are skipped for the remainder of that Source run and checked again on the next run. Timeouts, general rate limits, malformed downloads and failures after a search starts never trigger cross-account retries.
+
+If Bright Data's Free credits card shows the primary is exhausted but a trigger error does not clearly say so, set `BRIGHTDATA_PRIMARY_PAUSED_UNTIL` to that account's next renewal in UTC, for example `2026-11-01T00:00:00Z`. Searches select the first backup until then and automatically prefer the original primary afterward. Keep both keys in their original fields. This is a manual override based on the provider's account page; JobWeaver cannot verify the backup's actual free credits. Restart the container after changing the environment. An ambiguous HTTP error never causes an automatic retry on another paid account.
+
+Only successful fetches advance the query watermark. A safe quota retry uses the exact same window; it does not refetch earlier successful windows or reset the 14-day initial backfill. Historical spend is retained per fingerprint and old unlabelled spend is attributed to the primary credential.
+
+Deployment applies migration `0009` through the container's normal startup. If rolling back to an image that only contains migrations through `0008`, first stop fetching and use the newer image to downgrade to `0008`; older Alembic code cannot resolve revision `0009`. Downgrading removes credential attribution, so back up the database before doing so. The deployment script does not automatically downgrade the database.

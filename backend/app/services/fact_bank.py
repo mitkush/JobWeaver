@@ -11,7 +11,7 @@ from app.documents.extract import extract_text
 from app.gateway.base import BaseAIGateway
 from app.gateway.schemas import DocumentInput, ParseDocumentsRequest
 from app.models.document import Document, DocumentKind
-from app.models.fact import DismissedFact, Fact, FactOrigin
+from app.models.fact import DismissedFact, Fact, FactKind, FactOrigin
 from app.models.user import User
 from app.schemas.facts import FactBankChanges, FactCreate, FactMerge, FactUpdate
 from app.services.accounts import ensure_ai_allowed
@@ -145,6 +145,11 @@ async def _owned_fact(session: AsyncSession, user: User, fact_id: uuid.UUID) -> 
 
 
 async def create_fact(session: AsyncSession, user: User, data: FactCreate) -> Fact:
+    if (
+        data.kind in {FactKind.EXPERIENCE, FactKind.PROJECT, FactKind.EDUCATION}
+        and not data.group.strip()
+    ):
+        raise ValidationFailedError("Add the employer, project or school name for this Fact")
     fact = Fact(
         user_id=user.id,
         kind=data.kind,
@@ -165,6 +170,10 @@ async def update_fact(
     session: AsyncSession, user: User, fact_id: uuid.UUID, data: FactUpdate
 ) -> Fact:
     fact = await _owned_fact(session, user, fact_id)
+    kind = data.kind or fact.kind
+    group = data.group if data.group is not None else fact.group
+    if kind in {FactKind.EXPERIENCE, FactKind.PROJECT, FactKind.EDUCATION} and not group.strip():
+        raise ValidationFailedError("Add the employer, project or school name for this Fact")
     if data.text is not None and _norm(data.text) != _norm(fact.text):
         await _dismiss(session, user, fact.text)  # the AI's wording must not return beside it
     for field, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
@@ -186,6 +195,11 @@ async def merge_facts(session: AsyncSession, user: User, data: FactMerge) -> Fac
     if len(facts) < 2:
         raise ValidationFailedError("Pick at least two different Facts to merge")
     first = min(facts, key=lambda f: f.position)
+    if any(
+        fact.kind != first.kind or fact.group.strip().casefold() != first.group.strip().casefold()
+        for fact in facts
+    ):
+        raise ValidationFailedError("Merge Facts from the same section and employer or project")
     merged = Fact(
         user_id=user.id,
         kind=first.kind,

@@ -23,12 +23,15 @@ def raw_message(
     body: str,
     pdf: bytes | None = None,
     filename: str | None = None,
+    html: str | None = None,
 ) -> str:
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
+    if html is not None:  # plain text stays for mail apps that show no HTML
+        message.add_alternative(html, subtype="html")
     if pdf is not None:  # follow-up emails carry no attachment
         message.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
     return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")

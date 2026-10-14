@@ -6,7 +6,7 @@ import { useDeleteFact, useUpdateFact } from "@/api/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Textarea } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast-context";
 
 export function FactRow({
@@ -20,6 +20,7 @@ export function FactRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(fact.text);
+  const [group, setGroup] = useState(fact.group);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const update = useUpdateFact();
   const remove = useDeleteFact();
@@ -27,7 +28,7 @@ export function FactRow({
 
   async function save() {
     try {
-      await update.mutateAsync({ id: fact.id, text });
+      await update.mutateAsync({ id: fact.id, text, group: group.trim() });
       setEditing(false);
     } catch (error) {
       toast("error", (error as Error).message);
@@ -46,6 +47,9 @@ export function FactRow({
       <div className="min-w-0 flex-1">
         {editing ? (
           <div className="space-y-2">
+            {fact.kind !== "skill" && (
+              <Input value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Fact group" placeholder="Employer or project name" />
+            )}
             <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -54,7 +58,7 @@ export function FactRow({
               autoFocus
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={save} loading={update.isPending} disabled={!text.trim()}>
+              <Button size="sm" onClick={save} loading={update.isPending} disabled={!text.trim() || (["experience", "project", "education"].includes(fact.kind) && !group.trim())}>
                 Save
               </Button>
               <Button
@@ -62,6 +66,7 @@ export function FactRow({
                 variant="ghost"
                 onClick={() => {
                   setText(fact.text);
+                  setGroup(fact.group);
                   setEditing(false);
                 }}
               >

@@ -224,3 +224,96 @@ it("shows AI calls against each free daily quota", async () => {
   expect(screen.getByRole("table", { name: "Last 7 days by task" })).toHaveTextContent("120,000 / 30,000");
   await expectAccessible();
 });
+
+it("shows the account's Apify usage instead of the local estimate", async () => {
+  const apify: SourceStatus = {
+    ...linkedin,
+    label: "LinkedIn (Apify)",
+    budget: {
+      ...linkedin.budget!,
+      unit: "US cents", allowance: 500, spent: 281,
+      account: {
+        status: "live", allowance: 500, spent: 500, remaining: 0, unit: "US cents",
+        checked_at: inDays(0), period_start: inDays(-5), renews_on: inDays(25),
+        message: "Account-wide usage, including activity outside JobWeaver.",
+      },
+    },
+  };
+  mockFetch({
+    "GET /api/admin/sources": () => json([apify]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("500 / 500 US cents")).toBeInTheDocument();
+  expect(screen.getByText(/0 US cents available/)).toBeInTheDocument();
+  expect(screen.getByText(/JobWeaver tracked usage: 281/)).toBeInTheDocument();
+  expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
+  await expectAccessible();
+});
+
+it.each(["unsupported", "unavailable"] as const)("labels %s balances as unknown and local usage as an estimate", async (status) => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: { ...linkedin.budget!, account: { status, unit: "credits", message: "Actual account credits could not be verified." } },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("JobWeaver tracked usage (estimate)")).toBeInTheDocument();
+  expect(screen.getByText("Actual account credits could not be verified.")).toBeInTheDocument();
+  expect(screen.queryByText(/On this pace/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/available for searches/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.getByText("3,000 credits tracked; account credits unknown")).toBeInTheDocument();
+  expect(screen.queryByText("3,000 / 5,000 credits")).not.toBeInTheDocument();
+});
+
+it("shows backup account credits and each account's remaining allowance", async () => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: {
+        ...linkedin.budget!, tracked_account: "Backup account 1",
+        account: {
+          status: "live", account_label: "Backup account 1", allowance: 500, spent: 0,
+          remaining: 500, unit: "US cents", checked_at: inDays(0), renews_on: inDays(25),
+          message: "Account-wide usage",
+          accounts: [
+            { label: "Primary account", status: "live", remaining: 0, renews_on: inDays(5) },
+            { label: "Backup account 1", status: "live", remaining: 500, renews_on: inDays(25) },
+          ],
+        },
+      },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("Account credits - Backup account 1")).toBeInTheDocument();
+  expect(screen.getByText(/Primary account: 0 US cents available/)).toBeInTheDocument();
+  expect(screen.getByText(/Backup account 1: 500 US cents available/)).toBeInTheDocument();
+  await expectAccessible();
+});
+
+it("shows a paused primary and the backup selected before its first fetch", async () => {
+  mockFetch({
+    "GET /api/admin/sources": () => json([{
+      ...linkedin,
+      budget: {
+        ...linkedin.budget!, tracked_account: "Backup account 1", spent: 0,
+        account: {
+          status: "unsupported", account_label: "Backup account 1", unit: "credits",
+          message: "Free credits are not available through the API.",
+          accounts: [
+            { label: "Primary account", status: "unsupported", paused_until: "2026-11-01T00:00:00Z" },
+            { label: "Backup account 1", status: "unsupported" },
+          ],
+        },
+      },
+    }]),
+    "GET /api/admin/fetch-runs": () => json([]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("Tracked search costs: Backup account 1")).toBeInTheDocument();
+  expect(screen.getByText(/Primary account: paused until .*01 Nov 2026.*UTC/)).toBeInTheDocument();
+});

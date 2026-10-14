@@ -30,6 +30,7 @@ from app.models import (
     OAuthCredential,
     Posting,
 )
+from app.models.fact import FactKind, FactOrigin
 from app.schemas.drafts import EmailCheck
 from app.services import drafting
 from app.services.correspondence import merge_jobs, source_priorities
@@ -214,6 +215,43 @@ async def test_manual_edits_naming_missing_skills_are_kept_and_flagged(prepared)
     )
 
 
+async def test_recheck_uses_current_fact_bank_without_replacing_manual_edits(prepared, db):
+    draft = await generated(prepared)
+    user, client, _, _ = prepared
+    content = copy.deepcopy(draft["version"]["content"])
+    content["resume"][0]["text"] = "Python and Kubernetes"
+    saved = (
+        await client.put(
+            f"/api/drafts/{draft['id']}",
+            json={"expected_version": 1, "content": content},
+        )
+    ).json()
+    assert any("Kubernetes" in warning for warning in saved["version"]["warnings"])
+    db.add(
+        Fact(
+            user_id=user.id,
+            kind=FactKind.SKILL,
+            group="",
+            text="Kubernetes",
+            origin=FactOrigin.USER,
+            in_base_resume=False,
+        )
+    )
+    await db.commit()
+
+    response = await client.post(f"/api/drafts/{draft['id']}/recheck", json={"expected_version": 2})
+    assert response.status_code == 200
+    result = response.json()["version"]
+    assert result["number"] == 3 and result["source"] == "recheck"
+    assert result["warnings"] == []
+    assert result["content"]["resume"][0]["text"] == "Python and Kubernetes"
+    assert result["content"]["resume"][0]["manual"] is True
+    assert any(fact["text"] == "Kubernetes" for fact in result["facts"])
+    assert (
+        await client.post(f"/api/drafts/{draft['id']}/recheck", json={"expected_version": 2})
+    ).status_code == 409
+
+
 async def test_manual_rewording_is_saved_without_warnings(prepared):
     draft = await generated(prepared)
     _, client, _, _ = prepared
@@ -365,7 +403,13 @@ async def test_handoff_creates_only_a_gmail_draft_with_pdf_and_reuses_it(
     attachment = list(mime.iter_attachments())[0]
     assert attachment.get_filename() == draft["attachment_name"]
     assert attachment.get_payload(decode=True).startswith(b"%PDF")
-    assert "resume attached" in mime.get_body().get_content()
+    assert mime["Subject"] == f"{draft['job']['title']} - {draft['job']['name']}"
+    plain = mime.get_body(preferencelist=("plain",)).get_content()
+    assert plain.startswith("Dear Hiring Team,")
+    assert "resume attached" in plain
+    assert f"Kind regards,\n{draft['job']['name']}" in plain
+    page = mime.get_body(preferencelist=("html",)).get_content()
+    assert 'class="gmail_signature"' in page
     assert (
         await client.post(f"/api/drafts/{draft['id']}/handoff", json=body)
     ).json() == result.json()
@@ -597,17 +641,26 @@ async def test_ai_cannot_mark_its_own_lines_as_manual_edits(prepared, monkeypatc
 
 
 async def test_page_opens_on_the_template_the_resume_fits_in(prepared, monkeypatch):
-    real = drafting.render_pdf
+    """Compact when only Compact fits on one page: a second page with a few lines on it
+    looks unfinished."""
 
-    def compact_only(content, name, email, kind="resume", template="standard", facts=None):
-        if template == "standard":
-            raise ValidationFailedError("The resume exceeds two pages. Shorten it or use Compact.")
-        return real(content, name, email, kind, template, facts)
+    def pages(content, name, email, template="standard", facts=None):
+        return 2 if template == "standard" else 1
 
-    monkeypatch.setattr(drafting, "render_pdf", compact_only)
+    monkeypatch.setattr(drafting, "page_count", pages)
     drafting._TEMPLATE_FITS.clear()
     draft = await generated(prepared)
     assert draft["template"] == "compact"
+
+
+async def test_page_keeps_standard_when_compact_saves_no_page(prepared, monkeypatch):
+    def pages(content, name, email, template="standard", facts=None):
+        return 2
+
+    monkeypatch.setattr(drafting, "page_count", pages)
+    drafting._TEMPLATE_FITS.clear()
+    draft = await generated(prepared)
+    assert draft["template"] == "standard"
 
 
 async def test_a_pdf_problem_never_fails_generation(prepared, monkeypatch):

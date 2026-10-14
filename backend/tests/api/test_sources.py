@@ -9,7 +9,7 @@ from app.api.sources import get_fetcher
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.main import app
-from app.models import AtsBoard, FetchRun, Source, SourceState
+from app.models import AtsBoard, FetchRun, RunStatus, Source, SourceState
 from app.services.fetching import Fetcher
 from tests.conftest import signed_in
 
@@ -95,7 +95,43 @@ async def test_users_see_notices_only_after_a_day_of_degradation(alice, db):
     source.degraded_since = datetime.now(UTC) - timedelta(days=2)
     await db.commit()
     notice = (await client.get("/api/sources/notices")).json()[0]
-    assert notice["message"] == "Greenhouse (test) jobs are delayed; other sources are up to date."
+    assert notice["message"] == (
+        "No successful Greenhouse (test) searches in over a day; "
+        "jobs from this source may be delayed."
+    )
+
+
+async def test_notice_reports_recent_partial_success_without_claiming_all_jobs_are_delayed(
+    alice, db
+):
+    _, client = alice
+    now = datetime.now(UTC)
+    db.add_all(
+        [
+            Source(
+                name="greenhouse-test",
+                state=SourceState.DEGRADED,
+                degraded_since=now - timedelta(days=2),
+            ),
+            FetchRun(
+                source="greenhouse-test",
+                status=RunStatus.SUCCEEDED,
+                finished_at=now - timedelta(hours=1),
+            ),
+            FetchRun(
+                source="greenhouse-test",
+                status=RunStatus.FAILED,
+                finished_at=now,
+            ),
+        ]
+    )
+    await db.commit()
+
+    notices = (await client.get("/api/sources/notices")).json()
+    assert len(notices) == 1
+    assert notices[0]["message"] == (
+        "Some Greenhouse (test) searches are failing; successful searches are still updating."
+    )
 
 
 class Standby(Board):
@@ -206,3 +242,91 @@ async def test_budget_is_reported_for_metered_sources(admin, db, monkeypatch):
     budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
     assert budget["spent"] == 30 and budget["allowance"] == 100
     assert budget["top_queries"] == [{"query_key": "q", "spent": 30}]
+
+
+async def test_account_usage_is_separate_from_tracked_spend(admin, db, monkeypatch):
+    from app.schemas.account_balances import AccountBalance
+    from app.services import source_status
+
+    monkeypatch.setattr(Board, "monthly_allowance", 500)
+    db.add(FetchRun(source=Board.name, status="succeeded", credits_used=281))
+    await db.commit()
+
+    async def account(*args, **kwargs):
+        return AccountBalance(
+            status="live", allowance=500, spent=500, remaining=0, message="Account-wide usage"
+        )
+
+    monkeypatch.setattr(source_status, "account_status", account)
+    _, client = admin
+    budget = (await client.get("/api/admin/sources")).json()[0]["budget"]
+    assert budget["spent"] == 281
+    assert budget["account"]["spent"] == 500
+    assert budget["account"]["remaining"] == 0
+
+
+async def test_source_status_tracks_backup_before_first_backup_fetch(db, monkeypatch):
+    from app.core.config import Settings
+    from app.schemas.account_balances import AccountBalance
+    from app.services import source_status
+
+    paused_until = datetime(2026, 11, 1, tzinfo=UTC)
+    settings = Settings(
+        brightdata_api_key="primary",
+        brightdata_api_keys="backup",
+        brightdata_primary_paused_until=paused_until,
+    )
+    monkeypatch.setattr(Board, "credential_settings", ("brightdata_api_key", "brightdata_api_keys"))
+    monkeypatch.setattr(
+        Board, "primary_credential_pause_setting", "brightdata_primary_paused_until"
+    )
+    monkeypatch.setattr(Board, "monthly_allowance", 5000)
+    monkeypatch.setattr(source_status, "get_settings", lambda: settings)
+
+    async def account_balance(self, now, *, force=False):
+        return AccountBalance(status="unsupported", message="Free credits unknown")
+
+    monkeypatch.setattr(Board, "account_balance", account_balance)
+    db.add(FetchRun(source=Board.name, status="succeeded", credits_used=30))
+    await db.commit()
+
+    status = (await source_status.list_statuses(db, datetime(2026, 10, 9, tzinfo=UTC)))[0]
+    assert status.budget.account.account_label == "Backup account 1"
+    assert status.budget.tracked_account == "Backup account 1"
+    assert status.budget.spent == 0
+    assert status.budget.account.accounts[0].paused_until == paused_until
+
+
+async def test_source_status_tracks_latest_backup_without_pause(db, monkeypatch):
+    from app.core.config import Settings
+    from app.schemas.account_balances import AccountBalance
+    from app.services import source_status
+    from app.services.provider_credentials import credentials
+
+    settings = Settings(brightdata_api_key="primary", brightdata_api_keys="backup")
+    monkeypatch.setattr(Board, "credential_settings", ("brightdata_api_key", "brightdata_api_keys"))
+    monkeypatch.setattr(
+        Board, "primary_credential_pause_setting", "brightdata_primary_paused_until"
+    )
+    monkeypatch.setattr(Board, "monthly_allowance", 5000)
+    monkeypatch.setattr(source_status, "get_settings", lambda: settings)
+
+    async def account_balance(self, now, *, force=False):
+        return AccountBalance(status="unsupported", message="Free credits unknown")
+
+    monkeypatch.setattr(Board, "account_balance", account_balance)
+    backup = credentials(Board, settings)[1]
+    db.add(
+        FetchRun(
+            source=Board.name,
+            status="succeeded",
+            credits_used=30,
+            credential_fingerprint=backup.fingerprint,
+        )
+    )
+    await db.commit()
+
+    status = (await source_status.list_statuses(db, datetime(2026, 10, 9, tzinfo=UTC)))[0]
+    assert status.budget.account.account_label == "Backup account 1"
+    assert status.budget.tracked_account == "Backup account 1"
+    assert status.budget.spent == 30

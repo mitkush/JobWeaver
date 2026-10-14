@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.models.fetch import RunStatus
 from app.models.source import SourceState
+from app.schemas.account_balances import AccountBalance
 
 
 class QuerySpend(BaseModel):
@@ -13,6 +14,10 @@ class QuerySpend(BaseModel):
 
 
 class BudgetOut(BaseModel):
+    """Local tracking guard and spend; verified provider values live under account."""
+
+    account: AccountBalance | None = None
+    tracked_account: str | None = None
     allowance: int
     unit: str
     spent: int

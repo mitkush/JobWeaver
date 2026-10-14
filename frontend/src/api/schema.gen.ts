@@ -717,6 +717,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts/{draft_id}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recheck */
+        post: operations["recheck_api_drafts__draft_id__recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/drafts/{draft_id}/chat": {
         parameters: {
             query?: never;
@@ -972,6 +989,63 @@ export interface components {
             /** Tasks Last 7 Days */
             tasks_last_7_days: components["schemas"]["TaskUsage"][];
         };
+        /** AccountBalance */
+        AccountBalance: {
+            /**
+             * Account Label
+             * @default Primary account
+             */
+            account_label?: string;
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts?: components["schemas"]["AccountCredit"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "live" | "unavailable" | "unsupported";
+            /** Allowance */
+            allowance?: number | null;
+            /** Spent */
+            spent?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /**
+             * Unit
+             * @default US cents
+             */
+            unit?: string;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Period Start */
+            period_start?: string | null;
+            /** Renews On */
+            renews_on?: string | null;
+            /** Message */
+            message: string;
+        };
+        /** AccountCredit */
+        AccountCredit: {
+            /** Label */
+            label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "live" | "unavailable" | "unsupported";
+            /** Paused Until */
+            paused_until?: string | null;
+            /** Allowance */
+            allowance?: number | null;
+            /** Spent */
+            spent?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /** Renews On */
+            renews_on?: string | null;
+        };
         /** ApplicationOut */
         ApplicationOut: {
             /**
@@ -1051,8 +1125,14 @@ export interface components {
             /** File */
             file: string;
         };
-        /** BudgetOut */
+        /**
+         * BudgetOut
+         * @description Local tracking guard and spend; verified provider values live under account.
+         */
         BudgetOut: {
+            account?: components["schemas"]["AccountBalance"] | null;
+            /** Tracked Account */
+            tracked_account?: string | null;
             /** Allowance */
             allowance: number;
             /** Unit */
@@ -1166,6 +1246,11 @@ export interface components {
              * @default
              */
             email_subject?: string;
+            /**
+             * Email Greeting
+             * @default
+             */
+            email_greeting?: string;
             /** Email Body */
             email_body?: components["schemas"]["DraftLine"][];
         };
@@ -1190,7 +1275,12 @@ export interface components {
              * @default Experience
              * @enum {string}
              */
-            section?: "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional";
+            section?: "Headline" | "Contact" | "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional";
+            /**
+             * Heading
+             * @default false
+             */
+            heading?: boolean;
             /**
              * Manual
              * @default false
@@ -1234,6 +1324,11 @@ export interface components {
              * @enum {string}
              */
             template?: "standard" | "compact";
+        };
+        /** DraftRecheck */
+        DraftRecheck: {
+            /** Expected Version */
+            expected_version: number;
         };
         /** DraftSave */
         DraftSave: {
@@ -3580,6 +3675,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_api_drafts__draft_id__recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRecheck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

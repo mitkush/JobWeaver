@@ -46,3 +46,22 @@ async def test_no_reply_is_warned_even_with_mx(monkeypatch):
     )
     result = await check_recipient("no-reply@example.com")
     assert not result.valid and "no-reply" in result.warnings[0]
+
+
+@pytest.mark.parametrize(
+    ("recipient", "warned"),
+    [
+        ("accommodations@scribd.com", "accommodation address"),
+        ("privacy@acme.com", "privacy address"),
+        ("careers@acme.com", ""),
+        ("sapna.hr@acme.com", ""),
+    ],
+)
+async def test_addresses_meant_for_something_else_are_flagged(monkeypatch, recipient, warned):
+    """An advert's accommodations or privacy address is not where applications go."""
+    resolver = AsyncMock(return_value=[SimpleNamespace(exchange="mx.example.com.")])
+    monkeypatch.setattr("dns.asyncresolver.resolve", resolver)
+    result = await check_recipient(recipient)
+    assert result.valid is not bool(warned)
+    if warned:
+        assert warned in result.warnings[0]

@@ -80,6 +80,7 @@ Every requirement is tagged **[V1]** (ships in V1) or **[Later]**. Each [V1] ite
 - AC2: No Draft can be generated until the User has reviewed the Fact Bank at least once.
 - AC3: Re-uploading a document shows what changed and keeps the User's manual edits.
 - AC4: A User can export and delete their Fact Bank and documents.
+- AC5: Experience, project and education Facts keep their employer, project or school group when added or edited. Merging Facts from different groups or kinds is rejected so a Draft cannot credit work to the wrong employer.
 
 **FR-A3 [V1] - Preferences.** Multi-select target titles and keywords, locations (India cities; other countries and cities) and work modes (onsite, hybrid, remote). Editable at any time.
 - Location choices are India, other country (with optional city), or Global (no country/city restriction, including India). Job locations are optional: an empty list means Global. Work mode is separate: remote means WFH, hybrid means some days in the office, and onsite means office. A posting can list India and be remote; its listed place is the office location. Location and work mode must both match. For a remote (WFH) Job only the country has to match a chosen place (a remote Job listed in Pune matches a User who chose Bengaluru); for onsite and hybrid Jobs the city must match too.
@@ -135,7 +136,11 @@ Both modes normalise into Postings and report credits or requests used.
 - AC1: Two Users with the same title and location trigger one query, not two.
 - AC2: The adapter uses the scraper's "Past 24 hours" time range (seen in use alongside "Past week" and "Past month"; full list confirmed in the Bright Data dashboard when building); overlap records are stored once, and the credits they cost show in the Credit Budget.
 
-**FR-B5 [V1] - Credit Budget.** The Admin sees each credit- or quota-limited Source's monthly allowance, spend to date, spend per query, and a month-end projection.
+**FR-B5 [V1] - Credit Budget.** The Admin sees provider-reported account credits when the provider exposes them, separately from JobWeaver's tracked search usage and estimates.
+- Account balances: Apify shares one account balance across Naukri and LinkedIn, using the account's included usage credits, current usage, spending limit and usage cycle. Display checks are cached for up to 60 seconds; every paid search verifies the balance again and pauses if it cannot be verified. New credentials cannot inherit another account's cached balance. Provider accounting may lag recent charges.
+- Bright Data does not expose its shared free-credit allowance, remaining credits or renewal date through its Account Management API. Its meter is explicitly a JobWeaver estimate; the admin must check the provider's Free credits card for the actual balance. Dollar balances are not converted to scraper credits. Local projections are not represented as account-wide forecasts.
+- Ordered credential fallback: retain primary credentials and configure backup account keys separately. Check primary first on each new query; use backups only after verified credit exhaustion or an explicit unbilled quota rejection before a run starts. Never switch accounts for timeouts, auth errors, general rate limits, malformed results, or failures after an actor/snapshot has started. Exhausted primary credentials are reconsidered on the next Source run, so renewal restores primary use.
+- Fetch checkpoints are shared across credentials; switching accounts keeps the same query window and does not replay backfills. Persist only credential fingerprints with fetch spend. Legacy unlabelled spend counts against the primary account, not backup accounts. Show Apify account balances separately and label the account whose local search spend is displayed.
 - AC1: When the projection says the budget will run out before renewal, the Admin is warned with the date and the most expensive queries, so they can narrow Preferences themselves. JobWeaver does not cap daily spend or the Backfill on its own.
 - AC2: When a Source's budget is exhausted it becomes Degraded with reason "budget exhausted until <renewal date>"; other Sources are unaffected.
 - AC3: No per-user quota (decided). Rollout: in the first month only the founder uses LinkedIn, so the full 5,000 credits serve one User's queries; friends are added after the first month's spend is known.
@@ -221,18 +226,19 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC1: From a Feed card to a ready Draft in at most 2 clicks.
 - AC2: Typical generation completes in under 60 seconds on free AI tiers; progress is shown step by step (reading the job, choosing your experience, writing).
 
-**FR-E2 [V1] - Tailored Resume.** Built from the Fact Bank for this Job: chooses the most relevant Facts (including portfolio-only Facts), rewrites them to match the Job's language and ATS keywords, orders sections and bullets by relevance, and keeps to one or two pages (ADR-0005: Fact Bank, no fabrication).
+**FR-E2 [V1] - Tailored Resume.** Built from the Fact Bank for this Job: chooses the most relevant Facts (including portfolio-only Facts), rewrites them to match the Job's language and ATS keywords, orders sections and bullets by relevance, and keeps to one page where the Facts fit, two at most (ADR-0005: Fact Bank, no fabrication). Role titles, employers and dates are copied from the Facts, never taken from the Job's own title.
 - AC1: Every bullet has a Tailoring Trace to at least one Fact.
 - AC2: A code check, not the AI, rejects any skill or technology named in the output that is not in the Fact Bank; rejected lines are regenerated or removed, and the User is told.
 - AC3: On a labelled test set, zero fabricated skills, employers, dates or metrics.
+- AC4: A Draft names supported required job skills in its Skills section even if the AI overlooks them. Years of experience are stated with the correct scope: total career tenure or tenure in a specific role, as supported by the Facts.
 
 **FR-E3 [V1] - Cover Letter.** A Job-specific cover letter, same Fact Bank rule and trace.
 
-**FR-E4 [V1] - Application Email.** For Jobs with a contact email: subject and short body, written to the hiring contact, same Fact Bank rule. The email body refers to the attached resume.
+**FR-E4 [V1] - Application Email.** For Jobs with a contact email: subject and short body, written to the hiring contact, same Fact Bank rule. The email body refers to the attached resume. The body opens with the role and who the User is, then 3 to 5 "Why I fit this role" lines labelled with the Job's own requirements, an optional fit note and a closing line. Code, not the AI, sets the parts that are facts: the subject ("Job title - Name", or the advert's own format when it names the job and the User), the greeting (a person only when the advert names them, else "Dear Hiring Team"), the attachment note and a signature built from the User's contact Facts. The Gmail draft is HTML (bold labels, links) with a plain-text copy. Years of experience are counted by code from the role dates in the Fact Bank, overlapping roles once and a year without a month as the shortest span; a "N+ years" claim may not exceed that total. The recipient check warns about addresses meant for something else (accommodations, privacy, support).
 
 **FR-E5 [V1] - Diff and Trace.** The Draft screen shows what changed against the Base Resume (added from portfolio, rewritten, reordered, removed) and, for any line, the Fact(s) it came from.
 
-**FR-E6 [V1] - Direct editing.** The User edits any part of the Draft inline. Manual edits are never overwritten by later AI edits without the User's confirmation.
+**FR-E6 [V1] - Direct editing.** The User edits any part of the Draft inline and can change the Facts cited by a line. Manual edits are never overwritten by later AI edits without the User's confirmation. After updating the Fact Bank, the User can recheck the saved Draft against current Facts without an AI call; this creates a restorable version, retains manual lines with warnings, and removes unsupported AI lines.
 
 **FR-E7 [V1] - Draft Chat.** A chat panel on the right of the Draft screen. The User asks for changes in plain language; each change is applied as a new Draft version, highlighted, and can be undone.
 - AC1: "Lead with the Rails work and shorten the summary" produces a new version with those changes and no new facts.
@@ -240,7 +246,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E8 [V1] - Versions.** Every generation, chat change and manual save is a version; the User can compare and restore versions.
 
-**FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume. Choosing or uploading another template is optional per User.
+**FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume: a headline and contact line under the name, uppercase section headings with a rule, "Title | Employer | dates" and "Project | stack | link" title lines over bulleted work, grouped skill lines, and clickable links. The page opens on whichever of Standard or Compact fits on one page. Choosing or uploading another template is optional per User.
 - AC1: The PDF's text is selectable and parses back to the same content (ATS check).
 - AC2: The file name follows `<Name>_<Company>_<Title>.pdf`.
 
@@ -457,3 +463,17 @@ None for the product. Facts were checked on 5 Oct 2026 (details and figures in `
 
 ---
 *Capitalised domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Design rationale lives in [`docs/adr/`](./docs/adr/): this PRD states the what; the ADRs defend the why.*
+
+### Source exclusions (12 October 2026)
+
+JSearch and SerpApi are disabled by default; migration 0010 also disables existing
+Source rows. Other providers remain unchanged, including Adzuna and Foundit.
+Administrators can explicitly re-enable a provider through Sources.
+
+Postings whose normalized company identity is `vmysmartpros` or `remotepromsp`
+are excluded before ingestion, including automatic ATS-board discovery. Existing
+jobs from those companies are excluded from Feed results and matching. Historical
+postings, drafts and applications are retained. The exclusion matches company
+identity, not mentions in descriptions, and does not label every posting fraudulent.
+Disabling a provider stops future fetches; it does not delete its historical jobs.
+Migration rollback preserves enabled/disabled choices rather than re-enabling sources.

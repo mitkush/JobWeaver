@@ -17,6 +17,7 @@ from app.schemas.drafts import (
     DraftChat,
     DraftCreate,
     DraftOut,
+    DraftRecheck,
     DraftSave,
     EmailCheck,
     HandoffIn,
@@ -81,6 +82,18 @@ async def save(
     body: DraftSave,
 ) -> DraftOut:
     await drafting.save(db, user, draft_id, body.expected_version, body.content)
+    await db.commit()
+    return await drafting.detail(db, user, draft_id)
+
+
+@router.post("/{draft_id}/recheck")
+async def recheck(
+    db: DbSession,
+    user: CurrentUser,
+    draft_id: uuid.UUID,
+    body: DraftRecheck,
+) -> DraftOut:
+    await drafting.recheck(db, user, draft_id, body.expected_version)
     await db.commit()
     return await drafting.detail(db, user, draft_id)
 

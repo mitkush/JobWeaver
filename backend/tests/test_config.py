@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -42,3 +44,19 @@ def test_production_requires_an_https_public_url():
             google_client_secret="secret",
             public_url="http://jobweaver.example",
         )
+
+
+def test_fallback_credentials_use_comma_separated_keys(monkeypatch):
+    monkeypatch.setenv("APIFY_TOKENS", "backup-a,backup-b")
+    monkeypatch.setenv("BRIGHTDATA_API_KEYS", "backup-c")
+    settings = Settings()
+    assert settings.apify_tokens == "backup-a,backup-b"
+    assert settings.brightdata_api_keys == "backup-c"
+    assert "backup-a" not in repr(settings) and "backup-c" not in repr(settings)
+
+
+def test_brightdata_pause_requires_an_explicit_timezone():
+    settings = Settings(brightdata_primary_paused_until="2026-11-01T00:00:00Z")
+    assert settings.brightdata_primary_paused_until == datetime(2026, 11, 1, tzinfo=UTC)
+    with pytest.raises(ValidationError, match="needs a timezone"):
+        Settings(brightdata_primary_paused_until="2026-11-01T00:00:00")

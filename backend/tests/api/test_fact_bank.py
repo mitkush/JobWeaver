@@ -143,6 +143,30 @@ async def test_merge_review_export_and_delete(ready):
     assert (await ready.get("/api/me")).json()["onboarding"]["fact_bank_reviewed"] is False
 
 
+async def test_project_facts_need_a_group_and_cross_project_merge_is_rejected(ready):
+    await upload_resume(ready)
+    missing = await ready.post(
+        "/api/facts", json={"kind": "project", "text": "Built a payroll dashboard"}
+    )
+    assert missing.status_code == 422
+    first = await ready.post(
+        "/api/facts", json={"kind": "project", "group": "Payroll", "text": "Built a dashboard"}
+    )
+    second = await ready.post(
+        "/api/facts", json={"kind": "project", "group": "Commerce", "text": "Built a store"}
+    )
+    assert first.status_code == second.status_code == 201
+    merged = await ready.post(
+        "/api/facts/merge",
+        json={"fact_ids": [first.json()["id"], second.json()["id"]], "text": "Built both"},
+    )
+    assert merged.status_code == 422
+    project_facts = [
+        f for f in (await ready.get("/api/facts")).json() if f["group"] in {"Payroll", "Commerce"}
+    ]
+    assert len(project_facts) == 2
+
+
 async def test_review_needs_facts(ready):
     assert (await ready.post("/api/fact-bank/review")).status_code == 409
 
