@@ -9,7 +9,7 @@ from app.core.errors import GatewayError
 from app.gateway.live import LiveAIGateway
 from app.gateway.providers import Completion
 from app.gateway.quota import UsageLedger
-from app.gateway.routing import DAILY_QUOTAS, GEMINI_FLASH
+from app.gateway.routing import DAILY_QUOTAS, GEMINI_FLASH, GROQ_LARGE, ROUTING_TABLE, Route
 from app.gateway.schemas import DocumentInput, ParseDocumentsRequest
 from app.models import AIUsage
 from app.models.document import DocumentKind
@@ -17,6 +17,13 @@ from app.models.document import DocumentKind
 GOOD = json.dumps(
     {"facts": [{"kind": "skill", "text": "Go", "source_kind": "resume", "in_base_resume": True}]}
 )
+
+
+def test_provider_timeouts_are_short_only_for_interactive_draft_tasks():
+    assert {route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]} == {25}
+    assert {route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]} == {25}
+    for task in ("parse_documents", "extract_skills", "extract_adverts"):
+        assert {route.timeout_seconds for route in ROUTING_TABLE[task]} == {90}
 
 
 class FakeClient:
@@ -104,6 +111,34 @@ async def test_timeouts_and_non_json_replies_fall_through_to_the_next_provider(d
     assert response.provider == "openrouter"
     errors = (await db.execute(select(AIUsage).where(AIUsage.outcome == "error"))).scalars()
     assert {u.provider for u in errors} == {"gemini", "groq"}
+
+
+async def test_a_provider_deadline_is_recorded_and_falls_through_to_the_next_route(db, monkeypatch):
+    import asyncio
+
+    monkeypatch.setitem(
+        ROUTING_TABLE,
+        "parse_documents",
+        [
+            Route("gemini", GEMINI_FLASH, timeout_seconds=0.01),
+            Route("groq", GROQ_LARGE, timeout_seconds=0.01),
+        ],
+    )
+
+    class SlowClient:
+        async def complete_json(self, model, system, user, max_output_tokens):
+            await asyncio.sleep(1)
+
+    ledger = UsageLedger(get_sessionmaker())
+    gateway = LiveAIGateway({"gemini": SlowClient(), "groq": FakeClient("groq", [GOOD])}, ledger)
+
+    response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+
+    assert response.provider == "groq"
+    outcomes = [
+        (usage.provider, usage.outcome) for usage in (await db.execute(select(AIUsage))).scalars()
+    ]
+    assert sorted(outcomes) == [("gemini", "error"), ("groq", "ok")]
 
 
 async def no_sleep(_: float) -> None:
