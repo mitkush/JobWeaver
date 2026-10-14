@@ -106,6 +106,27 @@ async def test_timeouts_and_non_json_replies_fall_through_to_the_next_provider(d
     assert {u.provider for u in errors} == {"gemini", "groq"}
 
 
+async def test_a_provider_deadline_is_recorded_and_falls_through_to_the_next_route(db, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr("app.gateway.live.PROVIDER_ROUTE_TIMEOUT_SECONDS", 0.01)
+
+    class SlowClient:
+        async def complete_json(self, model, system, user, max_output_tokens):
+            await asyncio.sleep(1)
+
+    ledger = UsageLedger(get_sessionmaker())
+    gateway = LiveAIGateway({"gemini": SlowClient(), "groq": FakeClient("groq", [GOOD])}, ledger)
+
+    response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+
+    assert response.provider == "groq"
+    outcomes = [
+        (usage.provider, usage.outcome) for usage in (await db.execute(select(AIUsage))).scalars()
+    ]
+    assert sorted(outcomes) == [("gemini", "error"), ("groq", "ok")]
+
+
 async def no_sleep(_: float) -> None:
     return None
 

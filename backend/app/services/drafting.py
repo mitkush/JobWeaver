@@ -57,6 +57,7 @@ from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
 AI_BUSY = "The AI services are busy right now. Retry in a few minutes."
+DRAFT_GENERATION_TIMEOUT_SECONDS = 90
 NOTHING_VERIFIED = (
     "No generated line could be traced to your Fact Bank, so nothing was kept. "
     "Check that your Fact Bank covers your experience, then retry."
@@ -351,7 +352,7 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             await session.commit()
             draft.progress = "Writing the Tailored Resume, Cover Letter and Application Email"
             await session.commit()
-            async with asyncio.timeout(60):
+            async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
                 result = await gateway.tailor_draft(_request(draft, facts))
             # Recheck ownership and notice before persisting provider output.
             user = await session.get(User, user_id, populate_existing=True)
@@ -610,7 +611,7 @@ async def chat(
         **_request(draft, facts).model_dump(), content=content, message=message
     )
     try:
-        async with asyncio.timeout(60):
+        async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
             response = await gateway.revise_draft(request)
     except TimeoutError as exc:
         raise GatewayError("Draft Chat timed out. Please retry.") from exc
