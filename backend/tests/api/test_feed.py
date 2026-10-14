@@ -728,13 +728,14 @@ async def test_blocked_publisher_hidden_from_existing_feed_without_deleting_hist
     [card] = before["items"]
     # Simulate an existing record imported before the publisher exclusion was deployed.
     await db.execute(
-        update(Company).where(Company.normalized_name == "previously allowed")
+        update(Company)
+        .where(Company.normalized_name == "previously allowed")
         .values(name="vmysmartpros", normalized_name="vmysmartpros")
     )
     await db.commit()
     after = (await client.get("/api/feed", params={"section": "link"})).json()
     assert after["items"] == []
-    assert (await client.get(f'/api/jobs/{card["job_id"]}')).status_code == 200
+    assert (await client.get(f"/api/jobs/{card['job_id']}")).status_code == 200
     assert await db.scalar(select(Posting.id).where(Posting.source_job_id == "legacy"))
     # Matching must not bring it back on the next preferences update either.
     await client.put("/api/preferences", json=BACKEND_BLR)
