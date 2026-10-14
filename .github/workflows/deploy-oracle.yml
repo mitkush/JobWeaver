@@ -6,6 +6,8 @@ on:
 permissions:
   contents: read
   actions: read
+  # Push the image to GHCR and prune old versions of it.
+  packages: write
 
 concurrency:
   group: oracle-production
@@ -18,6 +20,8 @@ jobs:
     env:
       ORACLE_HOST: ${{ vars.ORACLE_HOST || '92.4.68.22' }}
       GH_TOKEN: ${{ github.token }}
+      # GHCR names must be lower case.
+      IMAGE: ghcr.io/mitkush/jobweaver
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,21 +50,21 @@ jobs:
           fi
           test "$result" = success || { echo 'Main CI must pass before deploying. Run again when it passes.'; exit 1; }
           echo "DEPLOY_COMMIT=$commit" >> "$GITHUB_ENV"
-      - name: Build production image on GitHub
-        run: |
-          docker build -t "jobweaver:$DEPLOY_COMMIT" .
-          docker save "jobweaver:$DEPLOY_COMMIT" | gzip > "$RUNNER_TEMP/jobweaver-image.tar.gz"
-          image_sha=$(sha256sum "$RUNNER_TEMP/jobweaver-image.tar.gz" | cut -d ' ' -f 1)
-          echo "IMAGE_SHA256=$image_sha" >> "$GITHUB_ENV"
-      - name: Store production image for HTTPS download
-        id: image_artifact
-        uses: actions/upload-artifact@v4
+      - name: Log in to GitHub Container Registry
+        run: printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push production image
+        id: image
+        uses: docker/build-push-action@v6
         with:
-          name: production-image-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/jobweaver-image.tar.gz
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
+          context: .
+          push: true
+          # One version per deploy; no extra untagged attestation versions to clean up.
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ env.DEPLOY_COMMIT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Configure verified SSH connection
         env:
           SSH_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
@@ -88,25 +92,33 @@ jobs:
           timeout 90s scp -i ~/.ssh/id_oracle \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            scripts/deploy-oracle.sh scripts/download-deploy-image.sh "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
-      - name: Download production image on Oracle
+            scripts/deploy-oracle.sh scripts/pull-deploy-image.sh "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
+      - name: Pull production image on Oracle
         env:
-          IMAGE_ARTIFACT_ID: ${{ steps.image_artifact.outputs.artifact-id }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           set -euo pipefail
-          printf '%s\n' "$GH_TOKEN" | timeout 12m ssh -i ~/.ssh/id_oracle \
+          printf '%s\n' "$GH_TOKEN" | timeout 22m ssh -i ~/.ssh/id_oracle \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/download-deploy-image.sh' '$REMOTE_DIR' '$GITHUB_REPOSITORY' '$IMAGE_ARTIFACT_ID' '$IMAGE_SHA256'"
+            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/pull-deploy-image.sh' '$IMAGE' '$IMAGE_DIGEST' '$DEPLOY_COMMIT' '$GITHUB_ACTOR'"
       - name: Run deployment script
         run: |
           set -euo pipefail
           timeout 20m ssh -i ~/.ssh/id_oracle \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/deploy-oracle.sh' '$REMOTE_DIR/jobweaver-image.tar.gz' '$DEPLOY_COMMIT'"
+            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/deploy-oracle.sh' '$DEPLOY_COMMIT'"
       - name: Verify public HTTPS
         run: curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 15 https://jobweaver.duckdns.org/health
+      - name: Keep only recent images in GHCR
+        # Bounds registry storage; never fails a deployment that already succeeded.
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: jobweaver
+          package-type: container
+          min-versions-to-keep: 5
       - name: Remove runner SSH key
         if: always()
         run: rm -f ~/.ssh/id_oracle

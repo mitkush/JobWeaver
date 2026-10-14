@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Run on the Oracle VM after uploading a built image. Secrets stay in backend/.env.
+# Run on the Oracle VM after pull-deploy-image.sh tagged jobweaver:COMMIT.
+# Secrets stay in backend/.env.
 set -Eeuo pipefail
 
-archive=${1:?Usage: deploy-oracle.sh IMAGE_ARCHIVE COMMIT}
-commit=${2:?Usage: deploy-oracle.sh IMAGE_ARCHIVE COMMIT}
+commit=${1:?Usage: deploy-oracle.sh COMMIT}
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid commit'; exit 1; }
 cd /home/ubuntu/JobWeaver
 exec 9>/home/ubuntu/.jobweaver-deploy.lock
@@ -30,8 +30,9 @@ test "$(git rev-parse origin/main)" = "$commit" || {
   echo 'Main changed since this build. Run the workflow again.'; exit 1;
 }
 git merge --ff-only "$commit"
-sudo -n docker load -i "$archive"
-sudo -n docker image inspect "jobweaver:$commit" >/dev/null
+sudo -n docker image inspect "jobweaver:$commit" >/dev/null || {
+  echo "Image jobweaver:$commit is missing; pull it first"; exit 1;
+}
 
 previous=false
 rollback() {
@@ -89,5 +90,12 @@ asyncio.run(main())
 PY
 sudo -n docker tag "jobweaver:$commit" jobweaver:production
 trap - ERR
-rm -f "$archive"
+# Keep the new, production and previous images; drop older commit tags and dangling layers.
+keep=$(sudo -n docker inspect --format '{{.Image}}' jobweaver-previous 2>/dev/null || true)
+for tag in $(sudo -n docker images --format '{{.Repository}}:{{.Tag}}' jobweaver); do
+  case "$tag" in jobweaver:production | "jobweaver:$commit") continue ;; esac
+  [[ -n "$keep" && "$(sudo -n docker image inspect --format '{{.Id}}' "$tag")" == "$keep" ]] && continue
+  sudo -n docker rmi "$tag" >/dev/null 2>&1 || true
+done
+sudo -n docker image prune -f >/dev/null || true
 echo "Deployed $commit successfully. Previous container retained for recovery."
