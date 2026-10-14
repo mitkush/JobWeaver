@@ -14,7 +14,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       ORACLE_HOST: ${{ vars.ORACLE_HOST || '92.4.68.22' }}
       GH_TOKEN: ${{ github.token }}
@@ -50,6 +50,17 @@ jobs:
         run: |
           docker build -t "jobweaver:$DEPLOY_COMMIT" .
           docker save "jobweaver:$DEPLOY_COMMIT" | gzip > "$RUNNER_TEMP/jobweaver-image.tar.gz"
+          image_sha=$(sha256sum "$RUNNER_TEMP/jobweaver-image.tar.gz" | cut -d ' ' -f 1)
+          echo "IMAGE_SHA256=$image_sha" >> "$GITHUB_ENV"
+      - name: Store production image for HTTPS download
+        id: image_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/jobweaver-image.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
       - name: Configure verified SSH connection
         env:
           SSH_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
@@ -77,14 +88,16 @@ jobs:
           timeout 90s scp -i ~/.ssh/id_oracle \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            scripts/deploy-oracle.sh "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
-      - name: Upload production image
+            scripts/deploy-oracle.sh scripts/download-deploy-image.sh "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
+      - name: Download production image on Oracle
+        env:
+          IMAGE_ARTIFACT_ID: ${{ steps.image_artifact.outputs.artifact-id }}
         run: |
           set -euo pipefail
-          timeout 10m scp -i ~/.ssh/id_oracle \
+          printf '%s\n' "$GH_TOKEN" | timeout 12m ssh -i ~/.ssh/id_oracle \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            "$RUNNER_TEMP/jobweaver-image.tar.gz" "ubuntu@$ORACLE_HOST:$REMOTE_DIR/"
+            "ubuntu@$ORACLE_HOST" "bash '$REMOTE_DIR/download-deploy-image.sh' '$REMOTE_DIR' '$GITHUB_REPOSITORY' '$IMAGE_ARTIFACT_ID' '$IMAGE_SHA256'"
       - name: Run deployment script
         run: |
           set -euo pipefail
