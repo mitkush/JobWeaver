@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     apify_linkedin_actor: str = "curious_coder~linkedin-jobs-scraper"
     # Upper bound per search, not a budget cut: LinkedIn shows at most about 1,000.
     apify_linkedin_max_items: int = 1000
+    # Piloterr LinkedIn search API: independent third-party job data provider.
+    piloterr_api_key: str = Field(default="", repr=False)
+    piloterr_linkedin_pages_per_query: int = 1
+    # Piloterr needs LinkedIn geo IDs. Keys may be city names or ISO country codes.
+    piloterr_linkedin_geo_ids: dict[str, str] = Field(default_factory=lambda: {"IN": "102713980"})
     serpapi_key: str = ""
     # Each page is one of the 250 monthly searches and holds up to 10 jobs.
     serpapi_pages_per_query: int = 1

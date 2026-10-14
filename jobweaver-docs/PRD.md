@@ -117,7 +117,7 @@ Both modes normalise into Postings and report credits or requests used.
 
 | Priority | Source | Type |
 |---|---|---|
-| 1 | LinkedIn (Bright Data; Apify as an alternative) | Direct |
+| 1 | LinkedIn (Bright Data; Apify alternative; Piloterr opt-in) | Direct |
 | 2 | Naukri (Apify) | Direct, largest board in India |
 | 3 | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Workday | Company ATS boards |
 | 4 | Instahyre, Cutshort, Hirist | Indian tech boards |
@@ -135,6 +135,8 @@ Both modes normalise into Postings and report credits or requests used.
 **FR-B4 [V1] - LinkedIn via Bright Data.** Runs daily with the "past 24 hours" filter (catch-up per FR-B3), one query per distinct (title, location) combination across all Users' Preferences. **Every result of every query is fetched; JobWeaver never silently truncates LinkedIn results to fit the budget** (ADR-0009: LinkedIn full scope with a visible budget).
 - AC1: Two Users with the same title and location trigger one query, not two.
 - AC2: The adapter uses the scraper's "Past 24 hours" time range (seen in use alongside "Past week" and "Past month"; full list confirmed in the Bright Data dashboard when building); overlap records are stored once, and the credits they cost show in the Credit Budget.
+
+**Piloterr is an optional third-party LinkedIn source.** It is disabled by default, uses its own API key, and charges one credit per successful page (up to 25 listings according to its current docs). Its search cards can omit descriptions and direct apply URLs. It is an independent provider, not an official LinkedIn API; test freshness and posting quality before enabling it for regular runs.
 
 **FR-B5 [V1] - Credit Budget.** The Admin sees provider-reported account credits when the provider exposes them, separately from JobWeaver's tracked search usage and estimates.
 - Account balances: Apify shares one account balance across Naukri and LinkedIn, using the account's included usage credits, current usage, spending limit and usage cycle. Display checks are cached for up to 60 seconds; every paid search verifies the balance again and pauses if it cannot be verified. New credentials cannot inherit another account's cached balance. Provider accounting may lag recent charges.
