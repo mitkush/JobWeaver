@@ -16,6 +16,7 @@ const WITHIN = [
 ];
 
 const TYPING_PAUSE_MS = 350;
+const LINKEDIN_SOURCES = new Set(["linkedin", "linkedin-apify", "linkedin-piloterr"]);
 
 export function FeedFilters({
   params,
@@ -50,6 +51,13 @@ export function FeedFilters({
     return () => clearTimeout(timer);
   }, [location, onChange]);
 
+  const sourceOptions = [
+    ...(sources.some((source) => LINKEDIN_SOURCES.has(source.name))
+      ? [{ name: "linkedin-all", label: "LinkedIn" }]
+      : []),
+    ...sources.filter((source) => !LINKEDIN_SOURCES.has(source.name)),
+  ];
+
   return (
     <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_auto]">
       <label className="relative block">
@@ -76,7 +84,7 @@ export function FeedFilters({
         <span className="sr-only">Source</span>
         <Select value={params.get("source") ?? ""} onChange={(e) => onChange(withParam(params, "source", e.target.value || null))}>
           <option value="">Any source</option>
-          {sources.map((source) => (
+          {sourceOptions.map((source) => (
             <option key={source.name} value={source.name}>
               {source.label}
             </option>

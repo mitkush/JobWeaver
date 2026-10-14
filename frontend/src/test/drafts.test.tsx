@@ -153,6 +153,17 @@ it("marks an Experience line as a role title line", async () => {
   expect(body.content.resume[0]).toMatchObject({ section: "Experience", heading: true });
 });
 
+it("marks a Skills line as a title line", async () => {
+  const calls = setup();
+  const user = userEvent.setup();
+  await screen.findByLabelText("Draft line 1");
+  await user.click(screen.getByLabelText("Title line"));
+  await user.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText("Version 2");
+  const body = await calls.find((r) => r.method === "PUT")?.json();
+  expect(body.content.resume[0]).toMatchObject({ section: "Skills", heading: true });
+});
+
 it("edits the email greeting name with the subject", async () => {
   const calls = setup();
   const user = userEvent.setup();

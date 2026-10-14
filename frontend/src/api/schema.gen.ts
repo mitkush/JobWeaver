@@ -1471,6 +1471,8 @@ export interface components {
             work_mode: string | null;
             /** Posted At */
             posted_at: string | null;
+            /** Experience Requirement */
+            experience_requirement?: string | null;
             /** Sources */
             sources: components["schemas"]["SourceBadge"][];
             /** Contact Email */

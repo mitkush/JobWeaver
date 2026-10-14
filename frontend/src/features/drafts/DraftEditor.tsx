@@ -36,7 +36,7 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
             {part === "resume" && <Select aria-label={`Section for line ${index + 1}`} value={line.section ?? "Experience"} disabled={disabled} className="w-40" onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, section: event.target.value as Line["section"] } : entry))}>
               {SECTIONS.map((section) => <option key={section}>{section}</option>)}
             </Select>}
-            {part === "resume" && (line.section === "Experience" || line.section === "Projects" || line.section === "Education") && <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            {part === "resume" && (line.section === "Skills" || line.section === "Experience" || line.section === "Projects" || line.section === "Education") && <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
               <input type="checkbox" checked={line.heading ?? false} disabled={disabled} onChange={(event) => update(lines.map((entry, i) => i === index ? { ...entry, heading: event.target.checked } : entry))} />
               Title line
             </label>}

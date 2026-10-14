@@ -3,6 +3,7 @@
 A Feed entry is a `user_jobs` row, never a copy of the Job (ADR-0002). Every query here is
 scoped by user_id; nothing a User does to their Feed changes another User's (ADR-0001)."""
 
+import re
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -55,6 +56,13 @@ from app.tailoring.skills import (
     skill_matches,
     spellings,
     user_skills,
+)
+
+LINKEDIN_SOURCE_NAMES = ("linkedin", "linkedin-apify", "linkedin-piloterr")
+_EXPERIENCE_REQUIREMENT = re.compile(
+    r"\b(?P<minimum>\d+(?:\.\d+)?)\s*(?:\+\s*)?(?:[-–]\s*(?P<maximum>\d+(?:\.\d+)?)\s*)?"
+    r"years?\s*(?:of\s+)?(?:(?:relevant|professional|industry)\s+)?experience\b",
+    re.IGNORECASE,
 )
 
 LINK_CHUNK = 1000
@@ -449,7 +457,10 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
     if query.work_mode:
         stmt = stmt.where(Job.work_mode == query.work_mode.value)
     if query.source:
-        stmt = stmt.where(query.source == any_(Job.sources))
+        if query.source == "linkedin-all":
+            stmt = stmt.where(Job.sources.overlap(LINKEDIN_SOURCE_NAMES))
+        else:
+            stmt = stmt.where(query.source == any_(Job.sources))
     if query.posted_within_days:
         stmt = stmt.where(Job.posted_at >= now - timedelta(days=query.posted_within_days))
     if query.location:
@@ -504,6 +515,16 @@ async def _possible_duplicates(
 
 def _locations(job: Job) -> list[LocationOut]:
     return [LocationOut.model_validate(loc) for loc in job.locations or []]
+
+
+def _experience_requirement(description: str) -> str | None:
+    """Return an explicit years-of-experience requirement, when the advert states one."""
+    match = _EXPERIENCE_REQUIREMENT.search(description)
+    if match is None:
+        return None
+    minimum = match.group("minimum")
+    maximum = match.group("maximum")
+    return f"{minimum}–{maximum} years" if maximum else f"{minimum}+ years"
 
 
 APPLIED_RECENTLY = timedelta(days=90)
@@ -573,6 +594,18 @@ async def list_feed(
         .offset(query.offset)
     )
     rows = (await session.execute(stmt)).all()
+    primary_ids = [job.primary_posting_id for job, _ in rows if job.primary_posting_id]
+    descriptions = (
+        dict(
+            (
+                await session.execute(
+                    select(Posting.id, Posting.description).where(Posting.id.in_(primary_ids))
+                )
+            ).all()
+        )
+        if primary_ids
+        else {}
+    )
     skills = await load_user_skills(session, user)
     duplicates = await _possible_duplicates(session, [job.id for job, _ in rows])
     labels = _labels()
@@ -587,6 +620,9 @@ async def list_feed(
             locations=_locations(job),
             work_mode=job.work_mode,
             posted_at=job.posted_at,
+            experience_requirement=_experience_requirement(
+                descriptions.get(job.primary_posting_id, "")
+            ),
             sources=[SourceBadge(name=s, label=labels.get(s, s)) for s in job.sources],
             contact_email=job.contact_email,
             apply_url=job.apply_url,
