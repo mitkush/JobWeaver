@@ -34,8 +34,11 @@ Or run on your Mac:
 gh workflow run deploy-oracle.yml --repo mitkush/JobWeaver --ref main
 ```
 
-GitHub builds the image, uploads it through a verified SSH connection, updates the VM's
-checkout and loads the image. The VM keeps the old app running during build/upload.
+GitHub builds the image and pushes it to the private GitHub Container Registry
+(`ghcr.io/mitkush/jobweaver`, tagged with the commit). Over a verified SSH connection,
+the VM then pulls that exact image by digest using the run's short-lived token, so Docker
+downloads only the layers it does not already have, and updates the VM's checkout. The
+VM keeps the old app running during build and pull.
 It then stops and renames the old container, starts the new one, applies migrations
 through the image's normal startup command, waits for health, and rechecks stored Feed
 matches. The image is tagged with the exact commit; the script refuses a stale build
@@ -63,6 +66,9 @@ sudo docker start jobweaver
 ```
 
 The action deliberately uses a button, so merging does not deploy automatically.
-Uploaded archives are removed on success; failed runs may leave their archive under
-`/tmp/jobweaver-deploy-*`. Docker images are retained for recovery; monitor disk usage
-with `sudo docker system df` and remove old images when no longer needed.
+After a successful deploy the VM keeps the new image and the previous container's image
+for recovery and removes older `jobweaver:<commit>` tags and dangling layers. GHCR keeps
+the five most recent image versions; older ones are deleted by the workflow. The first
+deploy after this change pulls every layer once; later deploys pull only changed layers.
+The registry token is never stored on the VM: login uses a temporary Docker config that
+is deleted when the pull ends.
