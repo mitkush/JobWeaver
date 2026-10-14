@@ -12,6 +12,7 @@ class Route:
     provider: str
     model: str
     max_output_tokens: int = 8192
+    timeout_seconds: float = 90
 
 
 GEMINI_FLASH = "gemini-flash-latest"
@@ -36,14 +37,14 @@ DAILY_QUOTAS: dict[tuple[str, str], int] = {
 
 ROUTING_TABLE: dict[str, list[Route]] = {
     "tailor_draft": [
-        Route("gemini", GEMINI_FLASH),
-        Route("groq", GROQ_LARGE),
-        Route("openrouter", OPENROUTER_FREE),
+        Route("gemini", GEMINI_FLASH, timeout_seconds=25),
+        Route("groq", GROQ_LARGE, timeout_seconds=25),
+        Route("openrouter", OPENROUTER_FREE, timeout_seconds=25),
     ],
     "revise_draft": [
-        Route("gemini", GEMINI_FLASH),
-        Route("groq", GROQ_LARGE),
-        Route("openrouter", OPENROUTER_FREE),
+        Route("gemini", GEMINI_FLASH, timeout_seconds=25),
+        Route("groq", GROQ_LARGE, timeout_seconds=25),
+        Route("openrouter", OPENROUTER_FREE, timeout_seconds=25),
     ],
     # Flash (about 20 calls a day) is reserved for Drafts and Draft Chat (FR-G4 AC1,
     # COSTS.md); parsing is extraction work, so Flash-Lite goes first.

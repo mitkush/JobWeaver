@@ -9,7 +9,7 @@ from app.core.errors import GatewayError
 from app.gateway.live import LiveAIGateway
 from app.gateway.providers import Completion
 from app.gateway.quota import UsageLedger
-from app.gateway.routing import DAILY_QUOTAS, GEMINI_FLASH
+from app.gateway.routing import DAILY_QUOTAS, GEMINI_FLASH, GROQ_LARGE, ROUTING_TABLE, Route
 from app.gateway.schemas import DocumentInput, ParseDocumentsRequest
 from app.models import AIUsage
 from app.models.document import DocumentKind
@@ -17,6 +17,13 @@ from app.models.document import DocumentKind
 GOOD = json.dumps(
     {"facts": [{"kind": "skill", "text": "Go", "source_kind": "resume", "in_base_resume": True}]}
 )
+
+
+def test_provider_timeouts_are_short_only_for_interactive_draft_tasks():
+    assert {route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]} == {25}
+    assert {route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]} == {25}
+    for task in ("parse_documents", "extract_skills", "extract_adverts"):
+        assert {route.timeout_seconds for route in ROUTING_TABLE[task]} == {90}
 
 
 class FakeClient:
@@ -109,7 +116,14 @@ async def test_timeouts_and_non_json_replies_fall_through_to_the_next_provider(d
 async def test_a_provider_deadline_is_recorded_and_falls_through_to_the_next_route(db, monkeypatch):
     import asyncio
 
-    monkeypatch.setattr("app.gateway.live.PROVIDER_ROUTE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setitem(
+        ROUTING_TABLE,
+        "parse_documents",
+        [
+            Route("gemini", GEMINI_FLASH, timeout_seconds=0.01),
+            Route("groq", GROQ_LARGE, timeout_seconds=0.01),
+        ],
+    )
 
     class SlowClient:
         async def complete_json(self, model, system, user, max_output_tokens):

@@ -42,8 +42,6 @@ T = TypeVar("T", bound=BaseModel)
 
 # Seconds within which a 503 must arrive for the provider to be retried.
 BUSY_RETRY_WITHIN = 5.0
-# Keep one slow provider from consuming the entire draft deadline before fallbacks run.
-PROVIDER_ROUTE_TIMEOUT_SECONDS = 25
 
 
 def route_of(route: Route) -> tuple[str, str]:
@@ -168,7 +166,7 @@ class LiveAIGateway(BaseAIGateway):
                 continue
             try:
                 try:
-                    async with asyncio.timeout(PROVIDER_ROUTE_TIMEOUT_SECONDS):
+                    async with asyncio.timeout(route.timeout_seconds):
                         started = self.clock()
                         try:
                             completion = await client.complete_json(
@@ -188,7 +186,7 @@ class LiveAIGateway(BaseAIGateway):
                             )
                 except TimeoutError as exc:
                     raise GatewayError(
-                        f"{route.provider} timed out after {PROVIDER_ROUTE_TIMEOUT_SECONDS}s"
+                        f"{route.provider} timed out after {route.timeout_seconds:g}s"
                     ) from exc
                 result = parse_output(completion.text, result_type)
             except GatewayError as exc:
