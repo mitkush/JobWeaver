@@ -144,7 +144,7 @@ it("marks an Experience line as a role title line", async () => {
   const calls = setup();
   const user = userEvent.setup();
   await screen.findByLabelText("Draft line 1");
-  expect(screen.queryByLabelText("Title line")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Title line")).not.toBeChecked();
   await user.selectOptions(screen.getByLabelText("Section for line 1"), "Experience");
   await user.click(screen.getByLabelText("Title line"));
   await user.click(screen.getByRole("button", { name: "Save draft" }));
