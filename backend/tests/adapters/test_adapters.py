@@ -336,3 +336,139 @@ async def test_brightdata_inactive_account_is_only_retryable_before_start(status
     assert isinstance(caught.value, SourceCredentialRejected) is (phase == "trigger")
     if phase == "trigger":
         assert str(caught.value) == "LinkedIn (Bright Data) account is not active"
+
+
+DISCOVERY = Settings(
+    brightdata_api_key="bd-key",
+    brightdata_discovery_keywords='Software, Developer,Backend, "Full stack" ,software',
+)
+
+
+def test_discovery_keywords_search_once_per_country_with_or():
+    """Cities, titles and work modes are left to the Feed: one OR search per country, one
+    worldwide remote search, and one worldwide search for a Preference with no place."""
+    preference_queries = [
+        SourceQuery(keywords="Rails Developer", location=Location(city="Bengaluru", country="IN")),
+        SourceQuery(keywords="Backend Engineer", location=Location(city="Pune", country="IN")),
+        SourceQuery(keywords="Rails Developer", location=Location(country="IN", remote=True)),
+        SourceQuery(keywords="Rails Developer", location=Location(remote=True)),
+        SourceQuery(keywords="Rails Developer", location=None),
+    ]
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY)
+    queries = adapter.search_queries(preference_queries)
+    keyword = 'Software OR Developer OR Backend OR "Full stack"'
+    assert {q.keywords for q in queries} == {keyword}
+    places = {(q.location.country, q.location.remote) if q.location else None for q in queries}
+    assert places == {("IN", False), (None, True), None}
+    assert len(queries) == 3
+    assert sum(q.location is None for q in queries) == 1
+    assert not adapter.searches_titles()
+
+
+def test_without_discovery_keywords_titles_are_searched_as_before():
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS)
+    assert adapter.search_queries([QUERY]) == [QUERY]
+    assert adapter.searches_titles()
+
+
+async def test_discovery_search_is_country_wide_and_capped():
+    seen: list[httpx.Request] = []
+    records = [
+        {"job_posting_id": str(i), "job_title": "Developer", "company_name": "Acme",
+         "job_location": "Indore", "country_code": "IN"}
+        for i in range(3)
+    ]  # fmt: skip
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/trigger"):
+            return httpx.Response(200, json={"snapshot_id": "s_1"})
+        if "/progress/" in request.url.path:
+            return httpx.Response(200, json={"status": "ready"})
+        return httpx.Response(200, json=records)
+
+    settings = DISCOVERY.model_copy(update={"brightdata_limit_per_search": 3})
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), settings)
+    [query] = adapter.search_queries([QUERY])
+    async with http(handler) as client:
+        result = await LinkedInBrightDataAdapter(client, settings, sleep=no_sleep).fetch_window(
+            query, DAY
+        )
+    trigger = seen[0]
+    assert trigger.url.params["limit_per_input"] == "3"
+    body = json.loads(trigger.read())[0]
+    assert (body["keyword"], body["location"], body["country"], body["remote"]) == (
+        'Software OR Developer OR Backend OR "Full stack"',
+        "India",
+        "IN",
+        "",
+    )
+    # Three records against a cap of three: the window may hold more.
+    assert result.complete is False
+    # A bare city takes the record's own country code.
+    assert (result.postings[0].locations[0].city, result.postings[0].locations[0].country) == (
+        "Indore",
+        "IN",
+    )
+
+
+async def test_no_cap_sends_no_limit():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/trigger"):
+            return httpx.Response(200, json={"snapshot_id": "s_1"})
+        if "/progress/" in request.url.path:
+            return httpx.Response(200, json={"status": "ready"})
+        return httpx.Response(200, json=[])
+
+    settings = SETTINGS.model_copy(update={"brightdata_limit_per_search": 0})
+    async with http(handler) as client:
+        result = await LinkedInBrightDataAdapter(client, settings, sleep=no_sleep).fetch_window(
+            QUERY, DAY
+        )
+    assert "limit_per_input" not in seen[0].url.params
+    assert result.complete is True
+
+
+def test_long_keyword_lists_keep_every_country_and_distinct_keys():
+    """SourceQuery.key fits the 300-character columns without merging two searches."""
+    terms = ",".join(f"Keyword number {i}" for i in range(30))
+    settings = DISCOVERY.model_copy(update={"brightdata_discovery_keywords": terms})
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), settings)
+    queries = adapter.search_queries(
+        [
+            SourceQuery(keywords="Rails", location=Location(city="Pune", country="IN")),
+            SourceQuery(keywords="Rails", location=Location(city="Austin", country="US")),
+        ]
+    )
+    assert sorted(q.location.country for q in queries) == ["IN", "US"]
+    keys = [q.key for q in queries]
+    assert len(set(keys)) == 2 and all(len(k) <= 300 for k in keys)
+    assert keys[0].endswith("@|IN|False") or keys[1].endswith("@|IN|False")
+    # Short keys keep their existing form, so current watermarks still match.
+    assert QUERY.key == "backend engineer@Bengaluru|IN|False"
+
+
+def test_discovery_searches_continue_from_the_title_searches_they_replace():
+    preference_queries = [
+        SourceQuery(keywords="Rails Developer", location=Location(city="Pune", country="IN")),
+        SourceQuery(keywords="Backend", location=Location(country="IN", remote=True)),
+        SourceQuery(keywords="Rails Developer", location=Location(city="Austin", country="US")),
+        SourceQuery(keywords="Rails Developer", location=Location(remote=True)),
+        SourceQuery(keywords="Rails Developer", location=Location()),
+    ]
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY)
+    by_place = {
+        (q.location.country, q.location.remote) if q.location else None: q
+        for q in adapter.search_queries(preference_queries)
+    }
+    keys = [q.key for q in preference_queries]
+    assert adapter.continues_from(by_place[("IN", False)], preference_queries) == keys[:2]
+    assert adapter.continues_from(by_place[("US", False)], preference_queries) == [keys[2]]
+    assert adapter.continues_from(by_place[(None, True)], preference_queries) == [keys[3]]
+    assert adapter.continues_from(by_place[None], preference_queries) == [keys[4]]
+    # Title searches have nothing to inherit.
+    plain = LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS)
+    assert plain.continues_from(preference_queries[0], preference_queries) == []

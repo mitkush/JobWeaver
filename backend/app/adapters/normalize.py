@@ -189,10 +189,26 @@ def country_display(code: str) -> str:
     return _COUNTRY_NAMES.get(code.upper(), code.upper())
 
 
+# Administrative names LinkedIn and job boards use for a city ("Pune Division", "Greater
+# Chennai Area", "Mumbai Metropolitan Region"): the Feed matches the city itself.
+_GREATER_AREA = re.compile(r"^greater\s+(.+?)\s+area$", re.IGNORECASE)
+_ADMIN_SUFFIX = re.compile(
+    r"\s+(?:division|district|urban|rural|metropolitan region|metropolitan area)$",
+    re.IGNORECASE,
+)
+
+
 def normalize_city(city: str | None) -> str | None:
     if not city:
         return None
     value = clean_space(city).strip(" ,")
+    if greater := _GREATER_AREA.match(value):
+        value = greater.group(1)
+    value = _ADMIN_SUFFIX.sub("", value) or value
+    # "Pune City" is Pune, but "Mexico City" is not Mexico: only known Indian cities.
+    stem = value[:-5].strip() if value.lower().endswith(" city") else ""
+    if stem.lower() in _INDIAN_CITIES:
+        value = stem
     return _CITY_ALIASES.get(value.lower(), value.title() if value.islower() else value) or None
 
 

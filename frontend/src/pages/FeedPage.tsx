@@ -2,7 +2,7 @@ import { Inbox, Mail, SearchX } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { useFeed, useNotices } from "@/api/hooks";
+import { useFeed } from "@/api/hooks";
 import { PageHeader } from "@/app/AppShell";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -104,7 +104,6 @@ export function FeedPage() {
   // otherwise be applied again after the typing pause.
   const [filtersKey, setFiltersKey] = useState(0);
   const [params, setParams] = useSearchParams();
-  const notices = useNotices();
   const explicit = params.get("section");
   const requested: Section = explicit === "link" ? "link" : "email";
   const feed = useFeed(feedQuery(params, requested));
@@ -137,11 +136,6 @@ export function FeedPage() {
         }
       />
       <Reminders />
-      {notices.data?.map((notice) => (
-        <Alert key={notice.label} tone="info" className="mb-4">
-          {notice.message}
-        </Alert>
-      ))}
       {feed.isError && (
         <Alert tone="error" className="mb-4" title="The feed could not load">
           {feed.error.message}

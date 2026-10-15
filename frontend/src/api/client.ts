@@ -13,7 +13,6 @@ export type UploadResult = Schemas["UploadResult"];
 export type SourceStatus = Schemas["SourceStatusOut"];
 export type FetchRun = Schemas["FetchRunOut"];
 export type AtsBoard = Schemas["AtsBoardOut"];
-export type SourceNotice = Schemas["SourceNotice"];
 export type FeedPage = Schemas["FeedOut"];
 export type FeedCard = Schemas["FeedCard"];
 export type JobDetail = Schemas["JobDetailOut"];

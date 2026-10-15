@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
 from app.adapters import registry
 from app.adapters.base import FetchResult, NormalizedPosting, SnapshotSourceAdapter
@@ -80,60 +79,6 @@ async def test_disable_and_enable(admin):
     ).status_code == 404
 
 
-async def test_users_see_notices_only_after_a_day_of_degradation(alice, db):
-    _, client = alice
-    db.add(
-        Source(
-            name="greenhouse-test",
-            state=SourceState.DEGRADED,
-            degraded_since=datetime.now(UTC) - timedelta(hours=2),
-        )
-    )
-    await db.commit()
-    assert (await client.get("/api/sources/notices")).json() == []
-    source = (await db.execute(select(Source))).scalar_one()
-    source.degraded_since = datetime.now(UTC) - timedelta(days=2)
-    await db.commit()
-    notice = (await client.get("/api/sources/notices")).json()[0]
-    assert notice["message"] == (
-        "No successful Greenhouse (test) searches in over a day; "
-        "jobs from this source may be delayed."
-    )
-
-
-async def test_notice_reports_recent_partial_success_without_claiming_all_jobs_are_delayed(
-    alice, db
-):
-    _, client = alice
-    now = datetime.now(UTC)
-    db.add_all(
-        [
-            Source(
-                name="greenhouse-test",
-                state=SourceState.DEGRADED,
-                degraded_since=now - timedelta(days=2),
-            ),
-            FetchRun(
-                source="greenhouse-test",
-                status=RunStatus.SUCCEEDED,
-                finished_at=now - timedelta(hours=1),
-            ),
-            FetchRun(
-                source="greenhouse-test",
-                status=RunStatus.FAILED,
-                finished_at=now,
-            ),
-        ]
-    )
-    await db.commit()
-
-    notices = (await client.get("/api/sources/notices")).json()
-    assert len(notices) == 1
-    assert notices[0]["message"] == (
-        "Some Greenhouse (test) searches are failing; successful searches are still updating."
-    )
-
-
 class Standby(Board):
     name = "greenhouse-standby"
     label = "Standby (test)"
@@ -141,9 +86,8 @@ class Standby(Board):
     disabled_reason = "No stable API"
 
 
-async def test_standby_is_labelled_and_covers_its_main_in_notices(alice, admin, db):
+async def test_standby_is_labelled_in_source_status(admin, db):
     registry.register_adapter(Standby)
-    _, user_client = alice
     _, admin_client = admin
     now = datetime.now(UTC)
     db.add_all(
@@ -161,14 +105,6 @@ async def test_standby_is_labelled_and_covers_its_main_in_notices(alice, admin, 
     assert status["greenhouse-standby"]["standby_for"] == "Greenhouse (test)"
     assert status["greenhouse-standby"]["disabled_reason"] == "No stable API"
     assert status["greenhouse-test"]["standby_for"] is None
-    # The standby is fetching in its place, so users are not missing jobs.
-    assert (await user_client.get("/api/sources/notices")).json() == []
-    standby = (
-        await db.execute(select(Source).where(Source.name == "greenhouse-standby"))
-    ).scalar_one()
-    standby.state = SourceState.DEGRADED
-    await db.commit()
-    assert len((await user_client.get("/api/sources/notices")).json()) == 1
 
 
 async def test_users_add_company_boards_by_link(alice):
@@ -330,3 +266,35 @@ async def test_source_status_tracks_latest_backup_without_pause(db, monkeypatch)
     assert status.budget.account.account_label == "Backup account 1"
     assert status.budget.tracked_account == "Backup account 1"
     assert status.budget.spent == 30
+
+
+async def test_fetch_runs_paginate_with_stable_order_and_source_filter(admin, db):
+    _, client = admin
+    now = datetime.now(UTC)
+    rows = [
+        FetchRun(source="greenhouse-test", status=RunStatus.SUCCEEDED, created_at=now)
+        for _ in range(5)
+    ]
+    db.add_all(rows)
+    db.add(FetchRun(source="another-source", status=RunStatus.SUCCEEDED, created_at=now))
+    await db.commit()
+    pages = []
+    for offset in (0, 2, 4):
+        response = await client.get(
+            "/api/admin/fetch-runs",
+            params={"source": "greenhouse-test", "limit": 2, "offset": offset},
+        )
+        assert response.status_code == 200
+        pages.append(response.json())
+    assert [len(page) for page in pages] == [2, 2, 1]
+    assert [row["id"] for page in pages for row in page] == [
+        str(row.id) for row in sorted(rows, key=lambda row: row.id, reverse=True)
+    ]
+    assert (await client.get("/api/admin/fetch-runs?offset=-1")).status_code == 422
+    assert (await client.get("/api/admin/fetch-runs?limit=0")).status_code == 422
+
+
+async def test_retired_source_notices_endpoint_is_not_exposed(alice):
+    _, client = alice
+    assert (await client.get("/api/sources/notices")).status_code == 404
+    assert "/api/sources/notices" not in app.openapi()["paths"]

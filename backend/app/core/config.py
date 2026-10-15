@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # until its next renewal while keeping it first in the credential list.
     brightdata_primary_paused_until: datetime | None = None
     brightdata_linkedin_dataset_id: str = "gd_lpfll7v5hcqtkxl6l"
+    # Broad role keywords searched once per Preference country, joined with OR, instead of
+    # one search per title and city. Empty keeps the per-title searches.
+    brightdata_discovery_keywords: str = ""
+    # Records one Bright Data search may return (limit_per_input); 0 means no cap.
+    brightdata_limit_per_search: int = 1000
     rapidapi_key: str = ""
     # Phase 5 Sources. Apify's free $5 a month is shared by Naukri and LinkedIn (Apify).
     # Actor inputs are written for these actors; another actor needs its own mapping.

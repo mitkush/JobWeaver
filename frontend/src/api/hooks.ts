@@ -23,7 +23,6 @@ export const keys = {
   titleSuggestions: (titles: string[]) => ["preferences", "title-suggestions", ...titles] as const,
   sources: ["admin", "sources"] as const,
   runs: ["admin", "runs"] as const,
-  notices: ["notices"] as const,
   boards: ["boards"] as const,
   feed: ["feed"] as const,
   runStartedAt: ["admin", "run-started-at"] as const,
@@ -224,13 +223,14 @@ export function useSources() {
 
 /** Refreshes every few seconds while a run is in progress (a manual run runs in the
  * background), and refreshes the Sources once it ends. */
-export function useFetchRuns() {
+export function useFetchRuns(page = 0, pageSize = 20) {
   const client = useQueryClient();
+  const queryKey = [...keys.runs, page, pageSize];
   return useQuery({
-    queryKey: keys.runs,
+    queryKey,
     queryFn: async () => {
-      const previous = client.getQueryData<{ status: string }[]>(keys.runs);
-      const runs = await unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: 30 } } }));
+      const previous = client.getQueryData<{ status: string }[]>(queryKey);
+      const runs = await unwrap(api.GET("/api/admin/fetch-runs", { params: { query: { limit: pageSize + 1, offset: page * pageSize } } }));
       const wasRunning = previous?.some((run) => run.status === "running");
       if (wasRunning && !runs.some((run) => run.status === "running")) {
         void client.invalidateQueries({ queryKey: keys.sources });
@@ -238,6 +238,7 @@ export function useFetchRuns() {
       return runs;
     },
     refetchInterval: (query) => {
+      if (page > 0) return false;
       if (query.state.data?.some((run) => run.status === "running")) return 5000;
       // A run just started may not have written its first row yet.
       const startedAt = client.getQueryData<number>(keys.runStartedAt) ?? 0;
@@ -269,10 +270,6 @@ export function useRunSource() {
         client.invalidateQueries({ queryKey: keys.runs }),
       ]),
   });
-}
-
-export function useNotices() {
-  return useQuery({ queryKey: keys.notices, queryFn: () => unwrap(api.GET("/api/sources/notices")) });
 }
 
 export function useBoards() {

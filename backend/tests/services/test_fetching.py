@@ -825,6 +825,61 @@ async def test_manual_run_of_a_standby_is_allowed_while_its_main_is_healthy(db, 
     assert outcome.status == "succeeded" and len(standby.windows) == 2
 
 
+@pytest.fixture
+def last_standby(standby):
+    class LastStandby(FakeSearch):
+        name = "fake-last"
+        standby_for = "fake-standby"
+        priority = 0
+        windows = []
+        results = []
+
+    registry.register_adapter(LastStandby)
+    return LastStandby
+
+
+@pytest.mark.parametrize("scenario", ["main-recovers", "backup-works", "both-fail", "disabled"])
+async def test_third_source_waits_for_every_upstream_source(
+    db, fetcher, standby, last_standby, scenario
+):
+    await add_preferences(db)
+    await fetcher.sync_sources()
+    if scenario == "main-recovers":
+        (await source_row(db, standby.name)).state = SourceState.DEGRADED
+        await db.commit()
+    elif scenario == "disabled":
+        (await source_row(db, FakeSearch.name)).enabled = False
+        await db.commit()
+        (await source_row(db, standby.name)).enabled = False
+        await db.commit()
+    else:
+        FakeSearch.results = [SourceUnavailable("down")]
+        if scenario == "both-fail":
+            standby.results = [SourceUnavailable("down")]
+    outcomes = await fetcher.run_all()
+    names = [outcome.source for outcome in outcomes]
+    assert names.index(FakeSearch.name) < names.index(standby.name) < names.index(last_standby.name)
+    assert len(last_standby.windows) == (2 if scenario in ("both-fail", "disabled") else 0)
+
+
+async def test_recovered_main_uses_third_source_checkpoints(
+    db, fetcher, clock, standby, last_standby
+):
+    await add_preferences(db)
+    FakeSearch.results = [SourceUnavailable("down")]
+    standby.results = [SourceUnavailable("down")]
+    await fetcher.run_all()
+    assert len(last_standby.windows) == 2
+    FakeSearch.windows.clear()
+    clock.now += timedelta(hours=6)
+    await fetcher.run_source(FakeSearch.name)
+    assert FakeSearch.windows == []
+    clock.now = START + timedelta(days=1)
+    await fetcher.run_source(FakeSearch.name)
+    assert len(FakeSearch.windows) == 2
+    assert all(window.since == START - timedelta(hours=2) for _, window in FakeSearch.windows)
+
+
 async def test_budget_pool_shares_one_allowance(db, fetcher, standby, clock):
     registry.register_adapter(FakePoolMate)
     from app.services.fetching import budget_for
@@ -1304,3 +1359,71 @@ async def test_new_provider_declares_credentials_and_balance_without_service_bra
     account = await account_status(NewProvider, fetcher.http, fetcher.settings, START)
     assert account.account_label == "Backup account 1"
     assert [a.remaining for a in account.accounts] == [0, 10]
+
+
+async def test_a_source_can_search_more_broadly_and_report_a_capped_window(db, fetcher):
+    """search_queries replaces the per-title searches; a capped result still completes the
+    window but says in Recent runs that jobs may be missing."""
+
+    class Broad(FakeSearch):
+        name = "fake-broad"
+        windows = []
+        results = [FetchResult(postings=[posting("b1")], complete=False)]
+
+        def search_queries(self, preference_queries):
+            return [SourceQuery(keywords="Software OR Developer", location=Location(country="IN"))]
+
+    registry.register_adapter(Broad)
+    await add_preferences(db, titles=("Backend Engineer", "Rails Developer"))
+    assert (await fetcher.run_source(Broad.name)).status == "succeeded"
+    assert [key for key, _ in Broad.windows] == ["software or developer@|IN|False"]
+    run = await db.scalar(select(FetchRun).where(FetchRun.source == Broad.name))
+    assert run.status.value == "succeeded"
+    assert "record cap" in run.error
+
+
+class Broadening(FakeSearch):
+    """Replaces the per-title searches with one country-wide search that covers them."""
+
+    name = "fake-broadening"
+    windows = []
+
+    def search_queries(self, preference_queries):
+        return [SourceQuery(keywords="Software OR Developer", location=Location(country="IN"))]
+
+    def continues_from(self, query, preference_queries):
+        return [q.key for q in preference_queries]
+
+
+async def test_a_new_broad_search_picks_up_where_the_title_searches_stopped(db, fetcher, clock):
+    """No gap and no fresh Backfill: the oldest replaced watermark is where it starts."""
+    from app.models.fetch import QueryWatermark
+
+    await add_preferences(db, titles=("Backend Engineer", "Rails Developer"))
+    preference_queries = queries_from_preferences(
+        list((await db.execute(select(Preference))).scalars())
+    )
+    stopped = {q.key: START - timedelta(days=3 + i) for i, q in enumerate(preference_queries)}
+    for key, until in stopped.items():
+        db.add(QueryWatermark(source=Broadening.name, query_key=key, last_until=until))
+    await db.commit()
+    Broadening.windows = []
+    registry.register_adapter(Broadening)
+    assert (await fetcher.run_source(Broadening.name)).status == "succeeded"
+    [(_, window)] = Broadening.windows
+    oldest = min(stopped.values())
+    assert window.since == oldest - timedelta(hours=fetcher.settings.window_overlap_hours)
+
+
+async def test_a_new_broad_search_backfills_when_a_replaced_search_never_ran(db, fetcher, clock):
+    from app.models.fetch import QueryWatermark
+
+    await add_preferences(db, titles=("Backend Engineer", "Rails Developer"))
+    first = queries_from_preferences(list((await db.execute(select(Preference))).scalars()))[0]
+    db.add(QueryWatermark(source=Broadening.name, query_key=first.key, last_until=START))
+    await db.commit()
+    Broadening.windows = []
+    registry.register_adapter(Broadening)
+    assert (await fetcher.run_source(Broadening.name)).status == "succeeded"
+    [(_, window)] = Broadening.windows
+    assert window.until - window.since == timedelta(days=fetcher.settings.backfill_days)

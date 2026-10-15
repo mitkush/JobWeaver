@@ -44,6 +44,7 @@ from app.adapters.registry import (
     pool_of,
     registered_adapters,
     run_order,
+    upstream_of,
 )
 from app.core.config import Settings, get_settings
 from app.core.db import among
@@ -484,16 +485,15 @@ class Fetcher:
                 )
                 await session.commit()
                 return SourceOutcome(name, "skipped", "not configured")
-            if cls.standby_for and trigger != MANUAL:
-                main = await self._source_row(session, cls.standby_for)
-                main_cls = get_adapter_class(cls.standby_for)
-                main_works = self.adapter_factory(
-                    main_cls, self.http, self.settings
-                ).is_configured()
-                # A main Source without a key delivers nothing either, so its standby runs.
-                if main.enabled and main_works and main.state != SourceState.DEGRADED:
-                    await session.commit()
-                    return SourceOutcome(name, "skipped", "standing by")
+            if trigger != MANUAL:
+                for main_cls in upstream_of(cls):
+                    main = await self._source_row(session, main_cls.name)
+                    main_works = self.adapter_factory(
+                        main_cls, self.http, self.settings
+                    ).is_configured()
+                    if main.enabled and main_works and main.state != SourceState.DEGRADED:
+                        await session.commit()
+                        return SourceOutcome(name, "skipped", "standing by")
             now = self.clock()
             # A provider's own call limit (e.g. Remotive: 4 a day) applies to every trigger.
             if cls.min_interval_hours:
@@ -618,6 +618,29 @@ class Fetcher:
                 f"renews {budget.renews_on:%d %b %Y}"
             )
 
+    @staticmethod
+    async def _inherited_until(
+        session: AsyncSession, family: set[str], keys: list[str]
+    ) -> datetime | None:
+        """Where a new search may pick up: the oldest watermark among the searches it
+        replaces, so no day between them is skipped. None when none of them has run."""
+        if not keys:
+            return None
+        marks = (
+            await session.execute(
+                select(QueryWatermark.query_key, func.max(QueryWatermark.last_until))
+                .where(
+                    among(QueryWatermark.source, family, String()),
+                    among(QueryWatermark.query_key, set(keys), String()),
+                )
+                .group_by(QueryWatermark.query_key)
+            )
+        ).all()
+        # Every replaced search must have run; one that never did still needs a Backfill.
+        if len(marks) < len(set(keys)):
+            return None
+        return min(until for _, until in marks)
+
     async def _run_windowed(
         self,
         session: AsyncSession,
@@ -625,9 +648,11 @@ class Fetcher:
         trigger: str,
         outcome: SourceOutcome,
     ) -> None:
+        preference_queries: list[SourceQuery] = []
         if adapter.per_query:
             preferences = list((await session.execute(select(Preference))).scalars())
-            queries: list[SourceQuery | None] = list(queries_from_preferences(preferences))
+            preference_queries = queries_from_preferences(preferences)
+            queries: list[SourceQuery | None] = list(adapter.search_queries(preference_queries))
         else:
             queries = [None]
         family = family_of(type(adapter))
@@ -650,6 +675,10 @@ class Fetcher:
             watermark = next((m for m in marks if m.source == adapter.name), None)
             # A main Source and its standby continue from whichever searched last.
             last_until = max((m.last_until for m in marks), default=None)
+            if last_until is None and query is not None:
+                last_until = await self._inherited_until(
+                    session, family, adapter.continues_from(query, preference_queries)
+                )
             if last_until is None:
                 since = started - timedelta(days=self.settings.backfill_days)
             else:
@@ -715,6 +744,12 @@ class Fetcher:
                 await session.commit()
                 raise
             run.status, run.finished_at = RunStatus.SUCCEEDED, self.clock()
+            if not result.complete:
+                # Shown in Recent runs: the window is still marked done, but it held more.
+                run.error = (
+                    "Reached the provider's record cap; some jobs in this window may be "
+                    "missing. Split the search or raise its cap."
+                )
             # Pending adverts count here; their Postings appear once extracted.
             run.postings_found, run.postings_new, run.credits_used = (
                 len(seen) + pending_seen,
