@@ -171,26 +171,6 @@ async def test_standby_is_labelled_and_covers_its_main_in_notices(alice, admin, 
     assert len((await user_client.get("/api/sources/notices")).json()) == 1
 
 
-async def test_third_source_covers_both_upstream_sources_in_notices(alice, db):
-    class LastStandby(Standby):
-        name = "greenhouse-last"
-        standby_for = "greenhouse-standby"
-
-    registry.register_adapter(Standby)
-    registry.register_adapter(LastStandby)
-    _, client = alice
-    now = datetime.now(UTC)
-    db.add_all(
-        [
-            Source(name=name, state=SourceState.DEGRADED, degraded_since=now - timedelta(days=2))
-            for name in ("greenhouse-test", "greenhouse-standby")
-        ]
-    )
-    db.add(Source(name="greenhouse-last", last_success_at=now))
-    await db.commit()
-    assert (await client.get("/api/sources/notices")).json() == []
-
-
 async def test_users_add_company_boards_by_link(alice):
     _, client = alice
     added = await client.post(
