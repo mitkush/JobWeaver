@@ -337,3 +337,14 @@ it("lists jobs without a description under Needs review", async () => {
   expect(screen.getByText(/the advert has no job description to confirm your Core skills/)).toBeInTheDocument();
   expect(calls.some((c) => queryOf(c).get("match") === "review")).toBe(true);
 });
+
+it("keeps source health notices off the Feed and does not request them", async () => {
+  const calls = mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard()])),
+    "GET /api/sources/notices": () => json([{ label: "LinkedIn", message: "LinkedIn searches are delayed" }]),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.queryByText("LinkedIn searches are delayed")).not.toBeInTheDocument();
+  expect(calls.some((call) => call.url.includes("/sources/notices"))).toBe(false);
+});

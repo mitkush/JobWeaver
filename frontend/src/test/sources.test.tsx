@@ -198,7 +198,7 @@ it("shows the Sources page to the admin only", async () => {
   });
   renderWithApp(<App />, { route: "/feed" });
   expect((await screen.findAllByRole("link", { name: "Sources" })).length).toBeGreaterThan(0);
-  expect(await screen.findByText("LinkedIn jobs are delayed; other sources are up to date.")).toBeInTheDocument();
+  expect(screen.queryByText("LinkedIn jobs are delayed; other sources are up to date.")).not.toBeInTheDocument();
 });
 
 it("shows AI calls against each free daily quota", async () => {
@@ -316,4 +316,35 @@ it("shows a paused primary and the backup selected before its first fetch", asyn
   renderWithApp(<AdminSourcesPage />);
   expect(await screen.findByText("Tracked search costs: Backup account 1")).toBeInTheDocument();
   expect(screen.getByText(/Primary account: paused until .*01 Nov 2026.*UTC/)).toBeInTheDocument();
+});
+
+it("paginates recent runs inside a bounded scrollable section", async () => {
+  const user = userEvent.setup();
+  const runs = Array.from({ length: 21 }, (_, i) => ({
+    id: `run-${i}`, source: "greenhouse", status: "succeeded",
+    created_at: new Date().toISOString(), board: `board-${i}`, query_key: null,
+    postings_found: 1, postings_new: 1, postings_closed: 0, credits_used: 0,
+    error: null, trigger: "manual", window_since: null, window_until: null, finished_at: null,
+  }));
+  const calls = mockFetch({
+    "GET /api/admin/sources": () => json([]),
+    "GET /api/admin/fetch-runs": (request) => {
+      const query = new URL(request.url).searchParams;
+      const offset = Number(query.get("offset"));
+      return json(runs.slice(offset, offset + Number(query.get("limit"))));
+    },
+  });
+  renderWithApp(<AdminSourcesPage />);
+  await screen.findByText("board-0");
+  expect(screen.getByRole("region", { name: "Recent fetch runs" })).toHaveClass("max-h-96", "overflow-auto");
+  expect(screen.queryByText("board-20")).not.toBeInTheDocument();
+  const pagination = within(screen.getByRole("navigation", { name: "Recent runs pagination" }));
+  expect(pagination.getByRole("button", { name: "Previous" })).toBeDisabled();
+  await user.click(pagination.getByRole("button", { name: "Next" }));
+  await screen.findByText("board-20");
+  expect(screen.queryByText("board-0")).not.toBeInTheDocument();
+  expect(pagination.getByRole("button", { name: "Next" })).toBeDisabled();
+  expect(calls.some((call) => new URL(call.url).searchParams.get("offset") === "20")).toBe(true);
+  await user.click(pagination.getByRole("button", { name: "Previous" }));
+  await screen.findByText("board-0");
 });

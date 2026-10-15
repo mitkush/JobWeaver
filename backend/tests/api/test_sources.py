@@ -330,3 +330,29 @@ async def test_source_status_tracks_latest_backup_without_pause(db, monkeypatch)
     assert status.budget.account.account_label == "Backup account 1"
     assert status.budget.tracked_account == "Backup account 1"
     assert status.budget.spent == 30
+
+
+async def test_fetch_runs_paginate_with_stable_order_and_source_filter(admin, db):
+    _, client = admin
+    now = datetime.now(UTC)
+    rows = [
+        FetchRun(source="greenhouse-test", status=RunStatus.SUCCEEDED, created_at=now)
+        for _ in range(5)
+    ]
+    db.add_all(rows)
+    db.add(FetchRun(source="another-source", status=RunStatus.SUCCEEDED, created_at=now))
+    await db.commit()
+    pages = []
+    for offset in (0, 2, 4):
+        response = await client.get(
+            "/api/admin/fetch-runs",
+            params={"source": "greenhouse-test", "limit": 2, "offset": offset},
+        )
+        assert response.status_code == 200
+        pages.append(response.json())
+    assert [len(page) for page in pages] == [2, 2, 1]
+    assert [row["id"] for page in pages for row in page] == [
+        str(row.id) for row in sorted(rows, key=lambda row: row.id, reverse=True)
+    ]
+    assert (await client.get("/api/admin/fetch-runs?offset=-1")).status_code == 422
+    assert (await client.get("/api/admin/fetch-runs?limit=0")).status_code == 422

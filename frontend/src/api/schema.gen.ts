@@ -3167,6 +3167,7 @@ export interface operations {
             query?: {
                 source?: string | null;
                 limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;

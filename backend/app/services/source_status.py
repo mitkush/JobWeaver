@@ -163,13 +163,14 @@ async def set_enabled(session: AsyncSession, name: str, enabled: bool) -> None:
 
 
 async def recent_runs(
-    session: AsyncSession, source: str | None, limit: int = 50
+    session: AsyncSession, source: str | None, limit: int = 50, offset: int = 0
 ) -> list[FetchRunOut]:
     query = (
         select(FetchRun, AtsBoard.slug)
         .outerjoin(AtsBoard, AtsBoard.id == FetchRun.board_id)
-        .order_by(FetchRun.created_at.desc())
+        .order_by(FetchRun.created_at.desc(), FetchRun.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     if source:
         query = query.where(FetchRun.source == source)
