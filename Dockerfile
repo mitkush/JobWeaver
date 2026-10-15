@@ -15,6 +15,7 @@ COPY backend/app ./app
 RUN pip install .
 COPY backend/alembic.ini ./
 COPY backend/alembic ./alembic
+COPY backend/scripts/backfill_description_mentions.py ./scripts/backfill_description_mentions.py
 COPY --from=frontend /frontend/dist ./static
 RUN useradd --create-home jobweaver
 USER jobweaver

@@ -795,3 +795,72 @@ async def test_short_core_advert_matching_both_candidate_paths_stays_under_revie
     assert body["total"] == 1
     assert body["items"][0]["match"] == "review"
     assert body["counts"]["title_matches"] == 0
+
+
+@pytest.mark.parametrize("cache_state", ["current", "missing", "stale"])
+async def test_description_cache_and_legacy_fallback_give_identical_matches(alice, db, cache_state):
+    _, client = alice
+    await seed_keywords()
+    if cache_state != "current":
+        await db.execute(
+            update(Posting).values(
+                description_mentions_version=None if cache_state == "missing" else "old"
+            )
+        )
+        await db.commit()
+    await client.put("/api/preferences", json=RAILS_BLR)
+    body = (await client.get("/api/feed", params={"section": "link", "match": "keywords"})).json()
+    assert body["total"] == 1
+    assert body["items"][0]["title"] == "Software Engineer - Payments"
+    assert {k["keyword"] for k in body["items"][0]["matched_keywords"]} == {"Rails", "PostgreSQL"}
+
+
+async def test_known_keywords_rebuild_without_description_selects_or_ilike(alice):
+    import re
+
+    from sqlalchemy import event
+
+    from app.core.db import get_engine
+
+    user, client = alice
+    await seed_keywords()
+    assert (await client.put("/api/preferences", json=RAILS_BLR)).status_code == 200
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    engine = get_engine().sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        async with get_sessionmaker()() as session:
+            await feed_service.sync_user_feed(session, user.id)
+            await session.rollback()
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert not any(re.search(r"\bpostings\.description\b", sql) for sql in statements)
+    assert not any("ILIKE" in sql.upper() for sql in statements)
+
+
+@pytest.mark.parametrize("unknown_core", [False, True])
+async def test_cached_fallback_supports_unknown_core_and_non_core_keywords(alice, unknown_core):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting(
+            "unknown-keyword",
+            title="Payments Engineer",
+            description="Build our Rails application with Sidekiq workers and reliable payments. "
+            * 4,
+        ),
+    )
+    await process()
+    prefs = RAILS_BLR | {
+        "keywords": ["Rails", "Sidekiq"],
+        "core_keywords": ["Sidekiq"] if unknown_core else ["Rails"],
+        "keyword_min_matches": 2,
+    }
+    assert (await client.put("/api/preferences", json=prefs)).status_code == 200
+    body = (await client.get("/api/feed", params={"section": "link", "match": "keywords"})).json()
+    assert body["total"] == 1
+    assert {k["keyword"] for k in body["items"][0]["matched_keywords"]} == {"Rails", "Sidekiq"}

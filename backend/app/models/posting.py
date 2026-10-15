@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -59,6 +59,10 @@ class Posting(Base):
     )
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
+    # Null means not backfilled; a current version with [] means no known mentions.
+    description_mentions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    description_usable: Mapped[bool | None] = mapped_column(Boolean)
+    description_mentions_version: Mapped[str | None] = mapped_column(String(64))
     # Parsed when the description is already in memory; Jobs copy this on derivation.
     experience_requirement: Mapped[str | None] = mapped_column(String(100))
     # [{"city": .., "country": .., "remote": bool}]
