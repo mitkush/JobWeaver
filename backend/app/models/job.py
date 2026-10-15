@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,23 +21,7 @@ class Job(Base):
     is lost (ADR-0004)."""
 
     __tablename__ = "jobs"
-    __table_args__ = (
-        Index("idx_jobs_open_posted", "expired_at", "posted_at"),
-        Index(
-            "idx_jobs_open_title_trgm",
-            "title",
-            postgresql_using="gin",
-            postgresql_ops={"title": "gin_trgm_ops"},
-            postgresql_where=text("expired_at IS NULL"),
-        ),
-        Index(
-            "idx_jobs_open_company_trgm",
-            "company_name",
-            postgresql_using="gin",
-            postgresql_ops={"company_name": "gin_trgm_ops"},
-            postgresql_where=text("expired_at IS NULL"),
-        ),
-    )
+    __table_args__ = (Index("idx_jobs_open_posted", "expired_at", "posted_at"),)
 
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id", ondelete="RESTRICT"))
     # Not a foreign key: postings.job_id already points here, and a cycle buys nothing.

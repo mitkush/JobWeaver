@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,13 +49,6 @@ class Posting(Base):
         Index("idx_postings_board_open", "ats_board_id", "closed_at"),
         Index("idx_postings_job", "job_id"),
         Index("idx_postings_match_state", "match_state"),
-        Index("idx_postings_description_length", text("length(description)")),
-        Index(
-            "idx_postings_description_trgm",
-            "description",
-            postgresql_using="gin",
-            postgresql_ops={"description": "gin_trgm_ops"},
-        ),
     )
 
     source: Mapped[str] = mapped_column(String(64))

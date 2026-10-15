@@ -11,9 +11,11 @@ AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates a
 - [Costs](jobweaver-docs/COSTS.md) - every free tier and what happens at its limit
 - [Discovery brief](prd-prompt.md) - the agreed decisions the PRD is built from
 
+See [PostgreSQL Feed search measurements](jobweaver-docs/POSTGRES_SEARCH.md) for a read-only query benchmark and the current optimization decision.
+
 ## Run locally
 
-Needs Python 3.12, Node 22 and Postgres 16 with the [pgvector](https://github.com/pgvector/pgvector) and `pg_trgm` extensions (or `docker compose up postgres`, which uses the pgvector image). Creating the extension needs a superuser once per database: `CREATE EXTENSION vector;` in `jobweaver` and `jobweaver_test`. Migration 0013 creates the trusted `pg_trgm` extension and concurrent search indexes; its database role needs `CREATE` privilege on the database. See [PostgreSQL Feed search](jobweaver-docs/POSTGRES_SEARCH.md) for scope and a reproducible benchmark.
+Needs Python 3.12, Node 22 and Postgres 16 with the [pgvector](https://github.com/pgvector/pgvector) extension (or `docker compose up postgres`, which uses the pgvector image). Creating the extension needs a superuser once per database: `CREATE EXTENSION vector;` in `jobweaver` and `jobweaver_test`.
 
 ```bash
 # Backend

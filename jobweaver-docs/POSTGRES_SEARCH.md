@@ -1,37 +1,33 @@
-# PostgreSQL Feed search
+# PostgreSQL Feed search measurements
 
-JobWeaver keeps search in PostgreSQL. Migration 0013 adds `pg_trgm` indexes for the existing literal, case-insensitive title, company and description searches, plus a description-length index for Needs review candidates. No additional service, AI calls, relevance score or fuzzy keyword matching is introduced.
+The current decision is to keep the existing PostgreSQL queries and indexes. The proposed four search indexes and migration 0013 were removed from this PR after measuring the actual candidate-query shape. There is no new extension requirement or startup index build.
 
-The Preferences candidate query now unions two ID-only lookups: descriptions that may mention a Core keyword, and title-matched descriptions short enough to need review. PostgreSQL can choose a different index for each branch. The outer query retrieves each candidate description once, and the existing Python whole-word, capitalization, canonical skill, Core keyword, location and work-mode rules still decide the match. Literal percent/underscore escaping remains unchanged. Feed searches remain scoped by UserJob.user_id.
+## Read-only production measurements
 
-Indexes:
+On 15 Oct 2026 the running application had 26,723 open Jobs, 26,423 place-matched candidate Jobs and two Preferences. A bounded diagnostic used the existing application helpers for Preferences, Core spellings, places, titles, UserJob scoping and Feed filters. It issued EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) in a read-only transaction, without creating indexes or returning description contents. Each statement had a 15-second timeout.
 
-- `idx_jobs_open_title_trgm`: GIN trigrams on open Job titles.
-- `idx_jobs_open_company_trgm`: GIN trigrams on open Job company names.
-- `idx_postings_description_trgm`: GIN trigrams on Posting descriptions.
-- `idx_postings_description_length`: B-tree on untrimmed description length.
+Three 1,000-Posting candidate chunks compared the existing OR query against the proposed UNION query, including the actual UUID ID restrictions, title-matched short-description branch and outer description fetch. Each shape was executed three times, original before UNION. The first original execution read more cold buffers, so it must not be compared directly to the subsequent warmed UNION execution.
 
-The Job indexes exclude expired Jobs. PostgreSQL maintains all four indexes as data changes. They require additional disk and write work, but no separate search process or synchronization queue. Very short searches such as `Go` or punctuation-heavy searches such as `C++` may not have useful trigrams; PostgreSQL can still choose another scan and the literal matching rules remain in force. See [PostgreSQL pg_trgm index support](https://www.postgresql.org/docs/16/pgtrgm.html#PGTRGM-INDEX).
+| Chunk | Original warm execution times (ms) | UNION warm execution times (ms) | Original / UNION shared buffer hits, last run |
+| --- | --- | --- | --- |
+| 1 | 1,026 / 1,369 | 1,000 / 1,009 | 16,105 / 18,277 |
+| 2 | 955 / 985 | 961 / 1,101 | 15,650 / 17,464 |
+| 3 | 1,021 / 1,072 | 1,229 / 1,068 | 16,822 / 17,948 |
 
-## Migration
+Both shapes returned the same row counts in each chunk: 173, 166 and 108 respectively. The UNION had no consistent execution-time advantage and touched more buffers. It was removed from application code.
 
-The database role needs CREATE privilege to install `pg_trgm`. Indexes are built concurrently outside the migration transaction so builds do not block ordinary writes. If a build fails, retrying revision 0013 removes and rebuilds only its own named indexes, including any invalid partial build. Existing application data is retained. Downgrade drops these indexes concurrently and leaves the extension installed because other database objects may use it. Initial index construction adds deployment time and disk usage; keep the PR in draft until its behavior on the production-sized dataset has been assessed.
+Feed count and 20-row page queries for Rails, Go and Engineer used the actual user-scoped join, hidden/open/company filters, title-match section and email section. Across three executions per query, execution times ranged from 25 to 82 ms. These are individual database statements, not total Feed response times. They do not establish that all Feed filters or other Users' workloads are fast.
 
-## Reproduce the benchmark
+The server was not isolated from normal traffic, cache order was not randomized, and no new index was built. These observations do not prove that a trigram index could never help. They do establish that the earlier synthetic speedups are insufficient justification for adding four maintained indexes during startup on this VM. The roughly one-second description chunks remain a candidate for separate investigation.
 
-After applying migrations, run against a PostgreSQL database with pg_trgm installed:
+## Reproduce
+
+From backend, with the target database configured through the usual settings:
 
 ```sh
-psql -X -d jobweaver_test -f backend/scripts/benchmark_feed_search.sql
+PYTHONPATH=. python scripts/benchmark_feed_search.py --chunks 3 --repetitions 3
 ```
 
-The script uses temporary tables, creates 20,000 synthetic rows and rolls everything back. It reports EXPLAIN ANALYZE/BUFFERS plans before and after the changes plus index sizes. It does not modify JobWeaver tables. It models the search predicates, not the complete Feed query with user joins, filters, counts and network latency.
+The default is one chunk and one execution per query. The command uses a read-only transaction, a 15-second statement timeout and a 120-second overall timeout. It performs real SELECT work and can warm caches or contend with live traffic. It prints only aggregate counts, timing, buffer counts and plan node types, not job text, user identifiers or SQL literals. It samples the first chunks in the application's current row order and the User with the most Feed links; it does not exhaustively benchmark every User or filter.
 
-One local run with a selective `Rails` term showed:
-
-| Predicate | Before | After |
-| --- | ---: | ---: |
-| Title/company substring | 9.56 ms | 0.16 ms |
-| Description candidates in a 1,000-row chunk | 12.20 ms | 0.18 ms |
-
-The plans used both Job trigram indexes for title/company search, and the description trigram plus length indexes for the split candidate query. The four synthetic indexes occupied about 4.8 MiB together. These are illustrative local timings on synthetic data, not production measurements or guaranteed speedups; keyword frequency, description sizes, cache state and job count affect results.
+Before proposing an index again, measure the complete query plans and timings with and without that index on a representative staging copy. Include index size, build time and write overhead, and keep any expensive build outside the app startup health-check deadline. Preserve the current literal matching, Core keyword rules and tenant isolation.

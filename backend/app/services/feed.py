@@ -291,23 +291,21 @@ async def _matches(
             for j in chunk
             if j.primary_posting_id and any(titled for _, _, titled in pending[j.id])
         ]
-        # Separate branches let PostgreSQL use the trigram and description-length
-        # indexes independently, then fetch only the deduplicated candidate adverts.
-        candidates = (
-            select(Posting.id)
-            .where(Posting.id.in_(posting_ids), mentions_core)
-            .union(
-                select(Posting.id).where(
-                    Posting.id.in_(titled_ids),
-                    func.length(Posting.description) < SHORT_DESCRIPTION_READ,
-                )
-            )
-        )
         descriptions = dict(
             (
                 await session.execute(
                     select(Posting.id, Posting.description).where(
-                        Posting.id.in_(candidates),
+                        Posting.id.in_(posting_ids),
+                        or_(
+                            mentions_core,
+                            and_(
+                                Posting.id.in_(titled_ids),
+                                # Untrimmed and generous: PostgreSQL and Python trim
+                                # different whitespace, so the exact count is left to
+                                # has_description. Short adverts cost little to read.
+                                func.length(Posting.description) < SHORT_DESCRIPTION_READ,
+                            ),
+                        ),
                     )
                 )
             ).all()
