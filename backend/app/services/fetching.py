@@ -627,7 +627,9 @@ class Fetcher:
     ) -> None:
         if adapter.per_query:
             preferences = list((await session.execute(select(Preference))).scalars())
-            queries: list[SourceQuery | None] = list(queries_from_preferences(preferences))
+            queries: list[SourceQuery | None] = list(
+                adapter.search_queries(queries_from_preferences(preferences))
+            )
         else:
             queries = [None]
         family = family_of(type(adapter))
@@ -715,6 +717,12 @@ class Fetcher:
                 await session.commit()
                 raise
             run.status, run.finished_at = RunStatus.SUCCEEDED, self.clock()
+            if not result.complete:
+                # Shown in Recent runs: the window is still marked done, but it held more.
+                run.error = (
+                    "Reached the provider's record cap; some jobs in this window may be "
+                    "missing. Split the search or raise its cap."
+                )
             # Pending adverts count here; their Postings appear once extracted.
             run.postings_found, run.postings_new, run.credits_used = (
                 len(seen) + pending_seen,

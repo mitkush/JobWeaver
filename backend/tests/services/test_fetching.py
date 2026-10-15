@@ -1304,3 +1304,24 @@ async def test_new_provider_declares_credentials_and_balance_without_service_bra
     account = await account_status(NewProvider, fetcher.http, fetcher.settings, START)
     assert account.account_label == "Backup account 1"
     assert [a.remaining for a in account.accounts] == [0, 10]
+
+
+async def test_a_source_can_search_more_broadly_and_report_a_capped_window(db, fetcher):
+    """search_queries replaces the per-title searches; a capped result still completes the
+    window but says in Recent runs that jobs may be missing."""
+
+    class Broad(FakeSearch):
+        name = "fake-broad"
+        windows = []
+        results = [FetchResult(postings=[posting("b1")], complete=False)]
+
+        def search_queries(self, preference_queries):
+            return [SourceQuery(keywords="Software OR Developer", location=Location(country="IN"))]
+
+    registry.register_adapter(Broad)
+    await add_preferences(db, titles=("Backend Engineer", "Rails Developer"))
+    assert (await fetcher.run_source(Broad.name)).status == "succeeded"
+    assert [key for key, _ in Broad.windows] == ["software or developer@|IN|False"]
+    run = await db.scalar(select(FetchRun).where(FetchRun.source == Broad.name))
+    assert run.status.value == "succeeded"
+    assert "record cap" in run.error

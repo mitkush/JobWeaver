@@ -126,7 +126,8 @@ class FetchResult(BaseModel):
     pending: list[PendingAdvert] = Field(default_factory=list)
     # Credits or requests this call used, for the Credit Budget (FR-B5).
     credits_used: int = 0
-    # False when a snapshot provider capped its list: missing jobs are not closed.
+    # False when the provider capped its list: a snapshot closes no missing jobs, and a
+    # windowed search reports that some jobs in its window may be missing.
     complete: bool = True
 
 
@@ -199,6 +200,15 @@ class WindowedSourceAdapter(SourceAdapter):
     mode = FetchMode.WINDOWED
     # False for Sources fetched once per run regardless of Preferences (e.g. Remotive).
     per_query: bool = True
+
+    def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
+        """The searches this Source runs, given one per title and place from users'
+        Preferences. A Source may search more broadly and leave matching to the Feed."""
+        return preference_queries
+
+    def searches_titles(self) -> bool:
+        """Whether each Preference title adds searches to this Source's daily run."""
+        return True
 
     @abstractmethod
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult: ...

@@ -97,6 +97,7 @@ async def searches_per_title(session: AsyncSession, preference: Preference | Non
         and cls.standby_for is None
         and enabled.get(cls.name, cls.default_enabled)
         and cls(http, settings).is_configured()
+        and cls(http, settings).searches_titles()
     )
     places = len(preference.locations or []) if preference else 0
     modes = set(preference.work_modes or []) if preference else set()

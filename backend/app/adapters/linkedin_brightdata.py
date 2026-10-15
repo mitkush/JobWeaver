@@ -1,7 +1,12 @@
 """LinkedIn via Bright Data "Discover jobs by keyword" (ADR-0009).
 
-Field names follow Bright Data's LinkedIn job listings dataset; alternatives are accepted
-because the exact names could not be checked against a live response when this was written.
+Field names follow Bright Data's LinkedIn job listings dataset and were checked against a
+live response on 15 Oct 2026; the alternatives stay as a guard against renames.
+
+With BRIGHTDATA_DISCOVERY_KEYWORDS set, the Source searches broad role keywords joined with
+OR ("Software OR Developer OR Backend OR \"Full stack\"") once per Preference country,
+instead of one search per title and city: LinkedIn honours OR in the keyword (verified on
+15 Oct 2026), and the Feed's title, place and Core-keyword rules then pick each User's Jobs.
 """
 
 import asyncio
@@ -14,6 +19,7 @@ import httpx
 from app.adapters.base import (
     FetchResult,
     FetchWindow,
+    Location,
     NormalizedPosting,
     SourceQuery,
     WindowedSourceAdapter,
@@ -46,6 +52,11 @@ def _first(record: dict[str, Any], *keys: str) -> Any:
         if value not in (None, "", []):
             return value
     return None
+
+
+def _country(record: dict[str, Any]) -> str | None:
+    code = _first(record, "country_code")
+    return str(code).upper() if isinstance(code, str) and len(code) == 2 else None
 
 
 def time_range_for(window: FetchWindow) -> str:
@@ -93,6 +104,39 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             "It does not pause searches or select credentials.",
         )
 
+    def _discovery_terms(self) -> list[str]:
+        """The configured keywords, cleaned, each once ignoring case (LinkedIn does)."""
+        terms: dict[str, str] = {}
+        for raw in self.settings.brightdata_discovery_keywords.split(","):
+            term = raw.strip().strip('"').strip()
+            if term:
+                terms.setdefault(term.casefold(), term)
+        return list(terms.values())
+
+    def searches_titles(self) -> bool:
+        return not self._discovery_terms()
+
+    def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
+        """One OR search per Preference country; cities, titles and work modes are left to
+        the Feed. A remote search with no country becomes one worldwide remote search, and
+        a Preference with no place one worldwide search."""
+        terms = self._discovery_terms()
+        if not terms:
+            return preference_queries
+        keyword = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
+        queries: dict[str, SourceQuery] = {}
+        for query in preference_queries:
+            loc = query.location
+            if loc and loc.country:
+                place: Location | None = Location(country=loc.country)
+            elif loc and loc.remote:
+                place = Location(remote=True)
+            else:
+                place = None
+            search = SourceQuery(keywords=keyword, location=place)
+            queries.setdefault(search.key, search)
+        return sorted(queries.values(), key=lambda q: q.key)
+
     def is_configured(self) -> bool:
         return bool(self.settings.brightdata_api_key or self.settings.brightdata_api_keys)
 
@@ -106,8 +150,13 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         snapshot_id = await self._trigger(query, window)
         records = await self._wait_and_download(snapshot_id)
         postings = [p for r in records if (p := self._to_posting(r)) is not None]
+        cap = self.settings.brightdata_limit_per_search
         # Bright Data charges one credit per record delivered, even ones JobWeaver cannot use.
-        return FetchResult(postings=postings, credits_used=len(records))
+        return FetchResult(
+            postings=postings,
+            credits_used=len(records),
+            complete=not (cap > 0 and len(records) >= cap),
+        )
 
     async def _trigger(self, query: SourceQuery, window: FetchWindow) -> str:
         loc = query.location
@@ -127,15 +176,19 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 "company": "",
             }
         ]
+        params: dict[str, str | int] = {
+            "dataset_id": self.settings.brightdata_linkedin_dataset_id,
+            "type": "discover_new",
+            "discover_by": "keyword",
+            "include_errors": "true",
+        }
+        if self.settings.brightdata_limit_per_search > 0:
+            # Caps the records (and credits) one search can return.
+            params["limit_per_input"] = self.settings.brightdata_limit_per_search
         for attempt in range(2):
             response = await self.http.post(
                 f"{API}/trigger",
-                params={
-                    "dataset_id": self.settings.brightdata_linkedin_dataset_id,
-                    "type": "discover_new",
-                    "discover_by": "keyword",
-                    "include_errors": "true",
-                },
+                params=params,
                 headers=self._headers,
                 json=payload,
             )
@@ -206,7 +259,10 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             title=str(title),
             company=str(company),
             description=description,
-            locations=[parse_location(location_text)] if location_text else [],
+            # The record's own country code fills in a bare city such as "Indore".
+            locations=[parse_location(location_text, default_country=_country(record))]
+            if location_text
+            else [],
             work_mode=work_mode_from(work_text),
             apply_url=_first(record, "apply_link", "job_apply_link", "url"),
             contact_email=extract_contact_email(description),
