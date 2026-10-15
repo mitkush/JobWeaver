@@ -24,12 +24,16 @@ class SourceQuotaExhausted(SourceError):
 class SourceQuotaRejected(SourceQuotaExhausted):
     """Provider rejected a start request for credits or rate limits; no search started.
 
-    Only this error permits retrying a search with another account.
+    This and SourceCredentialRejected permit a retry with another account.
     """
 
 
 class SourceUnavailable(SourceError):
     pass
+
+
+class SourceCredentialRejected(SourceUnavailable):
+    """Provider explicitly rejected an unusable account before a search started."""
 
 
 class SourceBadResponse(SourceError):

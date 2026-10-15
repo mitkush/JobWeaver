@@ -20,6 +20,7 @@ from app.adapters.base import (
 )
 from app.adapters.errors import (
     SourceBadResponse,
+    SourceCredentialRejected,
     SourceQuotaRejected,
     SourceUnavailable,
     quota_rejected,
@@ -143,6 +144,10 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 await self.sleep(3.0)
                 continue
             break
+        if response.status_code in (400, 403) and (
+            response.text.strip().casefold() == "customer is not active"
+        ):
+            raise SourceCredentialRejected(f"{self.label} account is not active")
         if quota_rejected(response) or response.status_code == 429:
             reason = "rate limit reached" if response.status_code == 429 else "credits exhausted"
             raise SourceQuotaRejected(f"{self.label} account {reason} before search started")

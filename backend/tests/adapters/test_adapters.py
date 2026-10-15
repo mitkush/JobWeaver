@@ -311,3 +311,28 @@ async def test_only_limit_rejection_before_snapshot_is_safe_to_switch_accounts(
             )
     assert isinstance(caught.value, SourceQuotaRejected) is allowed
     assert caught.value.credits_used == 0
+
+
+@pytest.mark.parametrize("status", [400, 403])
+@pytest.mark.parametrize("phase", ["trigger", "progress", "snapshot"])
+async def test_brightdata_inactive_account_is_only_retryable_before_start(status, phase):
+    from app.adapters.errors import SourceCredentialRejected, SourceError, quota_rejected
+
+    def handler(request):
+        current = request.url.path.split("/")[3]
+        if current == phase:
+            response = httpx.Response(status, text=" CUSTOMER IS NOT ACTIVE ")
+            assert not quota_rejected(response)
+            return response
+        if current == "trigger":
+            return httpx.Response(200, json={"snapshot_id": "s"})
+        return httpx.Response(200, json={"status": "ready"})
+
+    async with http(handler) as client:
+        with pytest.raises(SourceError) as caught:
+            await LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep).fetch_window(
+                QUERY, DAY
+            )
+    assert isinstance(caught.value, SourceCredentialRejected) is (phase == "trigger")
+    if phase == "trigger":
+        assert str(caught.value) == "LinkedIn (Bright Data) account is not active"

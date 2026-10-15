@@ -28,6 +28,7 @@ from app.adapters.base import (
 from app.adapters.errors import (
     BoardNotFound,
     SourceBadResponse,
+    SourceCredentialRejected,
     SourceError,
     SourceNotConfigured,
     SourceQuotaExhausted,
@@ -597,7 +598,7 @@ class Fetcher:
         if options:
             if adapter.credential_limits_from_errors:
                 raise SourceErrorBudget(
-                    "All available credentials reached provider limits for this run. "
+                    "All available credentials were rejected for this run. "
                     "Credentials are tried again on the next run."
                 )
             if paused_until is not None:
@@ -678,11 +679,15 @@ class Fetcher:
                     try:
                         result = await _guarded(adapter, adapter.fetch_window(query, window))
                         break
-                    except SourceQuotaRejected as exc:
+                    except (SourceQuotaRejected, SourceCredentialRejected) as exc:
                         if exc.credits_used or adapter.credential_fingerprint is None:
                             raise
                         adapter.exhausted_credentials.add(adapter.credential_fingerprint)
-                        await self._check_budget(session, adapter)
+                        try:
+                            await self._check_budget(session, adapter)
+                        except SourceErrorBudget as exhausted:
+                            # Preserve the provider's actual rejection in Recent runs.
+                            raise exc from exhausted
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 run.credits_used = exc.credits_used
