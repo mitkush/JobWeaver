@@ -29,13 +29,15 @@ async def process_queues(gateway: BaseAIGateway | None = None) -> Report | None:
         if not got:
             logger.info("Queue run skipped: a fetch is in progress")
             return None
-        report = await build_correspondence(gateway).process()
+        # Caches first: local work of seconds per batch. Correspondence can wait minutes on
+        # AI providers (quota retries, embedding pauses), and a deploy that stops it then
+        # would otherwise stop the backfill before it starts.
         try:
             await backfill_description_mentions(get_sessionmaker())
         except Exception:
             # A cache is an optimisation: Feeds fall back to reading descriptions.
             logger.exception("Description mention backfill failed; it resumes next run")
-        return report
+        return await build_correspondence(gateway).process()
 
 
 async def extract_skills_now(gateway: BaseAIGateway | None = None) -> None:
