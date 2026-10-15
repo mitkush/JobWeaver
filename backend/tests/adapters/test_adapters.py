@@ -102,7 +102,9 @@ class TestLinkedIn:
     async def test_provider_errors_are_classified(self, status, body, error):
         async with http(lambda r: httpx.Response(status, text=body)) as client:
             with pytest.raises(error):
-                await LinkedInBrightDataAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+                await LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep).fetch_window(
+                    QUERY, DAY
+                )
 
     async def test_failed_snapshot(self):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -289,6 +291,8 @@ def test_daily_windows_with_drift_keep_the_one_day_filters():
     "status,body,allowed",
     [
         (402, "no credits", True),
+        (400, "insufficient credits", True),
+        (400, "invalid input", False),
         (403, "insufficient credits", True),
         (429, "slow down", True),
         (401, "bad token", False),
@@ -302,6 +306,8 @@ async def test_only_limit_rejection_before_snapshot_is_safe_to_switch_accounts(
 
     async with http(lambda r: httpx.Response(status, text=body)) as client:
         with pytest.raises(SourceError) as caught:
-            await LinkedInBrightDataAdapter(client, SETTINGS).fetch_window(QUERY, DAY)
+            await LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep).fetch_window(
+                QUERY, DAY
+            )
     assert isinstance(caught.value, SourceQuotaRejected) is allowed
     assert caught.value.credits_used == 0

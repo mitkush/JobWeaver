@@ -88,7 +88,8 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             unit="credits",
             message="Bright Data does not expose free-credit balances through its API. "
             "Account allowance and remaining credits are unknown. Check its Free credits card; "
-            "JobWeaver's tracked count excludes other usage.",
+            "JobWeaver's tracked count is an estimate only and excludes other usage. "
+            "It does not pause searches or select credentials.",
         )
 
     def is_configured(self) -> bool:
@@ -125,17 +126,23 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 "company": "",
             }
         ]
-        response = await self.http.post(
-            f"{API}/trigger",
-            params={
-                "dataset_id": self.settings.brightdata_linkedin_dataset_id,
-                "type": "discover_new",
-                "discover_by": "keyword",
-                "include_errors": "true",
-            },
-            headers=self._headers,
-            json=payload,
-        )
+        for attempt in range(2):
+            response = await self.http.post(
+                f"{API}/trigger",
+                params={
+                    "dataset_id": self.settings.brightdata_linkedin_dataset_id,
+                    "type": "discover_new",
+                    "discover_by": "keyword",
+                    "include_errors": "true",
+                },
+                headers=self._headers,
+                json=payload,
+            )
+            # A temporary burst should not immediately consume every credential.
+            if response.status_code == 429 and not quota_rejected(response) and attempt == 0:
+                await self.sleep(3.0)
+                continue
+            break
         if quota_rejected(response) or response.status_code == 429:
             reason = "rate limit reached" if response.status_code == 429 else "credits exhausted"
             raise SourceQuotaRejected(f"{self.label} account {reason} before search started")

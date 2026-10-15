@@ -41,7 +41,7 @@ class BoardNotFound(SourceError):
 
 
 def quota_rejected(response) -> bool:
-    """Explicit spending errors only, never general 429 rate limits or HTTP timeouts."""
+    """Recognise explicit spending errors. Adapters handle temporary 429s separately."""
     if response.status_code == 402:
         return True
     if response.status_code not in (400, 403, 429):

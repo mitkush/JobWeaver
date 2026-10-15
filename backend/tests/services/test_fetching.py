@@ -1079,7 +1079,10 @@ async def test_only_unbilled_start_quota_rejection_can_retry_with_backup(
     )
 
 
-@pytest.mark.parametrize("failure", ["two-limits", "all-limits", "auth", "server", "poll-limit"])
+@pytest.mark.parametrize(
+    "failure",
+    ["two-limits", "all-limits", "transient-limit", "auth", "server", "bad-request", "poll-limit"],
+)
 async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monkeypatch, failure):
     from app.adapters.linkedin_brightdata import LinkedInBrightDataAdapter
     from app.models.fetch import QueryWatermark
@@ -1089,6 +1092,16 @@ async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monke
     fetcher.settings.brightdata_api_key = "one, two,three,one"
     await add_preferences(db)
     starts = []
+    waits = []
+
+    async def no_sleep(seconds):
+        waits.append(seconds)
+
+    fetcher.adapter_factory = lambda cls, http, settings: (
+        cls(http, settings, sleep=no_sleep)
+        if cls is LinkedInBrightDataAdapter
+        else cls(http, settings)
+    )
 
     async def no_budget_queries(*args, **kwargs):
         raise AssertionError("Bright Data must not select keys using local quota estimates")
@@ -1103,6 +1116,10 @@ async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monke
                 return httpx.Response(401, text="Invalid token")
             if failure == "server":
                 return httpx.Response(503, text="Unavailable")
+            if failure == "bad-request":
+                return httpx.Response(400, text="Invalid input")
+            if failure == "transient-limit" and len(starts) == 1:
+                return httpx.Response(429, text="Slow down")
             if failure == "all-limits" or (failure == "two-limits" and key != "three"):
                 return httpx.Response(402 if key == "one" else 429, text="Limit reached")
             return httpx.Response(200, json={"snapshot_id": "snapshot"})
@@ -1115,13 +1132,20 @@ async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monke
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         fetcher.http = client
         outcome = await fetcher.run_source("linkedin")
-    if failure == "two-limits":
+    if failure in ("two-limits", "transient-limit"):
         assert outcome.status == "succeeded"
-        assert starts == ["one", "two", "three", "three"]
+        assert starts == (
+            ["one", "two", "two", "three", "three"]
+            if failure == "two-limits"
+            else ["one", "one", "one"]
+        )
+        assert waits == [3.0]
         assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 2
     else:
         assert outcome.status == "failed"
-        assert starts == (["one", "two", "three"] if failure == "all-limits" else ["one"])
+        assert starts == (
+            ["one", "two", "two", "three", "three"] if failure == "all-limits" else ["one"]
+        )
         assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 0
     if failure == "all-limits":
         monkeypatch.setattr("app.services.fetching.budget_for", budget_for)
