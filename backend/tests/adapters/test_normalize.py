@@ -38,7 +38,14 @@ def test_company_keys(raw, key):
 @pytest.mark.parametrize(
     ("raw", "city"),
     [("Bangalore", "Bengaluru"), ("Bangalore Urban", "Bengaluru"), ("gurgaon", "Gurugram"),
-     ("pune", "Pune"), ("", None)],
+     ("pune", "Pune"), ("", None),
+     # LinkedIn's administrative names for a city.
+     ("Pune Division", "Pune"), ("Pune City", "Pune"), ("Nashik Division", "Nashik"),
+     ("Greater Chennai Area", "Chennai"), ("Mumbai Metropolitan Region", "Mumbai"),
+     ("Gurgaon District", "Gurugram"),
+     # Real cities whose name ends in City or Area stay as they are.
+     ("Mexico City", "Mexico City"), ("Kuwait City", "Kuwait City"),
+     ("San Francisco Bay Area", "San Francisco Bay Area"), ("New York City", "New York")],
 )  # fmt: skip
 def test_city_aliases(raw, city):
     assert normalize_city(raw) == city
@@ -49,6 +56,7 @@ def test_city_aliases(raw, city):
     [
         ("Bangalore, Karnataka, India", "Bengaluru", "IN", False),
         ("Bengaluru Urban, Karnataka, India", "Bengaluru", "IN", False),
+        ("Pune Division, Maharashtra, India", "Pune", "IN", False),
         ("San Francisco, CA", "San Francisco", "US", False),
         ("Remote - India", None, "IN", True),
         ("Bengaluru (WFH), India", "Bengaluru", "IN", True),

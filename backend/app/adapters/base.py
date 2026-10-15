@@ -2,6 +2,7 @@
 
 import asyncio
 import enum
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Iterable
 from datetime import datetime
@@ -61,6 +62,10 @@ class Location(BaseModel):
     remote: bool = False
 
 
+# FetchRun.query_key and QueryWatermark.query_key are String(300).
+KEY_LENGTH = 300
+
+
 class SourceQuery(BaseModel):
     """One windowed search: a title plus a location, built from users' Preferences."""
 
@@ -71,9 +76,17 @@ class SourceQuery(BaseModel):
 
     @property
     def key(self) -> str:
+        """Stable id for watermarks and Fetch Runs, at most 300 characters. A long keyword
+        list is shortened with a hash of the whole query, so two searches never share a
+        key and the place is never cut off."""
         loc = self.location
         where = "any" if loc is None else f"{loc.city or ''}|{loc.country or ''}|{loc.remote}"
-        return f"{self.keywords.lower()}@{where}"[:300]
+        full = f"{self.keywords.lower()}@{where}"
+        if len(full) <= KEY_LENGTH:
+            return full
+        digest = hashlib.sha256(full.encode()).hexdigest()[:16]
+        suffix = f"#{digest}@{where}"[-(KEY_LENGTH // 2) :]
+        return self.keywords.lower()[: KEY_LENGTH - len(suffix)] + suffix
 
 
 # A daily window is 24 hours plus the fetcher's overlap (2 hours by default) plus a little
@@ -126,7 +139,8 @@ class FetchResult(BaseModel):
     pending: list[PendingAdvert] = Field(default_factory=list)
     # Credits or requests this call used, for the Credit Budget (FR-B5).
     credits_used: int = 0
-    # False when a snapshot provider capped its list: missing jobs are not closed.
+    # False when the provider capped its list: a snapshot closes no missing jobs, and a
+    # windowed search reports that some jobs in its window may be missing.
     complete: bool = True
 
 
@@ -199,6 +213,22 @@ class WindowedSourceAdapter(SourceAdapter):
     mode = FetchMode.WINDOWED
     # False for Sources fetched once per run regardless of Preferences (e.g. Remotive).
     per_query: bool = True
+
+    def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
+        """The searches this Source runs, given one per title and place from users'
+        Preferences. A Source may search more broadly and leave matching to the Feed."""
+        return preference_queries
+
+    def searches_titles(self) -> bool:
+        """Whether each Preference title adds searches to this Source's daily run."""
+        return True
+
+    def continues_from(
+        self, query: SourceQuery, preference_queries: list[SourceQuery]
+    ) -> list[str]:
+        """Keys of earlier searches a new search covers, so its first run picks up where
+        they stopped instead of a Backfill. Empty: a new search starts with a Backfill."""
+        return []
 
     @abstractmethod
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult: ...
