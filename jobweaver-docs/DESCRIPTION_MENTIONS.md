@@ -16,12 +16,14 @@ The nullable fields are description_mentions (canonical TEXT[]), description_usa
 
 ## Deployment and backfill
 
-Migration 0013 adds three nullable columns only. It reads no descriptions, builds no indexes and performs no backfill. Until caches are populated, existing Postings use the fallback, so deploy is functional immediately but the full speed benefit comes later. New or re-fetched Postings populate their caches normally.
+Migration 0013 adds three nullable columns only. It reads no descriptions, builds no indexes and performs no backfill. Until caches are populated, existing Postings use the fallback, so deploy is functional immediately. New or re-fetched Postings populate their caches normally.
 
-After deploying the reviewed change, run a small batch inside the application container:
+The scheduler fills the rest by itself: each queue run (every 6 hours, and once 5 minutes after every start) caches up to 5,000 missing or stale Postings in batches of 200, inside the fetch lock, with matching done in a worker thread so requests stay responsive. About 29,000 existing Postings therefore fill within roughly six runs, and a vocabulary or version change refills on its own. A backfill error is logged and retried next run; Feeds keep the fallback meanwhile.
+
+To fill the cache at once instead, run batches inside the application container:
 
 ```sh
-sudo docker exec jobweaver python scripts/backfill_description_mentions.py --batch-size 100 --max-batches 1
+sudo docker exec jobweaver python scripts/backfill_description_mentions.py --batch-size 500 --max-batches 100
 ```
 
 Or from backend locally:

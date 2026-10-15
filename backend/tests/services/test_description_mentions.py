@@ -81,3 +81,26 @@ async def test_backfill_skips_concurrent_ingestion_locks_and_retries_later(db):
     assert await backfill_batch(db) == 1
     await db.commit()
     assert (await db.scalar(select(Posting.description_mentions))) == ["python"]
+
+
+async def test_background_backfill_stops_at_its_row_limit_and_resumes(db):
+    from app.services.description_mentions import backfill
+
+    await save_postings(db, "linkedin", [advert(str(i), "Rails " * 30) for i in range(5)], NOW)
+    await db.execute(update(Posting).values(description_mentions_version=None))
+    await db.commit()
+    assert await backfill(get_sessionmaker(), max_rows=3, batch_size=2) == 3
+    assert await backfill(get_sessionmaker(), max_rows=3, batch_size=2) == 2
+    assert await backfill(get_sessionmaker(), max_rows=3, batch_size=2) == 0
+
+
+async def test_queue_run_refills_stale_caches(db):
+    """After a deploy retires the cache version, the scheduler's queue run refills it."""
+    from app.services.pipeline import process_queues
+
+    await save_postings(db, "linkedin", [advert("q", "Rails " * 30)], NOW)
+    await db.execute(update(Posting).values(description_mentions_version="old"))
+    await db.commit()
+    assert await process_queues() is not None
+    db.expire_all()
+    assert await db.scalar(select(Posting.description_mentions_version)) == CACHE_VERSION

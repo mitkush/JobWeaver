@@ -68,6 +68,14 @@ def start_scheduler() -> AsyncIOScheduler:
             run_date=datetime.now(UTC) + timedelta(minutes=2),
             id="catch_up_after_restart",
         )
+        # Soon after a deploy, so caches retired by a new version start refilling at once
+        # rather than at the next 6-hourly run.
+        _scheduler.add_job(
+            process_queues,
+            "date",
+            run_date=datetime.now(UTC) + timedelta(minutes=5),
+            id="process_queues_after_restart",
+        )
         _scheduler.start()
         logger.info(
             "Scheduler started: daily fetch at %02d:%02d UTC",

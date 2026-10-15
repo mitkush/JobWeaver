@@ -450,7 +450,12 @@ def test_scheduler_registers_daily_fetch_queue_and_catch_up_jobs():
         stop_scheduler()
         return jobs
 
-    assert asyncio.run(check()) == {"daily_fetch", "process_queues", "catch_up_after_restart"}
+    assert asyncio.run(check()) == {
+        "daily_fetch",
+        "process_queues",
+        "process_queues_after_restart",
+        "catch_up_after_restart",
+    }
 
 
 # --- Review fixes: board isolation, credits, trigger limits, manual-run lock -----------

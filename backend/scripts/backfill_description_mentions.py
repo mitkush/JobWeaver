@@ -1,6 +1,8 @@
 """Run from backend: PYTHONPATH=. python scripts/backfill_description_mentions.py.
 
 Each batch commits independently. Re-run to resume; already-current rows are skipped.
+The scheduler also does this in the background (up to 5,000 Postings per queue run);
+use this command to fill the cache at once.
 """
 
 import argparse
