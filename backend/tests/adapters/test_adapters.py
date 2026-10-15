@@ -9,6 +9,7 @@ from app.adapters.errors import (
     BoardNotFound,
     SourceNotConfigured,
     SourceQuotaExhausted,
+    SourceQuotaRejected,
     SourceRateLimited,
     SourceUnavailable,
 )
@@ -94,7 +95,7 @@ class TestLinkedIn:
         ("status", "body", "error"),
         [
             (402, "insufficient balance", SourceQuotaExhausted),
-            (429, "slow down", SourceRateLimited),
+            (429, "slow down", SourceQuotaRejected),
             (401, "bad token", SourceUnavailable),
         ],
     )
@@ -289,12 +290,12 @@ def test_daily_windows_with_drift_keep_the_one_day_filters():
     [
         (402, "no credits", True),
         (403, "insufficient credits", True),
-        (429, "slow down", False),
+        (429, "slow down", True),
         (401, "bad token", False),
         (503, "unavailable", False),
     ],
 )
-async def test_only_credit_rejection_before_snapshot_is_safe_to_switch_accounts(
+async def test_only_limit_rejection_before_snapshot_is_safe_to_switch_accounts(
     status, body, allowed
 ):
     from app.adapters.errors import SourceError, SourceQuotaRejected

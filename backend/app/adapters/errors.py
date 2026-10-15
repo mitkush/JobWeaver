@@ -22,7 +22,7 @@ class SourceQuotaExhausted(SourceError):
 
 
 class SourceQuotaRejected(SourceQuotaExhausted):
-    """Provider rejected a start request for credits; no actor/snapshot started.
+    """Provider rejected a start request for credits or rate limits; no search started.
 
     Only this error permits retrying a search with another account.
     """

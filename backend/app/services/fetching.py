@@ -568,7 +568,9 @@ class Fetcher:
                 continue
             if credential.fingerprint in adapter.exhausted_credentials:
                 continue
-            if adapter.account_balance_required:
+            if adapter.credential_limits_from_errors:
+                remaining = None
+            elif adapter.account_balance_required:
                 account = await account_balance(
                     type(adapter), self.http, credential.settings, self.clock(), force=True
                 )
@@ -586,13 +588,18 @@ class Fetcher:
                     include_legacy=credential.primary,
                 )
                 remaining = max(budget.allowance - budget.spent, 0)
-            if not remaining:
+            if not remaining and not adapter.credential_limits_from_errors:
                 continue
             adapter.settings = credential.settings
             adapter.credential_fingerprint = credential.fingerprint
             adapter.allowance_left = remaining
             return
         if options:
+            if adapter.credential_limits_from_errors:
+                raise SourceErrorBudget(
+                    "All available credentials reached provider limits for this run. "
+                    "Credentials are tried again on the next run."
+                )
             if paused_until is not None:
                 raise SourceErrorBudget(
                     "All available backup accounts have exhausted their credits or tracked "

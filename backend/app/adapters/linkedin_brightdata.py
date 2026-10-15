@@ -61,6 +61,7 @@ def time_range_for(window: FetchWindow) -> str:
 @register_adapter
 class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+    credential_limits_from_errors = True
     primary_credential_pause_setting = "brightdata_primary_paused_until"
     name = "linkedin"
     label = "LinkedIn (Bright Data)"
@@ -135,10 +136,9 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             headers=self._headers,
             json=payload,
         )
-        if quota_rejected(response):
-            raise SourceQuotaRejected(
-                f"{self.label} account credits exhausted before search started"
-            )
+        if quota_rejected(response) or response.status_code == 429:
+            reason = "rate limit reached" if response.status_code == 429 else "credits exhausted"
+            raise SourceQuotaRejected(f"{self.label} account {reason} before search started")
         self.check_response(self.label, response)
         snapshot_id = response.json().get("snapshot_id")
         if not snapshot_id:
