@@ -120,8 +120,8 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         self, query: SourceQuery, preference_queries: list[SourceQuery]
     ) -> list[str]:
         """A discovery search replaces the per-title searches for its place: country-wide
-        covers every title and city in that country, worldwide remote covers remote
-        searches with no country, and worldwide covers searches with no place."""
+        covers every title and city in that country, and worldwide remote covers remote
+        searches with no country."""
         if not self._discovery_terms():
             return []
         place = query.location
@@ -132,14 +132,15 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 return loc is not None and loc.country == place.country
             if place is not None and place.remote:
                 return loc is not None and loc.remote and not loc.country
-            return loc is None or (not loc.country and not loc.remote)
+            return False
 
         return [q.key for q in preference_queries if covered(q)]
 
     def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
         """One OR search per Preference country; cities, titles and work modes are left to
-        the Feed. A remote search with no country becomes one worldwide remote search, and
-        a Preference with no place one worldwide search."""
+        the Feed. A remote search with no country becomes one worldwide remote search. A
+        Preference with no place searches only remote work: on-site or hybrid jobs anywhere
+        in the world are ones a User cannot attend, and would fill the cap with noise."""
         terms = self._discovery_terms()
         if not terms:
             return preference_queries
@@ -148,11 +149,11 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         for query in preference_queries:
             loc = query.location
             if loc and loc.country:
-                place: Location | None = Location(country=loc.country)
+                place = Location(country=loc.country)
             elif loc and loc.remote:
                 place = Location(remote=True)
             else:
-                place = None
+                continue
             search = SourceQuery(keywords=keyword, location=place)
             queries.setdefault(search, search)
         return sorted(queries.values(), key=lambda q: q.key)

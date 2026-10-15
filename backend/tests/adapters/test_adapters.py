@@ -345,8 +345,9 @@ DISCOVERY = Settings(
 
 
 def test_discovery_keywords_search_once_per_country_with_or():
-    """Cities, titles and work modes are left to the Feed: one OR search per country, one
-    worldwide remote search, and one worldwide search for a Preference with no place."""
+    """Cities, titles and work modes are left to the Feed: one OR search per country and one
+    worldwide remote search. A Preference with no place searches remote work only: on-site
+    or hybrid jobs anywhere in the world are not jobs a User can attend."""
     preference_queries = [
         SourceQuery(keywords="Rails Developer", location=Location(city="Bengaluru", country="IN")),
         SourceQuery(keywords="Backend Engineer", location=Location(city="Pune", country="IN")),
@@ -359,9 +360,9 @@ def test_discovery_keywords_search_once_per_country_with_or():
     keyword = 'Software OR Developer OR Backend OR "Full stack"'
     assert {q.keywords for q in queries} == {keyword}
     places = {(q.location.country, q.location.remote) if q.location else None for q in queries}
-    assert places == {("IN", False), (None, True), None}
-    assert len(queries) == 3
-    assert sum(q.location is None for q in queries) == 1
+    assert places == {("IN", False), (None, True)}
+    assert len(queries) == 2
+    assert all(q.location is not None for q in queries)
     assert not adapter.searches_titles()
 
 
@@ -468,7 +469,15 @@ def test_discovery_searches_continue_from_the_title_searches_they_replace():
     assert adapter.continues_from(by_place[("IN", False)], preference_queries) == keys[:2]
     assert adapter.continues_from(by_place[("US", False)], preference_queries) == [keys[2]]
     assert adapter.continues_from(by_place[(None, True)], preference_queries) == [keys[3]]
-    assert adapter.continues_from(by_place[None], preference_queries) == [keys[4]]
+    # No worldwide on-site search exists, so nothing continues the place-less title search.
+    assert None not in by_place
     # Title searches have nothing to inherit.
     plain = LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS)
     assert plain.continues_from(preference_queries[0], preference_queries) == []
+
+
+def test_a_placeless_preference_without_remote_adds_no_discovery_search():
+    """Hybrid or on-site with no place would mean jobs anywhere in the world on site."""
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY)
+    onsite_anywhere = SourceQuery(keywords="Rails Developer", location=Location())
+    assert adapter.search_queries([onsite_anywhere]) == []
