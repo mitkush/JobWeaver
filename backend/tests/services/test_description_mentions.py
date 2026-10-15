@@ -104,3 +104,26 @@ async def test_queue_run_refills_stale_caches(db):
     assert await process_queues() is not None
     db.expire_all()
     assert await db.scalar(select(Posting.description_mentions_version)) == CACHE_VERSION
+
+
+async def test_queue_run_fills_caches_before_slow_ai_work(db, monkeypatch):
+    """A queue run stopped during correspondence (AI waits, a redeploy) has already
+    cached its batch."""
+    from app.services import pipeline
+
+    await save_postings(db, "linkedin", [advert("first", "Rails " * 30)], NOW)
+    await db.execute(update(Posting).values(description_mentions_version="old"))
+    await db.commit()
+
+    class Stopped(Exception):
+        pass
+
+    class SlowCorrespondence:
+        async def process(self):
+            raise Stopped
+
+    monkeypatch.setattr(pipeline, "build_correspondence", lambda gateway=None: SlowCorrespondence())
+    with pytest.raises(Stopped):
+        await pipeline.process_queues()
+    db.expire_all()
+    assert await db.scalar(select(Posting.description_mentions_version)) == CACHE_VERSION
