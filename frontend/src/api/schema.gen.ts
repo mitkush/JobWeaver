@@ -507,23 +507,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/sources/notices": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Notices */
-        get: operations["notices_api_sources_notices_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ats-boards": {
         parameters: {
             query?: never;
@@ -2001,18 +1984,6 @@ export interface components {
             /** Site */
             site?: string | null;
         };
-        /** SourceNotice */
-        SourceNotice: {
-            /** Label */
-            label: string;
-            /**
-             * Since
-             * Format: date-time
-             */
-            since: string;
-            /** Message */
-            message: string;
-        };
         /**
          * SourceState
          * @enum {string}
@@ -3167,6 +3138,7 @@ export interface operations {
             query?: {
                 source?: string | null;
                 limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -3183,37 +3155,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FetchRunOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    notices_api_sources_notices_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: {
-                jw_session?: string | null;
-            };
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SourceNotice"][];
                 };
             };
             /** @description Validation Error */

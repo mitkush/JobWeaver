@@ -1,15 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.ats_urls import parse_ats_url
 from app.adapters.base import SnapshotSourceAdapter
 from app.adapters.registry import get_adapter_class, pool_of, registered_adapters
 from app.core.config import get_settings
-from app.core.db import among
 from app.core.errors import NotFoundError, ValidationFailedError
-from app.models.fetch import FetchRun, RunStatus
+from app.models.fetch import FetchRun
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.source import Source, SourceState
 from app.models.user import User
@@ -18,14 +17,11 @@ from app.schemas.sources import (
     BudgetOut,
     FetchRunOut,
     QuerySpend,
-    SourceNotice,
     SourceStatusOut,
 )
 from app.services.account_balances import account_status
 from app.services.fetching import MANUAL_RUNS_PER_DAY, budget_for, get_sources_http
 from app.services.provider_credentials import active_primary_pause, credentials
-
-NOTICE_AFTER = timedelta(days=1)
 
 
 def next_run_at(now: datetime) -> datetime:
@@ -163,13 +159,14 @@ async def set_enabled(session: AsyncSession, name: str, enabled: bool) -> None:
 
 
 async def recent_runs(
-    session: AsyncSession, source: str | None, limit: int = 50
+    session: AsyncSession, source: str | None, limit: int = 50, offset: int = 0
 ) -> list[FetchRunOut]:
     query = (
         select(FetchRun, AtsBoard.slug)
         .outerjoin(AtsBoard, AtsBoard.id == FetchRun.board_id)
-        .order_by(FetchRun.created_at.desc())
+        .order_by(FetchRun.created_at.desc(), FetchRun.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     if source:
         query = query.where(FetchRun.source == source)
@@ -191,74 +188,6 @@ async def recent_runs(
         )
         for run, slug in (await session.execute(query)).all()
     ]
-
-
-async def notices(session: AsyncSession, now: datetime | None = None) -> list[SourceNotice]:
-    """Explain prolonged source failures, distinguishing a full outage from partial success."""
-    now = now or datetime.now(UTC)
-    rows = (
-        await session.execute(
-            select(Source).where(
-                Source.enabled.is_(True),
-                Source.state == SourceState.DEGRADED,
-                Source.degraded_since <= now - NOTICE_AFTER,
-            )
-        )
-    ).scalars()
-    labels = {cls.name: cls.label for cls in registered_adapters()}
-    covered = await _covered_by_standby(session)
-    affected = [
-        source
-        for source in rows
-        if source.degraded_since is not None and source.name not in covered
-    ]
-    latest_success: dict[str, datetime] = {}
-    if affected:
-        latest_success = dict(
-            (
-                await session.execute(
-                    select(FetchRun.source, func.max(FetchRun.finished_at))
-                    .where(
-                        FetchRun.source.in_([source.name for source in affected]),
-                        FetchRun.status == RunStatus.SUCCEEDED,
-                    )
-                    .group_by(FetchRun.source)
-                )
-            ).all()
-        )
-    return [
-        SourceNotice(
-            label=labels.get(s.name, s.name),
-            since=s.degraded_since,
-            message=(
-                f"Some {labels.get(s.name, s.name)} searches are failing; successful searches "
-                "are still updating."
-                if latest_success.get(s.name) is not None
-                and now - latest_success[s.name] < NOTICE_AFTER
-                else f"No successful {labels.get(s.name, s.name)} searches in over a day; "
-                "jobs from this source may be delayed."
-            ),
-        )
-        for s in affected
-    ]
-
-
-async def _covered_by_standby(session: AsyncSession) -> set[str]:
-    """Main Sources whose standby is enabled and healthy: users are not missing jobs."""
-    standbys = {cls.name: cls.standby_for for cls in registered_adapters() if cls.standby_for}
-    if not standbys:
-        return set()
-    rows = (
-        await session.execute(
-            select(Source.name).where(
-                among(Source.name, standbys, String()),
-                Source.enabled.is_(True),
-                Source.state == SourceState.HEALTHY,
-                Source.last_success_at.is_not(None),
-            )
-        )
-    ).scalars()
-    return {standbys[name] for name in rows}
 
 
 async def list_boards(session: AsyncSession) -> list[AtsBoardOut]:

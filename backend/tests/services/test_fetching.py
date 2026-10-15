@@ -825,6 +825,61 @@ async def test_manual_run_of_a_standby_is_allowed_while_its_main_is_healthy(db, 
     assert outcome.status == "succeeded" and len(standby.windows) == 2
 
 
+@pytest.fixture
+def last_standby(standby):
+    class LastStandby(FakeSearch):
+        name = "fake-last"
+        standby_for = "fake-standby"
+        priority = 0
+        windows = []
+        results = []
+
+    registry.register_adapter(LastStandby)
+    return LastStandby
+
+
+@pytest.mark.parametrize("scenario", ["main-recovers", "backup-works", "both-fail", "disabled"])
+async def test_third_source_waits_for_every_upstream_source(
+    db, fetcher, standby, last_standby, scenario
+):
+    await add_preferences(db)
+    await fetcher.sync_sources()
+    if scenario == "main-recovers":
+        (await source_row(db, standby.name)).state = SourceState.DEGRADED
+        await db.commit()
+    elif scenario == "disabled":
+        (await source_row(db, FakeSearch.name)).enabled = False
+        await db.commit()
+        (await source_row(db, standby.name)).enabled = False
+        await db.commit()
+    else:
+        FakeSearch.results = [SourceUnavailable("down")]
+        if scenario == "both-fail":
+            standby.results = [SourceUnavailable("down")]
+    outcomes = await fetcher.run_all()
+    names = [outcome.source for outcome in outcomes]
+    assert names.index(FakeSearch.name) < names.index(standby.name) < names.index(last_standby.name)
+    assert len(last_standby.windows) == (2 if scenario in ("both-fail", "disabled") else 0)
+
+
+async def test_recovered_main_uses_third_source_checkpoints(
+    db, fetcher, clock, standby, last_standby
+):
+    await add_preferences(db)
+    FakeSearch.results = [SourceUnavailable("down")]
+    standby.results = [SourceUnavailable("down")]
+    await fetcher.run_all()
+    assert len(last_standby.windows) == 2
+    FakeSearch.windows.clear()
+    clock.now += timedelta(hours=6)
+    await fetcher.run_source(FakeSearch.name)
+    assert FakeSearch.windows == []
+    clock.now = START + timedelta(days=1)
+    await fetcher.run_source(FakeSearch.name)
+    assert len(FakeSearch.windows) == 2
+    assert all(window.since == START - timedelta(hours=2) for _, window in FakeSearch.windows)
+
+
 async def test_budget_pool_shares_one_allowance(db, fetcher, standby, clock):
     registry.register_adapter(FakePoolMate)
     from app.services.fetching import budget_for

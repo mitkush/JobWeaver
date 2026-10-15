@@ -38,7 +38,7 @@ The first Fetch Run of a windowed Source, or for a new set of Preferences: the l
 
 ## Source Status
 
-The current health of each Source: **Healthy**, **Degraded** (last run failed or hit a limit; will retry next run) or **Disabled** (turned off by the Admin). Visible to the Admin; Users see a short notice when a Source their Feed relies on is degraded.
+The current health of each Source: **Healthy**, **Degraded** (last run failed or hit a limit; will retry next run) or **Disabled** (turned off by the Admin). Visible to the Admin on Sources, including failure reasons and recent Fetch Runs. Source health notices are kept off the Feed; the Feed shows when it was last updated.
 
 ## Standby
 

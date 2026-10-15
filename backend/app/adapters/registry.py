@@ -27,10 +27,31 @@ def standbys_of(name: str) -> list[type[SourceAdapter]]:
     return [cls for cls in registered_adapters() if cls.standby_for == name]
 
 
+def upstream_of(cls: type[SourceAdapter]) -> list[type[SourceAdapter]]:
+    """Immediate main through the root Source, in dependency order."""
+    result = []
+    seen = {cls.name}
+    while cls.standby_for:
+        cls = get_adapter_class(cls.standby_for)
+        if cls.name in seen:
+            raise ValueError("Source standby chain contains a cycle")
+        seen.add(cls.name)
+        result.append(cls)
+    return result
+
+
 def family_of(cls: type[SourceAdapter]) -> set[str]:
-    """A Source plus its main and standbys: they share query watermarks."""
-    main = cls.standby_for or cls.name
-    return {main, *(c.name for c in standbys_of(main))}
+    """The complete fallback family shares successful query watermarks."""
+    parents = upstream_of(cls)
+    root = parents[-1].name if parents else cls.name
+    family = {root}
+    pending = [root]
+    while pending:
+        for child in standbys_of(pending.pop()):
+            if child.name not in family:
+                family.add(child.name)
+                pending.append(child.name)
+    return family
 
 
 def pool_of(cls: type[SourceAdapter]) -> set[str]:
@@ -41,8 +62,5 @@ def pool_of(cls: type[SourceAdapter]) -> set[str]:
 
 
 def run_order() -> list[type[SourceAdapter]]:
-    """Main Sources by priority, then standbys: a standby decides from its main's
-    state after that run, not yesterday's."""
-    return sorted(
-        registered_adapters(), key=lambda cls: (cls.standby_for is not None, cls.priority)
-    )
+    """Each fallback runs after all upstream Sources have had their turn."""
+    return sorted(registered_adapters(), key=lambda cls: (len(upstream_of(cls)), cls.priority))

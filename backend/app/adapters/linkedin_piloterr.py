@@ -42,6 +42,7 @@ class LinkedInPiloterrAdapter(WindowedSourceAdapter):
     label = "LinkedIn (Piloterr)"
     site = "LinkedIn"
     priority = 20
+    standby_for = "linkedin-apify"
     default_enabled = False
     disabled_reason = "Unofficial third-party LinkedIn data provider; enable only after testing."
     monthly_allowance = 500

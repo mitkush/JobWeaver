@@ -15,7 +15,6 @@ from app.schemas.sources import (
     AtsBoardOut,
     FetchRunOut,
     RunOutcomeOut,
-    SourceNotice,
     SourceStatusOut,
     SourceUpdate,
 )
@@ -79,14 +78,10 @@ async def fetch_runs(
     db: DbSession,
     _: AdminUser,
     source: str | None = None,
-    limit: Annotated[int, Query(le=200)] = 50,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[FetchRunOut]:
-    return await source_status.recent_runs(db, source, limit)
-
-
-@router.get("/sources/notices")
-async def notices(db: DbSession, _: CurrentUser) -> list[SourceNotice]:
-    return await source_status.notices(db)
+    return await source_status.recent_runs(db, source, limit, offset)
 
 
 @router.get("/ats-boards")

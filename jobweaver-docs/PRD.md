@@ -28,7 +28,7 @@ Existing tools solve parts of this. Job boards and aggregators show jobs but not
 ## 3. Goals and Non-Goals
 
 ### Goals
-1. **G1 - Coverage:** a User sees new matching Jobs from every healthy Source within a day of posting, without visiting any job site. When a Source is down or out of budget, the Feed says so (FR-B6).
+1. **G1 - Coverage:** a User sees new matching Jobs from every healthy Source within a day of posting, without visiting any job site. When a Source is down or out of budget, the Admin can inspect its status on Sources (FR-B6).
 2. **G2 - One Job, one card:** duplicates across Sources are grouped, and every original Posting stays one click away.
 3. **G3 - Tailored in minutes:** from a Job card to a ready Draft in at most 2 clicks, and to a Gmail draft with the PDF attached in under 5 minutes of the User's time.
 4. **G4 - Truthful by construction:** zero fabricated skills, projects or claims in any Draft (ADR-0005: Fact Bank, no fabrication).
@@ -151,7 +151,8 @@ Both modes normalise into Postings and report credits or requests used.
 **FR-B6 [V1] - Source fallback and Source Status.** A Fetch Run that fails for any reason marks that Source Degraded with the reason, keeps everything already fetched from other Sources, and retries on the next run.
 - AC1: Simulating "service unavailable" on one Source leaves the Feed updated from all others.
 - AC2: The Admin's Source Status screen lists each Source with state, last success, last error and next run; the Admin can disable or re-enable a Source.
-- AC3: Users see a short, non-alarming notice when a Source their Feed depends on has been Degraded for more than a day ("LinkedIn jobs are delayed; other sources are up to date").
+- AC3: Source health warnings and error reasons appear on the Admin's Sources screen. The Feed keeps its last-updated timestamp but does not show Source health notices (founder update, 15 Oct 2026).
+- AC4: Recent Fetch Runs are paginated, newest first, in a bounded scrollable section so history does not stretch the Sources screen. Pagination controls stay outside the scrolling table.
 
 **FR-B7 [V1] - ATS Board discovery.** Apply URLs of all Postings are checked against known ATS URL patterns; new ATS Boards are saved and fetched directly from the next run (ADR-0013: ATS Boards discovered from apply URLs).
 - AC1: A LinkedIn Posting whose apply link is `boards.greenhouse.io/stripe/jobs/123` adds the `greenhouse:stripe` board.
@@ -221,7 +222,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-D6 [V1] - Sort, filter, search, hide.** Default order newest first. Filters: location, work mode, Source, has email, posted within. Free-text search over title and Company. Hiding a Job removes it from that User's Feed only.
 
-**FR-D7 [V1] - Freshness label.** The Feed shows when it was last updated and which Sources are Degraded.
+**FR-D7 [V1] - Freshness label.** The Feed shows when it was last updated.
 
 ### Epic E - Draft (the main feature)
 
@@ -338,7 +339,7 @@ The UI must look professional and the UX must never be confusing. "Not confusing
 
 **Flow E - Duplicate triage.** Possible duplicate marker -> Correspondence view -> compare Postings side by side -> Confirm or Not the same Job.
 
-**Flow F - Source trouble (Admin).** Notice "LinkedIn delayed" -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or narrow the most expensive queries, or disable the Source.
+**Flow F - Source trouble (Admin).** Sources shows a Degraded state -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or narrow the most expensive queries, or disable the Source.
 
 **Flow G - Follow-up.** Reminder "No update from Acme for 7 days" -> Draft a follow-up -> Open in Gmail -> send.
 
