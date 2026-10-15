@@ -26,7 +26,6 @@ const queryOf = (request: Request) => new URL(request.url).searchParams;
 
 it("shows cards with skill gaps, source badges and the email section first", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () =>
       json(makeFeed([makeCard(), makeCard({ job_id: "job-2", title: "Platform Engineer", skill_gaps: [] })])),
   });
@@ -42,7 +41,6 @@ it("shows cards with skill gaps, source badges and the email section first", asy
 
 it("opens the apply-link section when no job has an email", async () => {
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": (request) => {
       const linkOnly = makeCard({ contact_email: null, skill_gaps: null });
       const page = makeFeed([linkOnly]);
@@ -58,7 +56,6 @@ it("opens the apply-link section when no job has an email", async () => {
 
 it("sends filters and search to the API", async () => {
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard()])),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
@@ -76,7 +73,6 @@ it("sends filters and search to the API", async () => {
 
 it("offers all LinkedIn providers as one source filter", async () => {
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard()], {
       sources: [
         { name: "linkedin", label: "LinkedIn (Bright Data)", site: "LinkedIn" },
@@ -98,7 +94,6 @@ it("offers all LinkedIn providers as one source filter", async () => {
 
 it("says when filters hide everything and clears them", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": (request) => json(queryOf(request).get("q") ? makeFeed([]) : makeFeed([makeCard()])),
   });
   renderWithApp(feedRoutes(), { route: "/feed?q=zzz" });
@@ -109,7 +104,6 @@ it("says when filters hide everything and clears them", async () => {
 
 it("hides a job from the feed", async () => {
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard()])),
     "POST /api/feed/job-1/hide": () => new Response(null, { status: 204 }),
   });
@@ -121,7 +115,6 @@ it("hides a job from the feed", async () => {
 
 it("marks possible duplicates on the card", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard({ possible_duplicate: true })])),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
@@ -256,7 +249,6 @@ it("switches to differently titled jobs and shows which keywords matched", async
     ],
   });
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": (request) => {
       const keywords = queryOf(request).get("match") === "keywords";
       const page = makeFeed(keywords ? [keywordCard] : [makeCard()]);
@@ -280,7 +272,6 @@ it("switches to differently titled jobs and shows which keywords matched", async
 
 it("hides the keyword switch when no differently titled job matches", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard()])),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
@@ -290,7 +281,6 @@ it("hides the keyword switch when no differently titled job matches", async () =
 
 it("labels a kept job that no longer matches the preferences", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () => json(makeFeed([makeCard({ match: null, draft_id: "draft-1" })])),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
@@ -300,7 +290,6 @@ it("labels a kept job that no longer matches the preferences", async () => {
 
 it("shows matched skills beside the ones not in the Fact Bank", async () => {
   mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": () =>
       json(
         makeFeed([
@@ -322,7 +311,6 @@ it("shows matched skills beside the ones not in the Fact Bank", async () => {
 
 it("lists jobs without a description under Needs review", async () => {
   const calls = mockFetch({
-    "GET /api/sources/notices": () => json([]),
     "GET /api/feed": (request) => {
       const review = queryOf(request).get("match") === "review";
       const page = makeFeed(review ? [makeCard({ title: "Ruby on Rails Developer", match: "review" })] : [makeCard()]);
@@ -336,4 +324,14 @@ it("lists jobs without a description under Needs review", async () => {
   await screen.findByRole("link", { name: "Ruby on Rails Developer" });
   expect(screen.getByText(/the advert has no job description to confirm your Core skills/)).toBeInTheDocument();
   expect(calls.some((c) => queryOf(c).get("match") === "review")).toBe(true);
+});
+
+it("keeps source health notices off the Feed and does not request them", async () => {
+  const calls = mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard()])),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.queryByText("LinkedIn searches are delayed")).not.toBeInTheDocument();
+  expect(calls.some((call) => call.url.includes("/sources/notices"))).toBe(false);
 });
