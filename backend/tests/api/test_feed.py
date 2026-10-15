@@ -775,3 +775,23 @@ async def test_blocked_publisher_hidden_from_existing_feed_without_deleting_hist
     # Matching must not bring it back on the next preferences update either.
     await client.put("/api/preferences", json=BACKEND_BLR)
     assert (await client.get("/api/feed", params={"section": "link"})).json()["items"] == []
+
+
+async def test_short_core_advert_matching_both_candidate_paths_stays_under_review(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting(
+            "short-core",
+            title="Ruby on Rails Developer",
+            company="Acme",
+            description="Ruby on Rails and PostgreSQL.",
+        ),
+    )
+    await process()
+    assert (await client.put("/api/preferences", json=RAILS_CORE)).status_code == 200
+    response = await client.get("/api/feed", params={"section": "link", "match": "review"})
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["match"] == "review"
+    assert body["counts"]["title_matches"] == 0
