@@ -451,6 +451,24 @@ def test_long_keyword_lists_keep_every_country_and_distinct_keys():
     assert QUERY.key == "backend engineer@Bengaluru|IN|False"
 
 
-def test_new_discovery_searches_reach_back_one_day_not_the_full_backfill():
-    assert LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY).backfill_days(14) == 1
-    assert LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS).backfill_days(14) == 14
+def test_discovery_searches_continue_from_the_title_searches_they_replace():
+    preference_queries = [
+        SourceQuery(keywords="Rails Developer", location=Location(city="Pune", country="IN")),
+        SourceQuery(keywords="Backend", location=Location(country="IN", remote=True)),
+        SourceQuery(keywords="Rails Developer", location=Location(city="Austin", country="US")),
+        SourceQuery(keywords="Rails Developer", location=Location(remote=True)),
+        SourceQuery(keywords="Rails Developer", location=Location()),
+    ]
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY)
+    by_place = {
+        (q.location.country, q.location.remote) if q.location else None: q
+        for q in adapter.search_queries(preference_queries)
+    }
+    keys = [q.key for q in preference_queries]
+    assert adapter.continues_from(by_place[("IN", False)], preference_queries) == keys[:2]
+    assert adapter.continues_from(by_place[("US", False)], preference_queries) == [keys[2]]
+    assert adapter.continues_from(by_place[(None, True)], preference_queries) == [keys[3]]
+    assert adapter.continues_from(by_place[None], preference_queries) == [keys[4]]
+    # Title searches have nothing to inherit.
+    plain = LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS)
+    assert plain.continues_from(preference_queries[0], preference_queries) == []

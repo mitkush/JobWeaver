@@ -116,10 +116,25 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     def searches_titles(self) -> bool:
         return not self._discovery_terms()
 
-    def backfill_days(self, default: int) -> int:
-        # A new keyword list makes new searches. Earlier jobs already came from the
-        # per-title searches, and a 14-day "Past month" search would hit the cap at once.
-        return 1 if self._discovery_terms() else default
+    def continues_from(
+        self, query: SourceQuery, preference_queries: list[SourceQuery]
+    ) -> list[str]:
+        """A discovery search replaces the per-title searches for its place: country-wide
+        covers every title and city in that country, worldwide remote covers remote
+        searches with no country, and worldwide covers searches with no place."""
+        if not self._discovery_terms():
+            return []
+        place = query.location
+
+        def covered(other: SourceQuery) -> bool:
+            loc = other.location
+            if place is not None and place.country:
+                return loc is not None and loc.country == place.country
+            if place is not None and place.remote:
+                return loc is not None and loc.remote and not loc.country
+            return loc is None or (not loc.country and not loc.remote)
+
+        return [q.key for q in preference_queries if covered(q)]
 
     def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
         """One OR search per Preference country; cities, titles and work modes are left to

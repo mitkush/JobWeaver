@@ -223,9 +223,12 @@ class WindowedSourceAdapter(SourceAdapter):
         """Whether each Preference title adds searches to this Source's daily run."""
         return True
 
-    def backfill_days(self, default: int) -> int:
-        """How far a search with no history reaches back on its first run (FR-B3)."""
-        return default
+    def continues_from(
+        self, query: SourceQuery, preference_queries: list[SourceQuery]
+    ) -> list[str]:
+        """Keys of earlier searches a new search covers, so its first run picks up where
+        they stopped instead of a Backfill. Empty: a new search starts with a Backfill."""
+        return []
 
     @abstractmethod
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult: ...
