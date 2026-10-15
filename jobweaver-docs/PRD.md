@@ -221,7 +221,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-D6 [V1] - Sort, filter, search, hide.** Default order newest first. Filters: location, work mode, Source, has email, posted within. Free-text search over title and Company. Hiding a Job removes it from that User's Feed only.
 
-**FR-D7 [V1] - Freshness label.** The Feed shows when it was last updated and which Sources are Degraded.
+**FR-D7 [V1] - Freshness label.** The Feed shows when it was last updated.
 
 ### Epic E - Draft (the main feature)
 
@@ -338,7 +338,7 @@ The UI must look professional and the UX must never be confusing. "Not confusing
 
 **Flow E - Duplicate triage.** Possible duplicate marker -> Correspondence view -> compare Postings side by side -> Confirm or Not the same Job.
 
-**Flow F - Source trouble (Admin).** Notice "LinkedIn delayed" -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or narrow the most expensive queries, or disable the Source.
+**Flow F - Source trouble (Admin).** Sources shows a Degraded state -> Source Status shows "budget exhausted until 1 Nov" -> no action needed, or narrow the most expensive queries, or disable the Source.
 
 **Flow G - Follow-up.** Reminder "No update from Acme for 7 days" -> Draft a follow-up -> Open in Gmail -> send.
 

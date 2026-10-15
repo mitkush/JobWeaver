@@ -82,12 +82,6 @@ class FetchRunOut(BaseModel):
     error: str | None
 
 
-class SourceNotice(BaseModel):
-    label: str
-    since: datetime
-    message: str
-
-
 class AtsBoardIn(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
 

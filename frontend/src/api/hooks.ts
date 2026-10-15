@@ -23,7 +23,6 @@ export const keys = {
   titleSuggestions: (titles: string[]) => ["preferences", "title-suggestions", ...titles] as const,
   sources: ["admin", "sources"] as const,
   runs: ["admin", "runs"] as const,
-  notices: ["notices"] as const,
   boards: ["boards"] as const,
   feed: ["feed"] as const,
   runStartedAt: ["admin", "run-started-at"] as const,
@@ -271,10 +270,6 @@ export function useRunSource() {
         client.invalidateQueries({ queryKey: keys.runs }),
       ]),
   });
-}
-
-export function useNotices() {
-  return useQuery({ queryKey: keys.notices, queryFn: () => unwrap(api.GET("/api/sources/notices")) });
 }
 
 export function useBoards() {
