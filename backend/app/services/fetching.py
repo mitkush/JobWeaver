@@ -55,6 +55,7 @@ from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
 from app.services.account_balances import account_balance
 from app.services.provider_credentials import active_primary_pause, credentials
+from app.tailoring.description_mentions import CACHE_VERSION, describe
 from app.tailoring.job_experience import experience_requirement
 
 logger = logging.getLogger(__name__)
@@ -281,6 +282,17 @@ async def save_postings(
             posting.embedding = None
             posting.embedding_model = None
             posting.match_state = "pending"
+        if (
+            is_new
+            or posting.description != item.description
+            or posting.description_mentions_version != CACHE_VERSION
+            or posting.description_mentions is None
+            or posting.description_usable is None
+        ):
+            cached = describe(item.description)
+            posting.description_mentions = cached.skills
+            posting.description_usable = cached.usable
+            posting.description_mentions_version = cached.version
         posting.company_id = company.id
         posting.ats_board_id = board.id if board else posting.ats_board_id
         posting.title = title

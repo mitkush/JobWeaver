@@ -37,6 +37,7 @@ from app.schemas.feed import (
     PostingOut,
     SourceBadge,
 )
+from app.tailoring.description_mentions import CACHE_VERSION, VOCABULARY
 from app.tailoring.keywords import (
     MIN_DESCRIPTION_CHARS,
     KeywordMatch,
@@ -242,8 +243,8 @@ async def _matches(
         confirmed match;
       - a differently titled Job whose description names a Core keyword and
         keyword_min_matches keywords in total: "keywords".
-    Descriptions are read only for Jobs whose advert may name a Core keyword or whose
-    title matches but whose advert is too short to confirm one."""
+    Current cached vocabulary mentions need no description reads. Unknown keywords and
+    missing/stale caches retain exact description matching as a fallback."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
     rules = {p.user_id: rule_of(p) for p in preferences}
     # Job id -> (user id, rule, whether the title matched) for each keyword check.
@@ -291,36 +292,93 @@ async def _matches(
             for j in chunk
             if j.primary_posting_id and any(titled for _, _, titled in pending[j.id])
         ]
-        descriptions = dict(
-            (
+        caches = {
+            row.id: row
+            for row in (
                 await session.execute(
-                    select(Posting.id, Posting.description).where(
-                        Posting.id.in_(posting_ids),
-                        or_(
-                            mentions_core,
-                            and_(
-                                Posting.id.in_(titled_ids),
-                                # Untrimmed and generous: PostgreSQL and Python trim
-                                # different whitespace, so the exact count is left to
-                                # has_description. Short adverts cost little to read.
-                                func.length(Posting.description) < SHORT_DESCRIPTION_READ,
-                            ),
-                        ),
-                    )
+                    select(
+                        Posting.id,
+                        Posting.description_mentions,
+                        Posting.description_usable,
+                        Posting.description_mentions_version,
+                    ).where(Posting.id.in_(posting_ids))
                 )
             ).all()
-        )
+        }
+        current = {
+            pid: row
+            for pid, row in caches.items()
+            if row.description_mentions_version == CACHE_VERSION
+            and row.description_mentions is not None
+            and row.description_usable is not None
+        }
+        stale = set(posting_ids) - current.keys()
+        # Until explicitly backfilled, old/version-mismatched rows keep the existing
+        # broad SQL prefilter and exact Python checks. Feed reads never write caches.
+        descriptions = {}
+        if stale:
+            descriptions = dict(
+                (
+                    await session.execute(
+                        select(Posting.id, Posting.description).where(
+                            Posting.id.in_(stale),
+                            or_(
+                                mentions_core,
+                                and_(
+                                    Posting.id.in_(titled_ids),
+                                    func.length(Posting.description) < SHORT_DESCRIPTION_READ,
+                                ),
+                            ),
+                        )
+                    )
+                ).all()
+            )
+        unknown = {term for term in terms if canonical_skill(term) not in VOCABULARY}
+        # Unknown non-Core terms matter too: they can satisfy min_matches. Restrict
+        # fallback to current, usable postings considered for a User with such terms.
+        unknown_ids = {
+            job.primary_posting_id
+            for job in chunk
+            if job.primary_posting_id in current
+            and current[job.primary_posting_id].description_usable
+            and any(
+                any(k.canonical not in VOCABULARY for k in rule.keywords)
+                for _, rule, _ in pending[job.id]
+            )
+        }
+        unknown_descriptions = {}
+        if unknown_ids:
+            possible_unknown = or_(
+                *(
+                    Posting.description.ilike(f"%{_like_literal(spelling)}%", escape="\\")
+                    for term in unknown
+                    for spelling in spellings(canonical_skill(term))
+                )
+            )
+            unknown_descriptions = dict(
+                (
+                    await session.execute(
+                        select(Posting.id, Posting.description).where(
+                            Posting.id.in_(unknown_ids), possible_unknown
+                        )
+                    )
+                ).all()
+            )
         for job in chunk:
-            if job.primary_posting_id and job.primary_posting_id not in descriptions:
-                # The advert is long and names none of the Core keywords. It cannot be
-                # a confirmed match or a short-description review match.
-                continue
+            pid = job.primary_posting_id
+            if pid in current:
+                in_description = set(current[pid].description_mentions)
+                in_description.update(mentioned(unknown_descriptions.get(pid, ""), unknown))
+                described = current[pid].description_usable
+            else:
+                if pid and pid not in descriptions:
+                    continue
+                in_description = mentioned(descriptions.get(pid) or "", terms)
+                described = has_description(descriptions.get(pid) or "")
             required = list(job.required_skills or [])
             in_requirements = mentioned(", ".join(required), terms) | {
                 canonical_skill(s) for s in required
             }
-            in_description = mentioned(descriptions.get(job.primary_posting_id) or "", terms)
-            described = has_description(descriptions.get(job.primary_posting_id) or "")
             for user_id, rule, titled in pending[job.id]:
                 found = keyword_matches(rule, in_requirements, in_description)
                 if titled and not described:

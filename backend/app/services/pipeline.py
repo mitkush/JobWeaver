@@ -7,6 +7,7 @@ from app.core.db import get_sessionmaker
 from app.gateway.base import BaseAIGateway
 from app.gateway.factory import build_gateway
 from app.services.correspondence import Correspondence, Report
+from app.services.description_mentions import backfill as backfill_description_mentions
 from app.services.fetching import Fetcher, fetch_lock
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,19 @@ def build_fetcher(gateway: BaseAIGateway | None = None) -> Fetcher:
 
 async def process_queues(gateway: BaseAIGateway | None = None) -> Report | None:
     """Between fetches: embeddings queued while Gemini was down, skills not extracted yet
-    (ADR-0014). Skipped while a fetch runs, which processes the queues itself."""
+    (ADR-0014), and description mention caches not built yet. Skipped while a fetch runs,
+    which processes the queues itself."""
     async with fetch_lock(get_sessionmaker()) as got:
         if not got:
             logger.info("Queue run skipped: a fetch is in progress")
             return None
-        return await build_correspondence(gateway).process()
+        report = await build_correspondence(gateway).process()
+        try:
+            await backfill_description_mentions(get_sessionmaker())
+        except Exception:
+            # A cache is an optimisation: Feeds fall back to reading descriptions.
+            logger.exception("Description mention backfill failed; it resumes next run")
+        return report
 
 
 async def extract_skills_now(gateway: BaseAIGateway | None = None) -> None:

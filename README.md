@@ -12,6 +12,7 @@ AI job-hunt assistant: fetches jobs daily from many sources, groups duplicates a
 - [Discovery brief](prd-prompt.md) - the agreed decisions the PRD is built from
 
 See [PostgreSQL Feed search measurements](jobweaver-docs/POSTGRES_SEARCH.md) for a read-only query benchmark and the current optimization decision.
+Existing Postings can be cached with the bounded [description-mention backfill](jobweaver-docs/DESCRIPTION_MENTIONS.md); it runs separately from startup migrations.
 
 ## Run locally
 
