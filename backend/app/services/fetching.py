@@ -653,7 +653,7 @@ class Fetcher:
             # A main Source and its standby continue from whichever searched last.
             last_until = max((m.last_until for m in marks), default=None)
             if last_until is None:
-                since = started - timedelta(days=self.settings.backfill_days)
+                since = started - timedelta(days=adapter.backfill_days(self.settings.backfill_days))
             else:
                 # Cron and catch-up runs never repeat a search already done today; only
                 # the admin's manual run deliberately does.

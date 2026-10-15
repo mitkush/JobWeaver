@@ -116,6 +116,11 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     def searches_titles(self) -> bool:
         return not self._discovery_terms()
 
+    def backfill_days(self, default: int) -> int:
+        # A new keyword list makes new searches. Earlier jobs already came from the
+        # per-title searches, and a 14-day "Past month" search would hit the cap at once.
+        return 1 if self._discovery_terms() else default
+
     def search_queries(self, preference_queries: list[SourceQuery]) -> list[SourceQuery]:
         """One OR search per Preference country; cities, titles and work modes are left to
         the Feed. A remote search with no country becomes one worldwide remote search, and
@@ -124,7 +129,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         if not terms:
             return preference_queries
         keyword = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
-        queries: dict[str, SourceQuery] = {}
+        queries: dict[SourceQuery, SourceQuery] = {}
         for query in preference_queries:
             loc = query.location
             if loc and loc.country:
@@ -134,7 +139,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             else:
                 place = None
             search = SourceQuery(keywords=keyword, location=place)
-            queries.setdefault(search.key, search)
+            queries.setdefault(search, search)
         return sorted(queries.values(), key=lambda q: q.key)
 
     def is_configured(self) -> bool:

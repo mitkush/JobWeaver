@@ -1325,3 +1325,17 @@ async def test_a_source_can_search_more_broadly_and_report_a_capped_window(db, f
     run = await db.scalar(select(FetchRun).where(FetchRun.source == Broad.name))
     assert run.status.value == "succeeded"
     assert "record cap" in run.error
+
+
+async def test_a_source_can_shorten_its_first_window(db, fetcher, clock):
+    class Recent(FakeSearch):
+        name = "fake-recent"
+        windows = []
+
+        def backfill_days(self, default):
+            return 1
+
+    registry.register_adapter(Recent)
+    await add_preferences(db)
+    assert (await fetcher.run_source(Recent.name)).status == "succeeded"
+    assert {w.until - w.since for _, w in Recent.windows} == {timedelta(days=1)}

@@ -34,11 +34,21 @@ function RecentRuns() {
               <tr key={run.id}>
                 <td className="px-6 py-2 whitespace-nowrap">{fromNow(run.created_at)}</td>
                 <td className="px-3 py-2">{run.source}</td>
-                <td className="max-w-64 truncate px-3 py-2" title={run.error ?? undefined}>
-                  {run.board ?? formatQueryKey(run.query_key)}
+                <td className="max-w-64 px-3 py-2">
+                  <span className="block truncate" title={run.board ?? formatQueryKey(run.query_key)}>
+                    {run.board ?? formatQueryKey(run.query_key)}
+                  </span>
+                  {run.error && (
+                    <span className={`mt-0.5 block text-xs ${run.status === "failed" ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-300"}`}>
+                      {run.error}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2">
-                  <Badge tone={STATUS_TONE[run.status]}>{run.status}</Badge>
+                  {/* A succeeded run with a message reached the provider's record cap. */}
+                  {run.status === "succeeded" && run.error
+                    ? <Badge tone="warning">incomplete</Badge>
+                    : <Badge tone={STATUS_TONE[run.status]}>{run.status}</Badge>}
                 </td>
                 <td className="px-3 py-2 text-right">{run.postings_new}</td>
                 <td className="px-6 py-2 text-right">{run.credits_used || "-"}</td>

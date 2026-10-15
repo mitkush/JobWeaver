@@ -430,3 +430,27 @@ async def test_no_cap_sends_no_limit():
         )
     assert "limit_per_input" not in seen[0].url.params
     assert result.complete is True
+
+
+def test_long_keyword_lists_keep_every_country_and_distinct_keys():
+    """SourceQuery.key fits the 300-character columns without merging two searches."""
+    terms = ",".join(f"Keyword number {i}" for i in range(30))
+    settings = DISCOVERY.model_copy(update={"brightdata_discovery_keywords": terms})
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), settings)
+    queries = adapter.search_queries(
+        [
+            SourceQuery(keywords="Rails", location=Location(city="Pune", country="IN")),
+            SourceQuery(keywords="Rails", location=Location(city="Austin", country="US")),
+        ]
+    )
+    assert sorted(q.location.country for q in queries) == ["IN", "US"]
+    keys = [q.key for q in queries]
+    assert len(set(keys)) == 2 and all(len(k) <= 300 for k in keys)
+    assert keys[0].endswith("@|IN|False") or keys[1].endswith("@|IN|False")
+    # Short keys keep their existing form, so current watermarks still match.
+    assert QUERY.key == "backend engineer@Bengaluru|IN|False"
+
+
+def test_new_discovery_searches_reach_back_one_day_not_the_full_backfill():
+    assert LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY).backfill_days(14) == 1
+    assert LinkedInBrightDataAdapter(httpx.AsyncClient(), SETTINGS).backfill_days(14) == 14

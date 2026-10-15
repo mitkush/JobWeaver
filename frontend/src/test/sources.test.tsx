@@ -148,6 +148,7 @@ it("refreshes recent runs while a run is in progress", async () => {
 it("formats search keys for people", () => {
   expect(formatQueryKey("backend engineer@|IN|True")).toBe("backend engineer · India · remote");
   expect(formatQueryKey("all")).toBe("all recent jobs");
+  expect(formatQueryKey("software or developer#0123456789abcdef@|IN|False")).toBe("software or developer… · India");
 });
 
 it("adds a company board from a link and explains bad links", async () => {
@@ -316,4 +317,21 @@ it("shows a paused primary and the backup selected before its first fetch", asyn
   renderWithApp(<AdminSourcesPage />);
   expect(await screen.findByText("Tracked search costs: Backup account 1")).toBeInTheDocument();
   expect(screen.getByText(/Primary account: paused until .*01 Nov 2026.*UTC/)).toBeInTheDocument();
+});
+
+it("shows capped and failed runs without hovering", async () => {
+  const base = { created_at: new Date().toISOString(), board: null, postings_found: 1, postings_new: 1, postings_closed: 0, credits_used: 1000, trigger: "schedule", window_since: null, window_until: null, finished_at: null };
+  mockFetch({
+    "GET /api/admin/sources": () => json([linkedin]),
+    "GET /api/admin/fetch-runs": () => json([
+      { ...base, id: "r1", source: "linkedin", status: "succeeded", query_key: "software or developer@|IN|False",
+        error: "Reached the provider's record cap; some jobs in this window may be missing. Split the search or raise its cap." },
+      { ...base, id: "r2", source: "linkedin", status: "failed", query_key: "rails@|IN|False", error: "LinkedIn (Bright Data) account is not active" },
+    ]),
+  });
+  renderWithApp(<AdminSourcesPage />);
+  expect(await screen.findByText("incomplete")).toBeInTheDocument();
+  expect(screen.getByText(/Reached the provider's record cap/)).toBeVisible();
+  expect(screen.getByText("LinkedIn (Bright Data) account is not active")).toBeVisible();
+  expect(screen.getByText("failed")).toBeInTheDocument();
 });

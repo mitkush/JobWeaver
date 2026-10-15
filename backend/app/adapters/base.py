@@ -2,6 +2,7 @@
 
 import asyncio
 import enum
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Iterable
 from datetime import datetime
@@ -61,6 +62,10 @@ class Location(BaseModel):
     remote: bool = False
 
 
+# FetchRun.query_key and QueryWatermark.query_key are String(300).
+KEY_LENGTH = 300
+
+
 class SourceQuery(BaseModel):
     """One windowed search: a title plus a location, built from users' Preferences."""
 
@@ -71,9 +76,17 @@ class SourceQuery(BaseModel):
 
     @property
     def key(self) -> str:
+        """Stable id for watermarks and Fetch Runs, at most 300 characters. A long keyword
+        list is shortened with a hash of the whole query, so two searches never share a
+        key and the place is never cut off."""
         loc = self.location
         where = "any" if loc is None else f"{loc.city or ''}|{loc.country or ''}|{loc.remote}"
-        return f"{self.keywords.lower()}@{where}"[:300]
+        full = f"{self.keywords.lower()}@{where}"
+        if len(full) <= KEY_LENGTH:
+            return full
+        digest = hashlib.sha256(full.encode()).hexdigest()[:16]
+        suffix = f"#{digest}@{where}"[-(KEY_LENGTH // 2) :]
+        return self.keywords.lower()[: KEY_LENGTH - len(suffix)] + suffix
 
 
 # A daily window is 24 hours plus the fetcher's overlap (2 hours by default) plus a little
@@ -209,6 +222,10 @@ class WindowedSourceAdapter(SourceAdapter):
     def searches_titles(self) -> bool:
         """Whether each Preference title adds searches to this Source's daily run."""
         return True
+
+    def backfill_days(self, default: int) -> int:
+        """How far a search with no history reaches back on its first run (FR-B3)."""
+        return default
 
     @abstractmethod
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult: ...
