@@ -9,3 +9,8 @@ Providers billed from one account share one allowance (`budget_pool`). Naukri an
 **Considered and rejected:** running both providers every day (pays twice for the same jobs), switching providers by hand (LinkedIn stays dark until someone notices), letting any Source stand in for any other (the reason ADR-0003 rejected backups still applies there).
 
 **Consequences:** Postings from a main Source and its Standby have different Source names. The same job from both is grouped into one Job by Correspondence (ADR-0004), not by Source ID. SerpApi only partly overlaps JSearch, which also reads other boards, so its stand-in coverage is narrower.
+
+
+## Amendment: ordered fallback chains (15 Oct 2026)
+
+A Standby can itself have a Standby. The LinkedIn chain is Bright Data -> Apify -> Piloterr, with each Source declaring its immediate upstream provider through `standby_for`. Scheduled runs execute ancestors first, and a Standby waits while any enabled, configured ancestor is healthy. Manual runs remain available. Every member of the complete chain shares successful query watermarks, so recovery never resets Backfill or repeats a window already fetched by a later fallback. A healthy fallback covers all its ancestors in Feed notices. Posting priority still selects the Primary Posting and is independent of the fallback order. Piloterr remains opt-in with its existing description checks and 500-credit monthly cap.

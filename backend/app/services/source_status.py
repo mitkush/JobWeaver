@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.ats_urls import parse_ats_url
 from app.adapters.base import SnapshotSourceAdapter
-from app.adapters.registry import get_adapter_class, pool_of, registered_adapters
+from app.adapters.registry import get_adapter_class, pool_of, registered_adapters, upstream_of
 from app.core.config import get_settings
 from app.core.db import among
 from app.core.errors import NotFoundError, ValidationFailedError
@@ -258,7 +258,7 @@ async def _covered_by_standby(session: AsyncSession) -> set[str]:
             )
         )
     ).scalars()
-    return {standbys[name] for name in rows}
+    return {parent.name for name in rows for parent in upstream_of(get_adapter_class(name))}
 
 
 async def list_boards(session: AsyncSession) -> list[AtsBoardOut]:

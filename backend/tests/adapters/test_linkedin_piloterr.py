@@ -36,6 +36,10 @@ def http(handler):
 
 
 class TestLinkedInPiloterr:
+    def test_is_third_linkedin_provider_without_changing_posting_priority(self):
+        assert LinkedInPiloterrAdapter.standby_for == "linkedin-apify"
+        assert LinkedInPiloterrAdapter.priority == 20
+
     async def test_search_maps_results_and_counts_each_paid_page(self):
         requests = []
 
