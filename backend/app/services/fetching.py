@@ -28,6 +28,7 @@ from app.adapters.base import (
 from app.adapters.errors import (
     BoardNotFound,
     SourceBadResponse,
+    SourceCredentialRejected,
     SourceError,
     SourceNotConfigured,
     SourceQuotaExhausted,
@@ -568,7 +569,9 @@ class Fetcher:
                 continue
             if credential.fingerprint in adapter.exhausted_credentials:
                 continue
-            if adapter.account_balance_required:
+            if adapter.credential_limits_from_errors:
+                remaining = None
+            elif adapter.account_balance_required:
                 account = await account_balance(
                     type(adapter), self.http, credential.settings, self.clock(), force=True
                 )
@@ -586,13 +589,18 @@ class Fetcher:
                     include_legacy=credential.primary,
                 )
                 remaining = max(budget.allowance - budget.spent, 0)
-            if not remaining:
+            if not remaining and not adapter.credential_limits_from_errors:
                 continue
             adapter.settings = credential.settings
             adapter.credential_fingerprint = credential.fingerprint
             adapter.allowance_left = remaining
             return
         if options:
+            if adapter.credential_limits_from_errors:
+                raise SourceErrorBudget(
+                    "All available credentials were rejected for this run. "
+                    "Credentials are tried again on the next run."
+                )
             if paused_until is not None:
                 raise SourceErrorBudget(
                     "All available backup accounts have exhausted their credits or tracked "
@@ -671,11 +679,15 @@ class Fetcher:
                     try:
                         result = await _guarded(adapter, adapter.fetch_window(query, window))
                         break
-                    except SourceQuotaRejected as exc:
+                    except (SourceQuotaRejected, SourceCredentialRejected) as exc:
                         if exc.credits_used or adapter.credential_fingerprint is None:
                             raise
                         adapter.exhausted_credentials.add(adapter.credential_fingerprint)
-                        await self._check_budget(session, adapter)
+                        try:
+                            await self._check_budget(session, adapter)
+                        except SourceErrorBudget as exhausted:
+                            # Preserve the provider's actual rejection in Recent runs.
+                            raise exc from exhausted
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
                 run.credits_used = exc.credits_used

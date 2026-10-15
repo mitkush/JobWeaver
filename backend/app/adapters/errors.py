@@ -22,14 +22,18 @@ class SourceQuotaExhausted(SourceError):
 
 
 class SourceQuotaRejected(SourceQuotaExhausted):
-    """Provider rejected a start request for credits; no actor/snapshot started.
+    """Provider rejected a start request for credits or rate limits; no search started.
 
-    Only this error permits retrying a search with another account.
+    This and SourceCredentialRejected permit a retry with another account.
     """
 
 
 class SourceUnavailable(SourceError):
     pass
+
+
+class SourceCredentialRejected(SourceUnavailable):
+    """Provider explicitly rejected an unusable account before a search started."""
 
 
 class SourceBadResponse(SourceError):
@@ -41,7 +45,7 @@ class BoardNotFound(SourceError):
 
 
 def quota_rejected(response) -> bool:
-    """Explicit spending errors only, never general 429 rate limits or HTTP timeouts."""
+    """Recognise explicit spending errors. Adapters handle temporary 429s separately."""
     if response.status_code == 402:
         return True
     if response.status_code not in (400, 403, 429):

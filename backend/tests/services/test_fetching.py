@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from sqlalchemy import func, select, text
 
@@ -1076,6 +1077,110 @@ async def test_only_unbilled_start_quota_rejection_can_retry_with_backup(
     assert sum(run.credits_used for run in runs) == (
         2 if error == "quota" else 3 if error == "billed" else 0
     )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "two-limits",
+        "all-limits",
+        "transient-limit",
+        "inactive",
+        "all-inactive",
+        "auth",
+        "server",
+        "bad-request",
+        "poll-limit",
+        "poll-inactive",
+    ],
+)
+async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monkeypatch, failure):
+    from app.adapters.linkedin_brightdata import LinkedInBrightDataAdapter
+    from app.models.fetch import QueryWatermark
+    from app.services.fetching import budget_for
+
+    registry.register_adapter(LinkedInBrightDataAdapter)
+    fetcher.settings.brightdata_api_key = "one, two,three,one"
+    await add_preferences(db)
+    starts = []
+    waits = []
+
+    async def no_sleep(seconds):
+        waits.append(seconds)
+
+    fetcher.adapter_factory = lambda cls, http, settings: (
+        cls(http, settings, sleep=no_sleep)
+        if cls is LinkedInBrightDataAdapter
+        else cls(http, settings)
+    )
+
+    async def no_budget_queries(*args, **kwargs):
+        raise AssertionError("Bright Data must not select keys using local quota estimates")
+
+    monkeypatch.setattr("app.services.fetching.budget_for", no_budget_queries)
+
+    def handler(request):
+        key = request.headers["Authorization"].removeprefix("Bearer ")
+        if request.url.path.endswith("/trigger"):
+            starts.append(key)
+            if failure == "auth":
+                return httpx.Response(401, text="Invalid token")
+            if failure == "server":
+                return httpx.Response(503, text="Unavailable")
+            if failure == "bad-request":
+                return httpx.Response(400, text="Invalid input")
+            if failure == "all-inactive" or (failure == "inactive" and key == "one"):
+                return httpx.Response(400 if key == "one" else 403, text="Customer is not active")
+            if failure == "transient-limit" and len(starts) == 1:
+                return httpx.Response(429, text="Slow down")
+            if failure == "all-limits" or (failure == "two-limits" and key != "three"):
+                return httpx.Response(402 if key == "one" else 429, text="Limit reached")
+            return httpx.Response(200, json={"snapshot_id": "snapshot"})
+        if "/progress/" in request.url.path:
+            if failure == "poll-limit":
+                return httpx.Response(429, text="Slow down")
+            if failure == "poll-inactive":
+                return httpx.Response(400, text="Customer is not active")
+            return httpx.Response(200, json={"status": "ready"})
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        fetcher.http = client
+        outcome = await fetcher.run_source("linkedin")
+    if failure in ("two-limits", "transient-limit", "inactive"):
+        assert outcome.status == "succeeded"
+        expected = {
+            "two-limits": ["one", "two", "two", "three", "three"],
+            "transient-limit": ["one", "one", "one"],
+            "inactive": ["one", "two", "two"],
+        }
+        assert starts == expected[failure]
+        assert waits == ([] if failure == "inactive" else [3.0])
+        assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 2
+    else:
+        assert outcome.status == "failed"
+        expected = {
+            "all-limits": ["one", "two", "two", "three", "three"],
+            "all-inactive": ["one", "two", "three"],
+        }
+        assert starts == expected.get(failure, ["one"])
+        assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 0
+    if failure == "all-inactive":
+        assert outcome.message == "LinkedIn (Bright Data) account is not active"
+        assert await db.scalar(select(FetchRun.error)) == outcome.message
+    if failure in ("all-limits", "all-inactive"):
+        monkeypatch.setattr("app.services.fetching.budget_for", budget_for)
+
+        class Standby(FakeSearch):
+            name = "linkedin-backup"
+            standby_for = "linkedin"
+            monthly_allowance = None
+
+            async def fetch_window(self, query, window):
+                return FetchResult(postings=[])
+
+        registry.register_adapter(Standby)
+        assert (await fetcher.run_source(Standby.name)).status == "succeeded"
 
 
 async def test_paused_primary_uses_backup_then_returns_after_renewal(db, fetcher, clock):

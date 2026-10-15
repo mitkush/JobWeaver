@@ -87,24 +87,26 @@ JobWeaver's `FetchRun.credits_used` ledger only counts its own recorded searches
 
 Apify's [private user data](https://docs.apify.com/api/v2/users-me-get) supplies included plan credits; [account limits](https://docs.apify.com/api/v2/users-me-limits-get) supplies current usage, the spending limit and the actual usage cycle. The Sources page shows account-wide usage and remaining included credits separately from local query costs. Fetches read the account again before starting each paid search, cap actor charges at the remaining included credits or spending limit, and pause if the account cannot be verified. Balances may lag recent provider charges. Nothing here enables spending above included credits.
 
-Bright Data's [balance API documentation](https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API#is-there-an-api-endpoint-for-free-tier-credit-status) explicitly states that no Account Management API returns the free-tier credit balance. Its USD balance is not the 5,000-credit pool. The Sources page labels local usage as an estimate and directs the admin to the Free credits card. The existing local allowance guard remains, but cannot guarantee account-wide credit availability.
+Bright Data's [balance API documentation](https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API#is-there-an-api-endpoint-for-free-tier-credit-status) explicitly states that no Account Management API returns the free-tier credit balance. Its USD balance is not the 5,000-credit pool. The Sources page labels local usage as an estimate and directs the admin to the Free credits card. Bright Data credential selection relies on provider limit errors instead of a local allowance guard; recorded usage remains an estimate, not a balance.
 
 The cache is scoped to a credential fingerprint and never stores raw tokens or exposes account identity. Updating credentials does not delete jobs, search watermarks or historical spend. Credential fallback adds migration `0009`: an optional fingerprint on FetchRun for per-credential cost accounting. Legacy unlabelled runs count against the primary account only.
 
 ### Retaining primary and backup accounts
 
-Keep `APIFY_TOKEN` and `BRIGHTDATA_API_KEY` as the original primary credentials. Put backup credentials in comma-separated lists in the VM's `backend/.env`:
+Keep `APIFY_TOKEN` as the original primary credential. Bright Data accepts an ordered comma-separated list in `BRIGHTDATA_API_KEY`, or a primary key plus `BRIGHTDATA_API_KEYS` backups in the VM's `backend/.env`:
 
 ```dotenv
 APIFY_TOKENS=backup-apify-token,another-backup-token
-BRIGHTDATA_API_KEYS=backup-brightdata-key,another-backup-key
+BRIGHTDATA_API_KEY=first-brightdata-key,second-brightdata-key,third-brightdata-key
+# Alternatively: BRIGHTDATA_API_KEY=first-brightdata-key
+# BRIGHTDATA_API_KEYS=second-brightdata-key,third-brightdata-key
 ```
 
 These are accounts with their own allowances, not extra keys for the same account. Never commit real values. Changing an environment file takes effect when the container is recreated.
 
 Apify checks the primary's actual balance first and then exhausted-account backups in order before each new search. If an account cannot be verified, searches pause instead of silently spending on another one. Account balances are displayed with Primary/Backup labels. After primary credits renew, a new balance check selects the primary again. Both Apify Sources use the same credential order and balances.
 
-Bright Data checks each credential's tracked monthly allowance. Since actual free credits are not available through its API, this is an application guard, not an assertion about a backup account's actual plan or remaining credits. Account allowance and remaining credits stay explicitly unknown in the UI. It can additionally switch when the trigger request explicitly rejects a search for credit exhaustion before returning a snapshot id. Rejected credentials are skipped for the remainder of that Source run and checked again on the next run. Timeouts, general rate limits, malformed downloads and failures after a search starts never trigger cross-account retries.
+Bright Data tries configured credentials in order, trimming whitespace and ignoring empty or duplicate keys. It switches only when a trigger request rejects the search for explicit credit/quota exhaustion or HTTP 429 before returning a snapshot id. Bright Data also switches on the exact case-insensitive `Customer is not active` message on HTTP 400 or 403 from the trigger request. This is an inactive account, not a quota diagnosis; other HTTP 400 responses keep the normal failure path. A temporary HTTP 429 is retried once on the same key after three seconds before switching. Credential selection does not query balances, consult local usage totals, or track renewal times. Rejected credentials are skipped for the remainder of that Source run and tried again on the next run. If every credential is rejected, the Source becomes Degraded and its existing Standby flow takes over. Authentication errors, timeouts, malformed downloads, server errors and failures after a search starts never trigger cross-account retries. Existing Fetch Run history and estimated spend remain available for diagnostics.
 
 If Bright Data's Free credits card shows the primary is exhausted but a trigger error does not clearly say so, set `BRIGHTDATA_PRIMARY_PAUSED_UNTIL` to that account's next renewal in UTC, for example `2026-11-01T00:00:00Z`. Searches select the first backup until then and automatically prefer the original primary afterward. Keep both keys in their original fields. This is a manual override based on the provider's account page; JobWeaver cannot verify the backup's actual free credits. Restart the container after changing the environment. An ambiguous HTTP error never causes an automatic retry on another paid account.
 

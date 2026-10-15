@@ -28,8 +28,11 @@ def credentials(adapter: type[SourceAdapter], settings: Settings) -> list[Creden
     if adapter.credential_settings is None:
         return []
     key, extra_keys = adapter.credential_settings
-    backups = [token.strip() for token in getattr(settings, extra_keys).split(",") if token.strip()]
-    options = [("Primary account", getattr(settings, key), True)]
+    primary_keys = [token.strip() for token in getattr(settings, key).split(",") if token.strip()]
+    backups = primary_keys[1:] + [
+        token.strip() for token in getattr(settings, extra_keys).split(",") if token.strip()
+    ]
+    options = [("Primary account", primary_keys[0], True)] if primary_keys else []
     options += [(f"Backup account {i}", token, False) for i, token in enumerate(backups, 1)]
     result = []
     seen = set()
