@@ -1019,6 +1019,36 @@ async def test_apify_account_balance_overrides_old_account_ledger(db, fetcher, m
     assert adapter.allowance_left == 400
 
 
+async def test_apify_skips_small_balance_and_unverifiable_accounts(db, fetcher, monkeypatch):
+    from app.schemas.account_balances import AccountBalance
+    from app.services import fetching
+
+    class AccountSearch(FakeSearch):
+        budget_pool = "apify"
+        credential_settings = ("apify_token", "apify_tokens")
+        account_balance_required = True
+        minimum_usable_balance = 50
+
+    checked = []
+
+    async def account(cls, http, settings, now, **kwargs):
+        checked.append(settings.apify_token)
+        if settings.apify_token == "primary":
+            return AccountBalance(status="unavailable", message="Account inactive")
+        if settings.apify_token == "backup-low":
+            return AccountBalance(status="live", remaining=25, message="verified")
+        return AccountBalance(status="live", remaining=300, message="verified")
+
+    fetcher.settings.apify_token = "primary"
+    fetcher.settings.apify_tokens = "backup-low,backup-usable"
+    monkeypatch.setattr(fetching, "account_balance", account)
+    adapter = AccountSearch(fetcher.http, fetcher.settings)
+    await fetcher._check_budget(db, adapter)
+    assert checked == ["primary", "backup-low", "backup-usable"]
+    assert adapter.settings.apify_token == "backup-usable"
+    assert adapter.allowance_left == 300
+
+
 @pytest.mark.parametrize("status,remaining", [("live", 0), ("unavailable", None)])
 async def test_apify_unknown_or_exhausted_balance_stops_before_actor_call(
     db, fetcher, monkeypatch, status, remaining
