@@ -3,6 +3,7 @@
 Off by default (FR-B1): this is the endpoint Workday's own career pages call, not a
 published API, so it can change without notice. A board's slug is "tenant/wdN/site"."""
 
+import asyncio
 from typing import Any
 
 from app.adapters.base import (
@@ -25,6 +26,9 @@ from app.adapters.registry import register_adapter
 # Workday silently returns nothing for larger pages, and stops listing after about 2,000.
 PAGE = 20
 MAX_LISTED = 2000
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = 1.0
+RATE_LIMIT_MAX_WAIT_SECONDS = 30.0
 
 
 def split_slug(slug: str) -> tuple[str, str, str]:
@@ -46,6 +50,10 @@ class WorkdayAdapter(SnapshotSourceAdapter):
     )
     detail_concurrency = 4
 
+    def __init__(self, http, settings, sleep=asyncio.sleep) -> None:
+        super().__init__(http, settings)
+        self.sleep = sleep
+
     async def fetch_board(self, slug: str) -> FetchResult:
         try:
             tenant, pod, site = split_slug(slug)
@@ -55,7 +63,8 @@ class WorkdayAdapter(SnapshotSourceAdapter):
         listed: list[dict[str, Any]] = []
         total = None
         while len(listed) < MAX_LISTED:
-            response = await self.http.post(
+            response = await self._request(
+                "POST",
                 f"{base}/jobs",
                 json={"appliedFacets": {}, "limit": PAGE, "offset": len(listed), "searchText": ""},
                 headers={"Accept": "application/json"},
@@ -84,12 +93,27 @@ class WorkdayAdapter(SnapshotSourceAdapter):
         return FetchResult(postings=postings, complete=(total or 0) <= len(listed))
 
     async def _detail(self, base: str, path: str) -> dict[str, Any]:
-        response = await self.http.get(f"{base}{path}", headers={"Accept": "application/json"})
+        response = await self._request(
+            "GET", f"{base}{path}", headers={"Accept": "application/json"}
+        )
         if response.status_code == 404:
             return {}
         self.check_response(self.label, response)
         body = response.json()
         return body if isinstance(body, dict) else {}
+
+    async def _request(self, method: str, url: str, **kwargs):
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            response = await self.http.request(method, url, **kwargs)
+            if response.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                return response
+            try:
+                delay = float(response.headers.get("Retry-After", ""))
+            except ValueError:
+                delay = RATE_LIMIT_BACKOFF_SECONDS * (2**attempt)
+            delay = min(max(delay, RATE_LIMIT_BACKOFF_SECONDS), RATE_LIMIT_MAX_WAIT_SECONDS)
+            await self.sleep(delay)
+        raise AssertionError("unreachable")
 
     @staticmethod
     def _to_posting(

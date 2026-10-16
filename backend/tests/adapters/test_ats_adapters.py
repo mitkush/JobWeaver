@@ -228,6 +228,58 @@ class TestWorkday:
             result = await WorkdayAdapter(client, SETTINGS).fetch_board("acme/wd5/Ext")
         assert len(result.postings) == 40 and not result.complete
 
+    async def test_retries_listing_and_detail_rate_limits_with_backoff(self):
+        seen = {"jobs": 0, "detail": 0}
+        waits = []
+
+        def handler(request):
+            if request.method == "POST":
+                seen["jobs"] += 1
+                if seen["jobs"] == 1:
+                    return httpx.Response(429, headers={"Retry-After": "2"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "total": 1,
+                        "jobPostings": [{"title": "Engineer", "externalPath": "/job/1"}],
+                    },
+                )
+            seen["detail"] += 1
+            if seen["detail"] == 1:
+                return httpx.Response(429)
+            return httpx.Response(
+                200,
+                json={"jobPostingInfo": {"title": "Engineer", "jobDescription": "Rails"}},
+            )
+
+        async def sleep(seconds):
+            waits.append(seconds)
+
+        async with http(handler) as client:
+            result = await WorkdayAdapter(client, SETTINGS, sleep=sleep).fetch_board("acme/wd5/Ext")
+        assert len(result.postings) == 1
+        assert seen == {"jobs": 2, "detail": 2}
+        assert waits == [2.0, 1.0]
+
+    async def test_rate_limit_after_bounded_retries_stays_a_source_failure(self):
+        attempts = 0
+        waits = []
+
+        def handler(request):
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(429)
+
+        async def sleep(seconds):
+            waits.append(seconds)
+
+        async with http(handler) as client:
+            adapter = WorkdayAdapter(client, SETTINGS, sleep=sleep)
+            with pytest.raises(SourceRateLimited):
+                await adapter.fetch_board("acme/wd5/Ext")
+        assert attempts == 4
+        assert waits == [1.0, 2.0, 4.0]
+
     async def test_off_by_default_and_bad_slug(self):
         assert WorkdayAdapter.default_enabled is False and WorkdayAdapter.disabled_reason
         async with http(always(200)) as client:
