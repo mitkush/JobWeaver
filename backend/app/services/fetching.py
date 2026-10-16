@@ -576,7 +576,6 @@ class Fetcher:
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
         options = credentials(type(adapter), self.settings)
         paused_until = active_primary_pause(type(adapter), self.settings, self.clock())
-        account_candidates = []
         for credential in options:
             if credential.primary and paused_until is not None:
                 continue
@@ -593,9 +592,6 @@ class Fetcher:
                         account.message if account else "Account balance could not be verified"
                     )
                 remaining = account.remaining
-                if remaining:
-                    account_candidates.append((credential, remaining))
-                    continue
             else:
                 budget = await budget_for(
                     session,
@@ -607,15 +603,6 @@ class Fetcher:
                 remaining = max(budget.allowance - budget.spent, 0)
             if not remaining and not adapter.credential_limits_from_errors:
                 continue
-            adapter.settings = credential.settings
-            adapter.credential_fingerprint = credential.fingerprint
-            adapter.allowance_left = remaining
-            return
-        if account_candidates:
-            # A tiny positive balance can still be below the cost of a useful actor run.
-            # Prefer the verified account with the most room, keeping configured order for
-            # ties, so a nearly exhausted primary does not strand a healthier backup.
-            credential, remaining = max(account_candidates, key=lambda candidate: candidate[1])
             adapter.settings = credential.settings
             adapter.credential_fingerprint = credential.fingerprint
             adapter.allowance_left = remaining

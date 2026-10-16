@@ -1019,28 +1019,6 @@ async def test_apify_account_balance_overrides_old_account_ledger(db, fetcher, m
     assert adapter.allowance_left == 400
 
 
-async def test_apify_prefers_account_with_most_remaining_credits(db, fetcher, monkeypatch):
-    from app.schemas.account_balances import AccountBalance
-    from app.services import fetching
-
-    class AccountSearch(FakeSearch):
-        budget_pool = "apify"
-        credential_settings = ("apify_token", "apify_tokens")
-        account_balance_required = True
-
-    async def account(cls, http, settings, now, **kwargs):
-        remaining = {"primary": 25, "backup": 300}[settings.apify_token]
-        return AccountBalance(status="live", remaining=remaining, message="verified")
-
-    fetcher.settings.apify_token = "primary"
-    fetcher.settings.apify_tokens = "backup"
-    monkeypatch.setattr(fetching, "account_balance", account)
-    adapter = AccountSearch(fetcher.http, fetcher.settings)
-    await fetcher._check_budget(db, adapter)
-    assert adapter.settings.apify_token == "backup"
-    assert adapter.allowance_left == 300
-
-
 @pytest.mark.parametrize("status,remaining", [("live", 0), ("unavailable", None)])
 async def test_apify_unknown_or_exhausted_balance_stops_before_actor_call(
     db, fetcher, monkeypatch, status, remaining
