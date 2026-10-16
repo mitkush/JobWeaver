@@ -3,6 +3,7 @@
 Off by default (FR-B1): not a published API, could not be reached from the build
 environment to verify, and may block cloud IPs. Field names follow other projects' code."""
 
+import re
 from typing import Any
 
 from app.adapters.base import (
@@ -56,6 +57,24 @@ class FounditAdapter(WindowedSourceAdapter):
         if loc and loc.remote:
             params["query"] = f"{query.keywords} remote"
         response = await self.http.get(API, params=params, headers={"Accept": "application/json"})
+        if response.status_code == 400:
+            # This endpoint is undocumented; its structured error is the only useful clue
+            # for distinguishing a changed request from a blocked site fetch.
+            try:
+                body = response.json()
+            except ValueError:
+                detail = "non-JSON response"
+            else:
+                detail = next(
+                    (
+                        body[key]
+                        for key in ("message", "error", "detail", "statusMessage")
+                        if isinstance(body, dict) and isinstance(body.get(key), str)
+                    ),
+                    "no error message in response",
+                )
+            safe_detail = re.sub(r"\s+", " ", str(detail)).strip()[:180]
+            raise SourceBadResponse(f"{self.label} returned HTTP 400: {safe_detail}")
         self.check_response(self.label, response)
         body = response.json()
         data = (body.get("jobSearchResponse") or {}).get("data") if isinstance(body, dict) else None
