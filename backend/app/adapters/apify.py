@@ -45,6 +45,9 @@ def cents(run: dict[str, Any]) -> int:
 class ApifyAdapter(WindowedSourceAdapter):
     credential_settings = ("apify_token", "apify_tokens")
     account_balance_required = True
+    # Recent runs showed Apify aborting searches capped at $0.25. Keep a small reserve
+    # so an account with only a few cents is not selected for another actor run.
+    minimum_usable_balance = 50
     budget_pool = "apify"
     monthly_allowance = 500  # $5.00 of platform usage
     allowance_unit = "US cents"

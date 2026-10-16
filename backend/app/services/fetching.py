@@ -53,7 +53,7 @@ from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
 from app.models.raw_advert import RawAdvert
 from app.models.source import Source, SourceState
-from app.services.account_balances import account_balance
+from app.services.account_balances import account_balance, balance_is_usable
 from app.services.provider_credentials import active_primary_pause, credentials
 from app.tailoring.description_mentions import CACHE_VERSION, describe
 from app.tailoring.job_experience import experience_requirement
@@ -576,6 +576,8 @@ class Fetcher:
     async def _check_budget(self, session: AsyncSession, adapter: SourceAdapter) -> None:
         options = credentials(type(adapter), self.settings)
         paused_until = active_primary_pause(type(adapter), self.settings, self.clock())
+        verified_account = False
+        balance_errors: list[str] = []
         for credential in options:
             if credential.primary and paused_until is not None:
                 continue
@@ -587,11 +589,14 @@ class Fetcher:
                 account = await account_balance(
                     type(adapter), self.http, credential.settings, self.clock(), force=True
                 )
-                if account is None or account.status != "live":
-                    raise SourceUnavailable(
-                        account.message if account else "Account balance could not be verified"
-                    )
+                if account is None or account.status != "live" or account.remaining is None:
+                    if account and account.message:
+                        balance_errors.append(account.message)
+                    continue
+                verified_account = True
                 remaining = account.remaining
+                if not balance_is_usable(type(adapter), account):
+                    continue
             else:
                 budget = await budget_for(
                     session,
@@ -608,6 +613,13 @@ class Fetcher:
             adapter.allowance_left = remaining
             return
         if options:
+            if adapter.account_balance_required and not verified_account:
+                detail = (
+                    balance_errors[-1]
+                    if balance_errors
+                    else "Account balance could not be verified"
+                )
+                raise SourceUnavailable(detail)
             if adapter.credential_limits_from_errors:
                 raise SourceErrorBudget(
                     "All available credentials were rejected for this run. "

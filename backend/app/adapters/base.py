@@ -149,6 +149,8 @@ class SourceAdapter(ABC):
     credential_settings: tuple[str, str] | None = None
     primary_credential_pause_setting: str | None = None
     account_balance_required: bool = False
+    # Minimum verified balance required before starting a paid search, in cents.
+    minimum_usable_balance = 1
     # Select credentials from start-request limit errors, without a local quota precheck.
     credential_limits_from_errors: bool = False
     name: str

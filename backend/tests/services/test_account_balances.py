@@ -157,6 +157,34 @@ async def test_status_lists_account_limits_and_selects_backup_then_renewed_prima
         assert "backup" not in result.model_dump_json()
 
 
+async def test_status_selection_matches_search_order_and_skips_unavailable_or_small_accounts():
+    settings = Settings(
+        apify_token="primary",
+        apify_tokens="inactive,low,usable",
+    )
+
+    def handler(request):
+        token = request.headers["Authorization"]
+        if token == "Bearer primary":
+            return httpx.Response(403, text="inactive")
+        if token == "Bearer inactive":
+            return httpx.Response(403, text="inactive")
+        if token == "Bearer low":
+            return response(request, usage=4.75)
+        return response(request, usage=2)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await account_balances.account_status(Apify, http, settings, NOW)
+    assert result.account_label == "Backup account 3"
+    assert result.remaining == 300
+    assert [account.status for account in result.accounts] == [
+        "unavailable",
+        "unavailable",
+        "live",
+        "live",
+    ]
+
+
 async def test_brightdata_backups_have_unknown_allowance_not_5000():
     def no_call(request):
         raise AssertionError("Free-credit balances are not exposed")
