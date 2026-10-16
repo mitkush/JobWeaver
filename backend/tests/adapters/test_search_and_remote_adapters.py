@@ -320,3 +320,11 @@ class TestSiteFetch:
         async with http(always(200, {"objects": None})) as client:
             with pytest.raises(SourceBadResponse):
                 await InstahyreAdapter(client, Settings()).fetch_window(QUERY, DAY)
+
+    async def test_foundit_includes_a_bounded_structured_bad_request_reason(self):
+        from app.adapters.foundit import FounditAdapter
+
+        body = {"message": "Invalid search filters\nplease try again"}
+        async with http(always(400, body)) as client:
+            with pytest.raises(SourceBadResponse, match="Invalid search filters please try again"):
+                await FounditAdapter(client, Settings()).fetch_window(QUERY, DAY)
