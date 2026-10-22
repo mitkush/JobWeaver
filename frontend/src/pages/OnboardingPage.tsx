@@ -33,7 +33,7 @@ function Stepper({ current, furthest }: { current: StepKey; furthest: StepKey })
                 "flex size-6 items-center justify-center rounded-full border text-xs font-semibold",
                 active && "border-brand-600 bg-brand-600 text-white",
                 done && "border-emerald-600 bg-emerald-600 text-white",
-                !active && !done && "border-slate-300 text-slate-500 dark:border-slate-700",
+                !active && !done && "border-slate-300 text-slate-500 dark:text-slate-400 dark:border-slate-700",
               )}
             >
               {done ? <Check className="size-3.5" aria-hidden /> : i + 1}
@@ -138,7 +138,7 @@ function DocumentsStep() {
         <Button disabled={!hasResume} onClick={() => navigate("/onboarding/review")}>
           Continue to review
         </Button>
-        {!hasResume && <p className="text-xs text-slate-500">Upload your resume to continue.</p>}
+        {!hasResume && <p className="text-xs text-slate-500 dark:text-slate-400">Upload your resume to continue.</p>}
       </CardBody>
     </Card>
   );

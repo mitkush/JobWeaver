@@ -65,14 +65,9 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold">
-            <span className="rounded-md bg-brand-600 p-1 text-white">
-              <Briefcase className="size-4" aria-hidden />
-            </span>
-            JobWeaver
-          </Link>
+          <Logo />
           {!onboarding && (
             <nav aria-label="Main" className="hidden gap-1 sm:flex">
               {nav.map((item) => (
@@ -81,10 +76,10 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      "rounded-md px-3 py-1.5 text-sm font-medium",
+                      "border-b-2 px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-[0.16em] uppercase transition-colors",
                       isActive
-                        ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white"
-                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white",
+                        ? "border-brand-500 text-slate-900 dark:border-accent-400 dark:text-accent-300 neon-cyan"
+                        : "border-transparent text-slate-600 hover:text-brand-700 dark:text-slate-400 dark:hover:text-white",
                     )
                   }
                 >
@@ -94,7 +89,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
             </nav>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-sm text-slate-600 md:inline dark:text-slate-400">{me.email}</span>
+            <span className="hidden font-mono text-[11px] text-slate-600 md:inline dark:text-slate-400">{me.email}</span>
             <ThemeToggle />
             <Button
               variant="ghost"
@@ -112,12 +107,14 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
         {!onboarding && (
           <nav aria-label="Main mobile" className="flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden">
             {nav.map((item) => (
-              <NavLink key={item.to} to={item.to} className="rounded-md px-3 py-1 text-sm whitespace-nowrap aria-[current=page]:bg-slate-100 dark:aria-[current=page]:bg-slate-800">
+              <NavLink key={item.to} to={item.to} className="border-b-2 border-transparent px-2.5 py-1 font-mono text-[11px] font-bold tracking-[0.14em] whitespace-nowrap uppercase aria-[current=page]:border-brand-500 dark:aria-[current=page]:border-accent-400 dark:aria-[current=page]:text-accent-300">
                 {item.label}
               </NavLink>
             ))}
           </nav>
         )}
+        {/* A thin pink-to-cyan line under the header, as on onebrain.run. */}
+        <div aria-hidden className="h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent dark:via-brand-500 dark:to-accent-400/60" />
         <GmailBanner me={me} />
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
@@ -125,14 +122,48 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
   );
 }
 
+/** "// fact_bank": the mono eyebrow onebrain.run puts above each section. */
+function eyebrowFor(title: string) {
+  return `// ${title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
+}
+
+/** Display heading: the last word in neon pink, like "UNIFIED INTELLIGENCE". The words
+ * stay one text node apart so the heading's accessible name is unchanged. */
+export function DisplayTitle({ title, className }: { title: string; className?: string }) {
+  const words = title.trim().split(/\s+/);
+  const last = words.pop() ?? "";
+  return (
+    <h1 className={cn("font-display text-3xl leading-none font-bold tracking-tight uppercase italic sm:text-4xl", className)}>
+      {words.length > 0 && <>{words.join(" ")} </>}
+      <span className="text-brand-600 dark:text-brand-500 neon-text">{last}</span>
+    </h1>
+  );
+}
+
 export function PageHeader({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</p>}
+        <p className="eyebrow mb-2" aria-hidden>
+          {eyebrowFor(title)}
+        </p>
+        <DisplayTitle title={title} />
+        {description && <p className="mt-3 max-w-2xl text-sm text-slate-600 dark:text-slate-400">{description}</p>}
       </div>
       {action}
     </div>
+  );
+}
+
+export function Logo({ size = "md" }: { size?: "md" | "lg" }) {
+  return (
+    <Link to="/" className="group flex items-center gap-2" aria-label="JobWeaver home">
+      <span className={cn("clip-corner bg-brand-600 text-white dark:bg-brand-500 dark:text-slate-950", size === "lg" ? "p-1.5" : "p-1")}>
+        <Briefcase className={size === "lg" ? "size-5" : "size-4"} aria-hidden />
+      </span>
+      <span className={cn("font-display font-bold tracking-wide uppercase italic", size === "lg" ? "text-xl" : "text-base")}>
+        Job<span className="text-brand-600 dark:text-brand-500 neon-text">Weaver</span>
+      </span>
+    </Link>
   );
 }

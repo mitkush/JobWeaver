@@ -103,7 +103,7 @@ export function FactBankEditor({ facts }: { facts: Fact[] }) {
         return (
           <section key={kind} aria-labelledby={`kind-${kind}`}>
             <h3 id={`kind-${kind}`} className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-              {KIND_LABELS[kind]} <span className="font-normal text-slate-500">({items.length})</span>
+              {KIND_LABELS[kind]} <span className="font-normal text-slate-500 dark:text-slate-400">({items.length})</span>
             </h3>
             <Card>
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">

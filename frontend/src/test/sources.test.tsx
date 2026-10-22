@@ -64,7 +64,7 @@ it("shows health, budget pace and the most expensive searches", async () => {
   });
   renderWithApp(<AdminSourcesPage />);
   expect(await screen.findByText("1 source is degraded. They are retried automatically.")).toBeInTheDocument();
-  const card = screen.getByRole("heading", { name: "LinkedIn (Bright Data)" }).closest("div.rounded-xl") as HTMLElement;
+  const card = screen.getByRole("heading", { name: "LinkedIn (Bright Data)" }).closest("[data-card]") as HTMLElement;
   expect(within(card).getByText("Degraded")).toBeInTheDocument();
   expect(within(card).getByText("3,000 / 5,000 credits")).toBeInTheDocument();
   expect(within(card).getByText(/runs out around/)).toBeInTheDocument();

@@ -42,7 +42,7 @@ export function ApplicationsPage() {
             return (
               <section key={status.id} aria-labelledby={`group-${status.id}`}>
                 <h2 id={`group-${status.id}`} className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  {status.label} <span className="font-normal text-slate-500">({items.length})</span>
+                  {status.label} <span className="font-normal text-slate-500 dark:text-slate-400">({items.length})</span>
                 </h2>
                 <ul className="divide-y divide-slate-200 border-y border-slate-200 dark:divide-slate-800 dark:border-slate-800">
                   {items.map((application) => (

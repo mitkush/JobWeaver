@@ -42,15 +42,15 @@ export function ConfirmDialog({
         onCancel();
       }}
       aria-labelledby="confirm-title"
-      className="fixed inset-0 m-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-slate-200 bg-white p-0 text-slate-900 shadow-xl backdrop:bg-slate-950/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+      className="fixed inset-0 m-auto w-[min(28rem,calc(100%-2rem))] rounded-md border border-slate-200 bg-white p-0 text-slate-900 shadow-xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-brand-500/30 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_0_48px_-12px_rgb(255_45_146/0.45)]"
     >
       <div className="p-6">
-        <h2 id="confirm-title" className="text-base font-semibold">
+        <h2 id="confirm-title" className="font-display text-base font-bold tracking-wide uppercase">
           {title}
         </h2>
         <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{children}</div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
+      <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>

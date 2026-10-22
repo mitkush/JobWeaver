@@ -23,7 +23,7 @@ export function DraftChatPanel({ versions, currentVersion, busy, dirty, onChat, 
     <aside className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <details open>
         <summary className="cursor-pointer text-base font-semibold">Draft Chat</summary>
-        <p className="mt-2 text-xs text-slate-500">Ask for changes using your Fact Bank. Each change creates a version you can undo.</p>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Ask for changes using your Fact Bank. Each change creates a version you can undo.</p>
         <div role="log" className="my-4 max-h-80 space-y-3 overflow-auto" aria-label="Draft Chat history">
           {versions.filter((version) => version.source === "chat").slice().reverse().map((version) => <div key={version.number} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950"><p className="whitespace-pre-wrap">{version.message}</p>{/* Undo only the latest change: undoing an older one would also drop everything after it. Older versions are restored from Diff and versions. */}{version.number === currentVersion && <Button size="sm" variant="ghost" disabled={busy || dirty} onClick={() => onUndo(version.number - 1)}>Undo this change</Button>}</div>)}
         </div>
