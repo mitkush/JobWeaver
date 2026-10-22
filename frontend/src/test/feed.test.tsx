@@ -30,7 +30,7 @@ it("shows cards with skill gaps, source badges and the email section first", asy
       json(makeFeed([makeCard(), makeCard({ job_id: "job-2", title: "Platform Engineer", skill_gaps: [] })])),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
-  const card = (await screen.findByRole("link", { name: "Backend Engineer" })).closest("div.rounded-xl") as HTMLElement;
+  const card = (await screen.findByRole("link", { name: "Backend Engineer" })).closest("[data-card]") as HTMLElement;
   expect(within(card).getByText("Not in your Fact Bank:")).toBeInTheDocument();
   expect(within(card).getByText(/Kubernetes, Go/)).toBeInTheDocument();
   expect(within(card).getByText("Greenhouse")).toBeInTheDocument();
@@ -259,7 +259,7 @@ it("switches to differently titled jobs and shows which keywords matched", async
   await screen.findByRole("link", { name: "Backend Engineer" });
   await userEvent.click(screen.getByRole("button", { name: /Other titles matching your keywords/ }));
   const link = await screen.findByRole("link", { name: "Software Engineer - Payments" });
-  const card = link.closest("div.rounded-xl") as HTMLElement;
+  const card = link.closest("[data-card]") as HTMLElement;
   const matched = within(card).getByRole("list", { name: "Matched keywords" });
   expect(matched).toHaveTextContent("Rails");
   expect(matched).toHaveTextContent("in requirements");

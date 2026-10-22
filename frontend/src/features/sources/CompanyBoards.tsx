@@ -63,13 +63,13 @@ export function CompanyBoards() {
             <li key={board.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
               <div>
                 <span className="font-medium">{board.company ?? board.slug}</span>
-                <span className="ml-2 text-xs text-slate-500">
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
                   {ATS_LABELS[board.ats] ?? board.ats}
                   {board.discovered_from === "apply_url" ? " · found automatically" : " · added by hand"}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                {board.open_postings > 0 && <span className="text-xs text-slate-500">{board.open_postings} open</span>}
+                {board.open_postings > 0 && <span className="text-xs text-slate-500 dark:text-slate-400">{board.open_postings} open</span>}
                 {!board.enabled ? (
                   <Badge>Not found</Badge>
                 ) : board.fetched ? (
@@ -82,7 +82,7 @@ export function CompanyBoards() {
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           No boards yet. JobWeaver adds them automatically when a job's apply link points to one.
         </p>
       )}

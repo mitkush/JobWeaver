@@ -15,7 +15,7 @@ export function AiUsage() {
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <caption className="sr-only">AI calls today by provider and model</caption>
-          <thead className="text-xs text-slate-500">
+          <thead className="text-xs text-slate-500 dark:text-slate-400">
             <tr>
               <th scope="col" className="px-6 py-2 font-medium">Provider and model</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Calls today</th>
@@ -29,7 +29,7 @@ export function AiUsage() {
               return (
                 <tr key={`${m.provider}/${m.model}`}>
                   <th scope="row" className="px-6 py-2 font-normal">
-                    {m.provider} <span className="text-slate-500">{m.model}</span>
+                    {m.provider} <span className="text-slate-500 dark:text-slate-400">{m.model}</span>
                   </th>
                   <td className={cn("px-3 py-2 text-right", near && "font-semibold text-amber-700 dark:text-amber-300")}>
                     {m.calls_today}
@@ -45,8 +45,8 @@ export function AiUsage() {
       {usage.data.tasks_last_7_days.length > 0 && (
         <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
           <table className="w-full text-left text-sm">
-            <caption className="px-6 pt-4 text-left text-xs font-medium text-slate-500">Last 7 days by task</caption>
-            <thead className="text-xs text-slate-500">
+            <caption className="px-6 pt-4 text-left text-xs font-medium text-slate-500 dark:text-slate-400">Last 7 days by task</caption>
+            <thead className="text-xs text-slate-500 dark:text-slate-400">
               <tr>
                 <th scope="col" className="px-6 py-2 font-medium">Task</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Calls</th>

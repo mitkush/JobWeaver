@@ -149,7 +149,7 @@ export function JobPage() {
           </div>
           {data.contact_email && (
             <p className="mt-2 flex items-center gap-1.5 text-sm">
-              <Mail className="size-4 text-slate-500" aria-hidden />
+              <Mail className="size-4 text-slate-500 dark:text-slate-400" aria-hidden />
               {data.contact_email}
             </p>
           )}

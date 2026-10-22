@@ -42,13 +42,13 @@ export function ChipInput({
           {values.map((value) => (
             <li
               key={value}
-              className="inline-flex items-center gap-1 rounded-full bg-brand-50 py-1 pl-3 pr-1 text-sm text-brand-700 dark:bg-brand-600/20 dark:text-brand-100"
+              className="inline-flex items-center gap-1 rounded-sm bg-brand-50 py-1 pr-1 pl-2.5 text-sm text-brand-700 ring-1 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-200 dark:ring-brand-500/40"
             >
               {value}
               <button
                 type="button"
                 onClick={() => onChange(values.filter((v) => v !== value))}
-                className="rounded-full p-0.5 hover:bg-brand-100 dark:hover:bg-brand-600/30"
+                className="rounded-sm p-0.5 hover:bg-brand-100 dark:hover:bg-brand-500/25"
                 aria-label={`Remove ${value}`}
               >
                 <X className="size-3.5" aria-hidden />

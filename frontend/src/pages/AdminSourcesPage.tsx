@@ -27,7 +27,7 @@ function RecentRuns() {
       {runs.isError && <Alert tone="error">{runs.error.message}</Alert>}
       <div key={page} className="max-h-96 overflow-auto" role="region" aria-label="Recent fetch runs" tabIndex={0}>
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-xs text-slate-500 dark:bg-slate-900">
+          <thead className="sticky top-0 bg-white text-xs text-slate-500 dark:text-slate-400 dark:bg-slate-900">
             <tr>
               <th className="px-6 py-2 font-medium">When</th>
               <th className="px-3 py-2 font-medium">Source</th>
@@ -63,14 +63,14 @@ function RecentRuns() {
               </tr>
             ))}
             {!runs.isPending && !runs.isError && items.length === 0 && (
-              <tr><td colSpan={6} className="px-6 py-4 text-slate-500">No fetch runs found.</td></tr>
+              <tr><td colSpan={6} className="px-6 py-4 text-slate-500 dark:text-slate-400">No fetch runs found.</td></tr>
             )}
           </tbody>
         </table>
       </div>
       <nav aria-label="Recent runs pagination" className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
         <Button variant="secondary" size="sm" disabled={page === 0 || runs.isFetching} onClick={() => setPage(page - 1)}>Previous</Button>
-        <span className="text-sm text-slate-500" aria-live="polite">Page {page + 1}</span>
+        <span className="text-sm text-slate-500 dark:text-slate-400" aria-live="polite">Page {page + 1}</span>
         <Button variant="secondary" size="sm" disabled={!hasNext || runs.isFetching} onClick={() => setPage(page + 1)}>Next</Button>
       </nav>
     </Card>
