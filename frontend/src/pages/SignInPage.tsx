@@ -27,7 +27,7 @@ function DevLogin() {
       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Local development only</p>
       <div className="flex gap-2">
         <Input value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Dev email" />
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" className="whitespace-nowrap">
           Dev sign-in
         </Button>
       </div>

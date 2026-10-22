@@ -50,7 +50,7 @@ export function ConfirmDialog({
         </h2>
         <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{children}</div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
+      <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>

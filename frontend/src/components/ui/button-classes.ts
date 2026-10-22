@@ -13,15 +13,17 @@ export const variants = {
     "clip-corner bg-red-600 text-white hover:bg-red-700 disabled:bg-red-600/60 focus-visible:outline-offset-[-4px] focus-visible:outline-white",
 };
 
+// Minimum heights, not fixed ones: in a narrow container a long label wraps inside the
+// button and the button grows, instead of overflowing or clipping its neighbours.
 export const sizes = {
-  sm: "h-8 px-3 text-[11px]",
-  md: "h-10 px-4 text-xs",
-  lg: "h-11 px-6 text-sm",
+  sm: "min-h-8 px-3 py-1 text-[11px]",
+  md: "min-h-10 px-4 py-2 text-xs",
+  lg: "min-h-11 px-6 py-2.5 text-sm",
 };
 
 export function buttonClasses(variant: keyof typeof variants = "primary", size: keyof typeof sizes = "md") {
   return cn(
-    "inline-flex shrink-0 items-center justify-center gap-2 rounded-sm font-mono whitespace-nowrap font-bold tracking-[0.12em] uppercase transition-[color,background-color,border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60",
+    "inline-flex items-center justify-center gap-2 rounded-sm text-center leading-tight font-mono font-bold tracking-[0.12em] uppercase transition-[color,background-color,border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60",
     variants[variant],
     sizes[size],
   );
