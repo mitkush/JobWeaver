@@ -27,7 +27,7 @@ export function GmailCard({ me, next = "/settings" }: { me: Me; next?: string })
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-start gap-3">
-        <Mail className="mt-0.5 size-5 text-slate-500" aria-hidden />
+        <Mail className="mt-0.5 size-5 text-slate-500 dark:text-slate-400" aria-hidden />
         <div>
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">Gmail</p>

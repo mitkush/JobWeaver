@@ -78,7 +78,7 @@ export function FactRow({
           <>
             <p className="text-sm leading-relaxed">{fact.text}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {fact.group && <span className="text-xs text-slate-500">{fact.group}</span>}
+              {fact.group && <span className="text-xs text-slate-500 dark:text-slate-400">{fact.group}</span>}
               {!fact.in_base_resume && <Badge tone="brand">Not in your resume</Badge>}
               {fact.origin === "user" && <Badge>Added by you</Badge>}
               {fact.edited && fact.origin === "ai" && <Badge>Edited</Badge>}

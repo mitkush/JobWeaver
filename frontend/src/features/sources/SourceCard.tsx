@@ -36,7 +36,7 @@ export function SourceCard({ source }: { source: SourceStatus }) {
               <h2 className="font-semibold">{source.label}</h2>
               {stateBadge(source)}
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {source.mode === "snapshot" ? `Company boards · ${source.boards ?? 0} tracked` : "Search"} ·
               priority {source.priority} · {source.open_postings.toLocaleString()} open postings
             </p>
@@ -69,15 +69,15 @@ export function SourceCard({ source }: { source: SourceStatus }) {
 
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-xs text-slate-500">Last success</dt>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">Last success</dt>
             <dd>{fromNow(source.last_success_at)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">Next run</dt>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">Next run</dt>
             <dd>{source.next_run_at ? fromNow(source.next_run_at) : "not scheduled"}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">Manual runs left today</dt>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">Manual runs left today</dt>
             <dd>{source.manual_runs_left}</dd>
           </div>
         </dl>
@@ -97,7 +97,7 @@ export function SourceCard({ source }: { source: SourceStatus }) {
         )}
         {source.budget && <BudgetMeter budget={source.budget} />}
         {source.budget && source.shares_budget_with.length > 0 && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             Shares this allowance with {source.shares_budget_with.join(", ")}.
           </p>
         )}

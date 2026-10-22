@@ -115,7 +115,7 @@ function SummarySlot({ current }: { current?: DocumentInfo }) {
           Save summary
         </Button>
         {text.trim().length > 0 && text.trim().length < 20 && (
-          <span className="text-xs text-slate-500">At least 20 characters</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">At least 20 characters</span>
         )}
       </div>
       {save.isSuccess && <Changes result={save.data} />}

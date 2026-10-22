@@ -41,7 +41,7 @@ export function DraftEditor({ content, part, facts, onChange, disabled }: {
               Title line
             </label>}
             <div className="flex gap-1">
-              {line.manual && <span className="self-center text-xs text-slate-500">Your edit</span>}
+              {line.manual && <span className="self-center text-xs text-slate-500 dark:text-slate-400">Your edit</span>}
               <Button size="sm" variant="ghost" aria-label={`Move line ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp className="size-4" /></Button>
               <Button size="sm" variant="ghost" aria-label={`Move line ${index + 1} down`} disabled={disabled || index === lines.length - 1} onClick={() => move(index, 1)}><ArrowDown className="size-4" /></Button>
               <Button size="sm" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={disabled || (part !== "email_body" && lines.length === 1)} onClick={() => update(lines.filter((_, i) => i !== index))}><Trash2 className="size-4" /></Button>

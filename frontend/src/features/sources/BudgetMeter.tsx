@@ -22,9 +22,9 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
       <p className="text-xs font-medium">
         {live ? `Account credits - ${account.account_label ?? "Primary account"}` : "JobWeaver tracked usage (estimate)"}
       </p>
-      {budget.tracked_account && <p className="text-xs text-slate-500">Tracked search costs: {budget.tracked_account}</p>}
+      {budget.tracked_account && <p className="text-xs text-slate-500 dark:text-slate-400">Tracked search costs: {budget.tracked_account}</p>}
       {account?.accounts && account.accounts.length > 1 && (
-        <ul className="text-xs text-slate-500">
+        <ul className="text-xs text-slate-500 dark:text-slate-400">
           {account.accounts.map((a) => (
             <li key={a.label}>
               {a.label}: {a.paused_until && `paused until ${new Date(a.paused_until).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })} UTC; `}{a.status === "live" ? `${a.remaining?.toLocaleString()} ${account.unit} available` : "account allowance and remaining credits unknown"}
@@ -42,7 +42,7 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
             ? `${spent.toLocaleString()} ${budget.unit} tracked; account credits unknown`
             : `${spent.toLocaleString()} / ${allowance.toLocaleString()} ${live ? account.unit : budget.unit}`}
         </span>
-        {!unknown && <span className="text-xs text-slate-500">
+        {!unknown && <span className="text-xs text-slate-500 dark:text-slate-400">
           {live ? "renews" : "estimated renewal"} {shortDate(live ? account.renews_on! : budget.renews_on)}
         </span>}
       </div>
@@ -57,14 +57,14 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
         <div className={cn("h-full rounded-full", tone)} style={{ width: `${used * 100}%` }} />
       </div>}
       {live && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
           {account.remaining!.toLocaleString()} {account.unit} available for searches.
           {" "}Checked {new Date(account.checked_at!).toLocaleString()}.
           {" "}{account.message}
         </p>
       )}
       {!account && (
-        <p className={cn("text-xs", projectedOver ? "text-amber-700 dark:text-amber-300" : "text-slate-500")}>
+        <p className={cn("text-xs", projectedOver ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400")}>
           {used >= 1
             ? "Tracked allowance used up. This source pauses until it renews."
             : budget.runs_out_on
@@ -73,7 +73,7 @@ export function BudgetMeter({ budget }: { budget: Budget }) {
         </p>
       )}
       {live && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
           JobWeaver tracked usage: {budget.spent.toLocaleString()} {budget.unit}.
           {" "}Search costs below exclude activity outside JobWeaver.
         </p>

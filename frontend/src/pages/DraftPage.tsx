@@ -32,7 +32,7 @@ export function DraftPage() {
   if (draft.isPending) return <PageSpinner />;
   if (draft.isError) return <Alert tone="error" title="Draft could not load">{draft.error.message}</Alert>;
   if (draft.data.state === "failed") return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Draft generation stopped</h1><Alert tone="warning">{draft.data.error}</Alert><Button loading={actions.retry.isPending} onClick={() => void actions.retry.mutate()}>Retry generation</Button>{actions.retry.isError && <Alert tone="error">{actions.retry.error.message}</Alert>}</Card>;
-  if (!draft.data.version) return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Preparing your Draft</h1><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
+  if (!draft.data.version) return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Preparing your Draft</h1><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500 dark:text-slate-400">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
   return <DraftWorkspace draft={draft.data} key={draftId} />;
 }
 
@@ -197,16 +197,16 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
             <Field label="Greeting name (blank: Hiring Team)" htmlFor="email-greeting"><Input id="email-greeting" value={content.email_greeting ?? ""} maxLength={100} onChange={(event) => setContent({ ...content, email_greeting: event.target.value })} disabled={busy} /></Field>
           </div>}
           <DraftEditor content={content} part={part} facts={current.facts} onChange={setContent} disabled={busy} />
-          <div className="flex flex-wrap items-center gap-3"><Button variant="primary" loading={actions.save.isPending} disabled={busy || !dirty || stale} onClick={() => void save()}>Save draft</Button><span className="text-xs text-slate-500">{dirty ? "Unsaved edits. Save before downloading or opening Gmail." : "Saved in JobWeaver. Nothing has been sent."}</span></div>
+          <div className="flex flex-wrap items-center gap-3"><Button variant="primary" loading={actions.save.isPending} disabled={busy || !dirty || stale} onClick={() => void save()}>Save draft</Button><span className="text-xs text-slate-500 dark:text-slate-400">{dirty ? "Unsaved edits. Save before downloading or opening Gmail." : "Saved in JobWeaver. Nothing has been sent."}</span></div>
           <details><summary className="cursor-pointer text-sm font-medium">Base Resume</summary><pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-600 dark:text-slate-400">{draft.base_resume || "No Base Resume text is available."}</pre></details>
           <Button variant="ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide diff and versions" : "Show diff and versions"}</Button>
           {showDiff && <section className="space-y-3" aria-label="Diff and versions">
             <Field label="Compare against" htmlFor="compare-version"><Select id="compare-version" value={compare} onChange={(event) => setCompare(event.target.value)}><option value="base">Base Resume</option>{versions.data?.map((version) => <option key={version.number} value={version.number}>Version {version.number} · {version.source}</option>)}</Select></Field>
             {compare === "base" ? <>
               {diff.isError && <Alert tone="error">{diff.error.message}</Alert>}
-              {diff.data?.map((line, i) => <div key={i} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{DIFF_LABELS[line.kind]}</Badge><p className="mt-2">{line.text}</p>{line.kind === "rewritten" && <p className="mt-1 text-xs text-slate-500">Before: {line.before?.join(" · ")}</p>}<p className="mt-1 text-xs text-slate-500">Trace: {line.fact_refs.join(", ")}</p></div>)}
+              {diff.data?.map((line, i) => <div key={i} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{DIFF_LABELS[line.kind]}</Badge><p className="mt-2">{line.text}</p>{line.kind === "rewritten" && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Before: {line.before?.join(" · ")}</p>}<p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Trace: {line.fact_refs.join(", ")}</p></div>)}
             </> : selected && <>
-              {(content[part] ?? []).map((line, index) => <div key={line.id ?? index} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{!prior.has(line.id) ? "Added" : prior.get(line.id) !== line.text ? "Rewritten" : movedLines.has(index) ? "Reordered" : "Unchanged"}</Badge><p className="mt-1">{line.text}</p>{prior.get(line.id) !== line.text && prior.has(line.id) && <p className="text-xs text-slate-500">Before: {prior.get(line.id)}</p>}</div>)}
+              {(content[part] ?? []).map((line, index) => <div key={line.id ?? index} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{!prior.has(line.id) ? "Added" : prior.get(line.id) !== line.text ? "Rewritten" : movedLines.has(index) ? "Reordered" : "Unchanged"}</Badge><p className="mt-1">{line.text}</p>{prior.get(line.id) !== line.text && prior.has(line.id) && <p className="text-xs text-slate-500 dark:text-slate-400">Before: {prior.get(line.id)}</p>}</div>)}
               {oldLines.filter((line) => !(content[part] ?? []).some((entry) => entry.id === line.id)).map((line, index) => <p key={line.id ?? index} className="text-sm"><Badge>Removed</Badge> {line.text}</p>)}
               <Button variant="secondary" disabled={busy || dirty || stale} onClick={() => void restore(selected.number)}>Restore version {selected.number}</Button>
             </>}
@@ -217,18 +217,18 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
             <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
-            {!dirty && !stale ? <div className="flex flex-wrap gap-2">{(["resume", "cover_letter"] as const).map((kind) => { const label = kind === "resume" ? "Resume" : "Cover Letter"; return <span key={kind} className="inline-flex gap-1"><Button variant="secondary" size="sm" loading={downloading === `preview-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "preview")}>Preview {label}</Button><Button variant="secondary" size="sm" loading={downloading === `download-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "download")} aria-label={`Download ${label} PDF`}>{label} PDF</Button></span>; })}</div> : <p className="text-xs text-slate-500">Save your edits to download PDFs.</p>}
+            {!dirty && !stale ? <div className="flex flex-wrap gap-2">{(["resume", "cover_letter"] as const).map((kind) => { const label = kind === "resume" ? "Resume" : "Cover Letter"; return <span key={kind} className="inline-flex gap-1"><Button variant="secondary" size="sm" loading={downloading === `preview-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "preview")}>Preview {label}</Button><Button variant="secondary" size="sm" loading={downloading === `download-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "download")} aria-label={`Download ${label} PDF`}>{label} PDF</Button></span>; })}</div> : <p className="text-xs text-slate-500 dark:text-slate-400">Save your edits to download PDFs.</p>}
             {downloadError && <Alert tone="error" title="The PDF could not be made">{downloadError}</Alert>}
             {preview && <PdfPreview file={preview} onClose={() => setPreview(null)} />}
             {hasEmail ? <>
               <Field label="Recipient" htmlFor="draft-recipient"><Input id="draft-recipient" type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} /></Field>
               <Button className="w-full" disabled={dirty || stale || busy || !recipient.trim()} loading={outwardBusy} onClick={() => void prepareHandoff()}>Open in Gmail</Button>
-            </> : draft.job.apply_url ? <a className={buttonClasses("primary") + " w-full"} href={String(draft.job.apply_url)} target="_blank" rel="noreferrer noopener">Open apply link</a> : <p className="text-sm text-slate-500">This Job has no apply link.</p>}
+            </> : draft.job.apply_url ? <a className={buttonClasses("primary") + " w-full"} href={String(draft.job.apply_url)} target="_blank" rel="noreferrer noopener">Open apply link</a> : <p className="text-sm text-slate-500 dark:text-slate-400">This Job has no apply link.</p>}
             <Button className="w-full" variant={hasEmail ? "secondary" : "primary"} disabled={busy || dirty || stale || applied} loading={actions.applied.isPending} onClick={async () => {
               try { await actions.applied.mutateAsync(current.number); toast("success", "Marked as applied"); }
               catch (failure) { setError((failure as Error).message); }
             }}>{applied ? statusLabel(draft.application_status!) : "Mark as applied"}</Button>
-            <p className="text-xs text-slate-500">{hasEmail ? "You review and send from Gmail. JobWeaver only creates a draft." : "Download your PDFs, apply on the company site, then mark this Job as applied."}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{hasEmail ? "You review and send from Gmail. JobWeaver only creates a draft." : "Download your PDFs, apply on the company site, then mark this Job as applied."}</p>
           </Card>
         </div>
       </div>

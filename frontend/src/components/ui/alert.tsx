@@ -25,10 +25,10 @@ export function Alert({
 }) {
   const { icon: Icon, cls } = tones[tone];
   return (
-    <div role={tone === "error" ? "alert" : "status"} className={cn("flex gap-3 rounded-lg border p-4 text-sm", cls, className)}>
+    <div role={tone === "error" ? "alert" : "status"} className={cn("flex gap-3 rounded-md border border-l-4 p-4 text-sm", cls, className)}>
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="flex-1">
-        {title && <p className="font-medium">{title}</p>}
+        {title && <p className="font-mono text-xs font-bold tracking-wider uppercase">{title}</p>}
         {children && <div className={cn(title && "mt-1")}>{children}</div>}
       </div>
       {action}

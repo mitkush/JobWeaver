@@ -1,18 +1,27 @@
 import { cn } from "@/lib/cn";
 
+// Mono, uppercase, tracked labels with a cut corner on solid buttons (onebrain.run style).
+// Focus outlines sit inside the button so the corner cut cannot clip them.
 export const variants = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700 shadow-sm disabled:bg-brand-600/60",
+  primary:
+    "clip-corner bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-600/60 focus-visible:outline-offset-[-4px] focus-visible:outline-white dark:bg-brand-500 dark:text-slate-950 dark:hover:bg-brand-400 dark:shadow-[0_0_24px_-6px_rgb(255_45_146/0.6)] dark:focus-visible:outline-slate-950",
   secondary:
-    "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800",
-  ghost: "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-  danger: "bg-red-600 text-white hover:bg-red-700 shadow-sm disabled:bg-red-600/60",
+    "border border-slate-300 bg-white/80 text-slate-800 hover:border-brand-500 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-accent-400 dark:hover:text-accent-300",
+  ghost:
+    "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-white",
+  danger:
+    "clip-corner bg-red-600 text-white hover:bg-red-700 disabled:bg-red-600/60 focus-visible:outline-offset-[-4px] focus-visible:outline-white",
 };
 
-export const sizes = { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-11 px-5 text-base" };
+export const sizes = {
+  sm: "h-8 px-3 text-[11px]",
+  md: "h-10 px-4 text-xs",
+  lg: "h-11 px-6 text-sm",
+};
 
 export function buttonClasses(variant: keyof typeof variants = "primary", size: keyof typeof sizes = "md") {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-sm font-mono whitespace-nowrap font-bold tracking-[0.12em] uppercase transition-[color,background-color,border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60",
     variants[variant],
     sizes[size],
   );
