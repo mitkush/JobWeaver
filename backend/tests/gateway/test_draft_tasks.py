@@ -69,6 +69,25 @@ async def test_draft_generation_falls_back_and_records_usage(alice):
     assert len(gemini.calls) == 1 and len(groq.calls) == 1
 
 
+async def test_groq_draft_requests_fit_its_tokens_per_minute_limit(alice):
+    """The production failure on 21 Oct 2026: 8,192 output tokens plus the draft prompt
+    asked Groq for 10,861 tokens against an 8,000 limit, so every Groq draft got HTTP 413."""
+    from app.gateway.live import CHARS_PER_TOKEN, TOKEN_MARGIN
+
+    user, _ = alice
+    raw = json.loads(
+        (Path(get_settings().gateway_recorded_dir) / "tailor_draft" / "success.json").read_text()
+    )["output"]
+    groq = FakeClient("groq", [raw])
+    gateway = LiveAIGateway({"groq": groq}, UsageLedger(get_sessionmaker()))
+    body = request(user.id)
+    await gateway.tailor_draft(body)
+    prompt = (len(prompts.TAILOR_DRAFT_SYSTEM) + len(prompts.draft_user(body))) // CHARS_PER_TOKEN
+    [budget] = groq.output_budgets
+    assert 1024 <= budget < 8192
+    assert prompt + budget + TOKEN_MARGIN <= 8000
+
+
 def test_prompt_uses_short_refs_and_delimits_untrusted_data():
     body = request(uuid.uuid4())
     rendered = prompts.draft_user(body)

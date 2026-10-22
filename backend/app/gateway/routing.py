@@ -39,6 +39,14 @@ DAILY_QUOTAS: dict[tuple[str, str], int] = {
     ("gemini", GEMINI_EMBEDDING): 900,
 }
 
+# Tokens per minute on the free tiers. Groq counts the prompt plus the requested output
+# ceiling (max_tokens) against this before running a request, and rejects it with HTTP 413
+# if the sum is over: on 21 Oct 2026, 15 of 21 Groq draft attempts failed that way
+# ("Limit 8000, Requested 10861") because 8,192 output tokens alone exceed the limit.
+TOKENS_PER_MINUTE: dict[tuple[str, str], int] = {
+    ("groq", GROQ_LARGE): 8000,
+}
+
 ROUTING_TABLE: dict[str, list[Route]] = {
     "tailor_draft": [
         Route("gemini", GEMINI_FLASH, timeout_seconds=20),
