@@ -42,7 +42,7 @@ export function ConfirmDialog({
         onCancel();
       }}
       aria-labelledby="confirm-title"
-      className="fixed inset-0 m-auto w-[min(28rem,calc(100%-2rem))] rounded-md border border-slate-200 bg-white p-0 text-slate-900 shadow-xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-brand-500/30 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_0_48px_-12px_rgb(255_45_146/0.45)]"
+      className="fixed inset-0 m-auto w-[min(28rem,calc(100%-2rem))] rounded-md border border-slate-200 bg-white p-0 text-slate-900 shadow-xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-brand-500/30 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_0_48px_-12px_color-mix(in_srgb,var(--jw-500)_45%,transparent)]"
     >
       <div className="p-6">
         <h2 id="confirm-title" className="font-display text-base font-bold tracking-wide uppercase">

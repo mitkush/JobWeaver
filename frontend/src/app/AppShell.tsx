@@ -1,6 +1,6 @@
 import { Briefcase, LogOut, Moon, Sun } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "@/api/client";
 import { useSignOut } from "@/api/hooks";
@@ -8,7 +8,28 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
 import { gmailConnectHref } from "@/features/gmail/links";
+import { accentFor } from "@/lib/accent";
 import { cn } from "@/lib/cn";
+
+/** Sets the page accent on <html>, which re-tints every brand-* class and the glow. */
+function usePageAccent() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.documentElement.dataset.accent = accentFor(pathname);
+  }, [pathname]);
+}
+
+/** "[ FEED ]": brackets mark the active item, as on onebrain.run. They are hidden from
+ * screen readers, which already announce the current page. */
+function NavLabel({ label, active }: { label: string; active: boolean }) {
+  return (
+    <>
+      <span aria-hidden className={cn("mr-1.5", !active && "invisible")}>[</span>
+      {label}
+      <span aria-hidden className={cn("ml-1.5", !active && "invisible")}>]</span>
+    </>
+  );
+}
 
 const NAV = [
   { to: "/feed", label: "Feed" },
@@ -62,33 +83,34 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
   const navigate = useNavigate();
   const onboarding = me.onboarding.next_step !== "done";
   const nav = me.role === "admin" ? [...NAV, { to: "/admin/sources", label: "Sources" }] : NAV;
+  usePageAccent();
 
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-10">
           <Logo />
           {!onboarding && (
-            <nav aria-label="Main" className="hidden gap-1 sm:flex">
+            <nav aria-label="Main" className="hidden flex-1 justify-center gap-2 lg:gap-5 md:flex">
               {nav.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      "border-b-2 px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-[0.16em] uppercase transition-colors",
+                      "py-1.5 font-mono text-[11px] font-bold tracking-[0.24em] whitespace-nowrap uppercase transition-colors",
                       isActive
-                        ? "border-brand-500 text-slate-900 dark:border-accent-400 dark:text-accent-300 neon-cyan"
-                        : "border-transparent text-slate-600 hover:text-brand-700 dark:text-slate-400 dark:hover:text-white",
+                        ? "text-accent-700 dark:text-accent-300 neon-cyan"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white",
                     )
                   }
                 >
-                  {item.label}
+                  {({ isActive }) => <NavLabel label={item.label} active={isActive} />}
                 </NavLink>
               ))}
             </nav>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden font-mono text-[11px] text-slate-600 md:inline dark:text-slate-400">{me.email}</span>
             <ThemeToggle />
             <Button
@@ -105,50 +127,52 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
           </div>
         </div>
         {!onboarding && (
-          <nav aria-label="Main mobile" className="flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden">
+          <nav aria-label="Main mobile" className="flex gap-4 overflow-x-auto px-4 pb-2 md:hidden">
             {nav.map((item) => (
-              <NavLink key={item.to} to={item.to} className="border-b-2 border-transparent px-2.5 py-1 font-mono text-[11px] font-bold tracking-[0.14em] whitespace-nowrap uppercase aria-[current=page]:border-brand-500 dark:aria-[current=page]:border-accent-400 dark:aria-[current=page]:text-accent-300">
-                {item.label}
+              <NavLink key={item.to} to={item.to} className="py-1 font-mono text-[11px] font-bold tracking-[0.18em] whitespace-nowrap text-slate-600 uppercase aria-[current=page]:text-accent-700 dark:text-slate-400 dark:aria-[current=page]:text-accent-300">
+                {({ isActive }) => <NavLabel label={item.label} active={isActive} />}
               </NavLink>
             ))}
           </nav>
         )}
-        {/* A thin pink-to-cyan line under the header, as on onebrain.run. */}
+        {/* A thin accent-to-cyan line under the header. */}
         <div aria-hidden className="h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent dark:via-brand-500 dark:to-accent-400/60" />
         <GmailBanner me={me} />
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-10 lg:py-12">{children}</main>
     </div>
   );
 }
 
-/** "// fact_bank": the mono eyebrow onebrain.run puts above each section. */
+/** "● JOBWEAVER // FACT_BANK": the boxed eyebrow onebrain.run puts above each section. */
 function eyebrowFor(title: string) {
-  return `// ${title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
 
-/** Display heading: the last word in neon pink, like "UNIFIED INTELLIGENCE". The words
- * stay one text node apart so the heading's accessible name is unchanged. */
+/** Display heading with the last word in the page accent: outlined and glowing in the
+ * dark theme, like "SECOND BRAIN." A single-word title stays solid so it reads clearly.
+ * The words stay one text node apart, so the accessible name is unchanged. */
 export function DisplayTitle({ title, className }: { title: string; className?: string }) {
   const words = title.trim().split(/\s+/);
   const last = words.pop() ?? "";
   return (
-    <h1 className={cn("font-display text-3xl leading-none font-bold tracking-tight uppercase italic sm:text-4xl", className)}>
+    <h1 className={cn("font-display text-4xl leading-[0.95] font-bold tracking-tight uppercase italic sm:text-5xl", className)}>
       {words.length > 0 && <>{words.join(" ")} </>}
-      <span className="text-brand-600 dark:text-brand-500 neon-text">{last}</span>
+      <span className={cn("text-brand-600 dark:text-brand-500", words.length > 0 ? "outline-text" : "neon-text")}>{last}</span>
     </h1>
   );
 }
 
 export function PageHeader({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="eyebrow mb-2" aria-hidden>
-          {eyebrowFor(title)}
+        <p className="eyebrow eyebrow-box mb-5" aria-hidden>
+          <span className="size-1.5 rounded-full bg-brand-600 dark:bg-brand-500" />
+          jobweaver <span className="text-slate-400 dark:text-slate-500">//</span> {eyebrowFor(title)}
         </p>
         <DisplayTitle title={title} />
-        {description && <p className="mt-3 max-w-2xl text-sm text-slate-600 dark:text-slate-400">{description}</p>}
+        {description && <p className="mt-4 max-w-3xl font-mono text-sm leading-relaxed text-slate-600 dark:text-slate-400">{description}</p>}
       </div>
       {action}
     </div>

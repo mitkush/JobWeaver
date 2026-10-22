@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 // Focus outlines sit inside the button so the corner cut cannot clip them.
 export const variants = {
   primary:
-    "clip-corner bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-600/60 focus-visible:outline-offset-[-4px] focus-visible:outline-white dark:bg-brand-500 dark:text-slate-950 dark:hover:bg-brand-400 dark:shadow-[0_0_24px_-6px_rgb(255_45_146/0.6)] dark:focus-visible:outline-slate-950",
+    "clip-corner bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-600/60 focus-visible:outline-offset-[-4px] focus-visible:outline-white dark:bg-brand-500 dark:text-slate-950 dark:hover:bg-brand-400 dark:shadow-[0_0_24px_-6px_color-mix(in_srgb,var(--jw-500)_60%,transparent)] dark:focus-visible:outline-slate-950",
   secondary:
     "border border-slate-300 bg-white/80 text-slate-800 hover:border-brand-500 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-accent-400 dark:hover:text-accent-300",
   ghost:
