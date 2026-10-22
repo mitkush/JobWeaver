@@ -83,7 +83,7 @@ export function SignInPage() {
   const googleError = googleErrorMessage(params.get("google_error"));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-6">
+    <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 font-display text-lg font-bold tracking-wide uppercase italic">
           <span className="clip-corner bg-brand-600 p-1.5 text-white dark:bg-brand-500 dark:text-slate-950">
@@ -97,10 +97,10 @@ export function SignInPage() {
       </div>
       <div className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[1.15fr_1fr]">
         <div>
-          <p className="eyebrow inline-block border border-brand-500/40 px-2 py-1">› jobweaver // every_genuine_job</p>
+          <p className="eyebrow eyebrow-box"><span className="size-1.5 rounded-full bg-brand-600 dark:bg-brand-500" aria-hidden />jobweaver // every_genuine_job</p>
           <h1 className="mt-5 font-display text-5xl leading-[0.95] font-bold tracking-tight uppercase italic sm:text-6xl">
             Every genuine job,{" "}
-            <span className="text-brand-600 dark:text-brand-500 neon-text">one card each.</span>
+            <span className="text-brand-600 outline-text dark:text-brand-500">one card each.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base text-slate-700 dark:text-slate-300">
             JobWeaver finds jobs across many sites, groups the duplicates, and prepares a{" "}

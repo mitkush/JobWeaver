@@ -209,7 +209,7 @@ export function FeedPage() {
               : "No apply-link-only jobs here."}
         </p>
       ) : (
-        <div className="space-y-3" aria-busy={shown.isFetching || undefined}>
+        <div className="grid items-start gap-4 xl:grid-cols-2" aria-busy={shown.isFetching || undefined}>
           {data?.items.map((job) => <JobCard key={job.job_id} job={job} />)}
         </div>
       )}
