@@ -19,6 +19,7 @@ from app.gateway.routing import (
     EMBEDDING_DIMENSIONS,
     GEMINI_EMBEDDING,
     ROUTING_TABLE,
+    TOKENS_PER_MINUTE,
     Route,
 )
 from app.gateway.schemas import (
@@ -44,8 +45,50 @@ T = TypeVar("T", bound=BaseModel)
 BUSY_RETRY_WITHIN = 5.0
 
 
+# Characters per token used to estimate a prompt's size. English and JSON average about
+# four; three over-estimates, so the output budget errs small rather than over the limit.
+CHARS_PER_TOKEN = 3
+# Headroom for the chat template and message framing the provider adds.
+TOKEN_MARGIN = 256
+# Below this, a reply cannot hold a Draft or a parse result: skip the route instead.
+MIN_OUTPUT_TOKENS = 1024
+TOO_LARGE = "request exceeded this provider's token limit"
+
+
 def route_of(route: Route) -> tuple[str, str]:
     return route.provider, route.model
+
+
+def output_budget(route: Route, system: str, user: str) -> int | None:
+    """The output ceiling to request: the route's own, lowered so prompt plus ceiling fit
+    the provider's tokens-per-minute limit. None when even a minimal reply cannot fit."""
+    limit = TOKENS_PER_MINUTE.get(route_of(route))
+    if limit is None:
+        return route.max_output_tokens
+    prompt = math.ceil((len(system) + len(user)) / CHARS_PER_TOKEN)
+    budget = min(route.max_output_tokens, limit - prompt - TOKEN_MARGIN)
+    return budget if budget >= MIN_OUTPUT_TOKENS else None
+
+
+def _failure_summary(exc: GatewayError) -> str:
+    """Provider diagnostics stay in the logs; users see a compact, safe summary. Raw
+    provider text can include account details such as an organisation id."""
+    message = exc.message.lower()
+    if isinstance(exc, ProviderBusy):
+        return "temporarily overloaded"
+    if "http 413" in message or "request too large" in message:
+        return TOO_LARGE
+    if "rate limit or quota exceeded" in message:
+        return "rate-limited or quota exhausted"
+    if "unavailable for free" in message:
+        return "model is unavailable on this provider tier"
+    if "daily quota reached" in message:
+        return "daily quota reached"
+    if "not configured" in message:
+        return "not configured"
+    if "timed out" in message:
+        return "timed out"
+    return "request failed (details recorded in server logs)"
 
 
 class LiveAIGateway(BaseAIGateway):
@@ -164,13 +207,21 @@ class LiveAIGateway(BaseAIGateway):
             if quota is not None and used >= quota:
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
                 continue
+            budget = output_budget(route, system, user)
+            if budget is None:
+                # Sending it would only earn an HTTP 413; try the next provider at once.
+                logger.warning(
+                    "AI route %s/%s skipped for %s: prompt too large", *route_of(route), task
+                )
+                failures.append(f"{route.provider}/{route.model}: {TOO_LARGE}")
+                continue
             try:
                 try:
                     async with asyncio.timeout(route.timeout_seconds):
                         started = self.clock()
                         try:
                             completion = await client.complete_json(
-                                route.model, system, user, route.max_output_tokens
+                                route.model, system, user, budget
                             )
                         except ProviderBusy as exc:
                             # Retry only a quick refusal, and keep the retry inside this
@@ -182,7 +233,7 @@ class LiveAIGateway(BaseAIGateway):
                             )
                             await self.sleep(self.busy_retry_delay)
                             completion = await client.complete_json(
-                                route.model, system, user, route.max_output_tokens
+                                route.model, system, user, budget
                             )
                 except TimeoutError as exc:
                     raise GatewayError(
@@ -204,7 +255,7 @@ class LiveAIGateway(BaseAIGateway):
                     model=route.model,
                     outcome="error",
                 )
-                failures.append(f"{route.provider}/{route.model}: {exc.message}")
+                failures.append(f"{route.provider}/{route.model}: {_failure_summary(exc)}")
                 continue
             await self.ledger.record(
                 user_id=user_id,

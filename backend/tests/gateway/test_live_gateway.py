@@ -39,9 +39,11 @@ class FakeClient:
         self.name = name
         self.outputs = outputs
         self.calls: list[str] = []
+        self.output_budgets: list[int] = []
 
     async def complete_json(self, model, system, user, max_output_tokens):
         self.calls.append(model)
+        self.output_budgets.append(max_output_tokens)
         output = self.outputs.pop(0)
         if isinstance(output, Exception):
             raise output
@@ -186,7 +188,7 @@ async def test_failures_log_each_providers_own_reason(db, caplog):
         "openrouter", "https://or.test", "k", httpx.AsyncClient(transport=httpx.MockTransport(gone))
     )
     gateway = LiveAIGateway({"openrouter": client}, UsageLedger(get_sessionmaker()))
-    with pytest.raises(GatewayError, match="unavailable for free"):
+    with pytest.raises(GatewayError, match="model is unavailable on this provider tier"):
         await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
     assert "openrouter returned HTTP 404: This model is unavailable for free" in caplog.text
 
@@ -212,3 +214,60 @@ async def test_a_slow_busy_answer_falls_through_without_a_retry(db):
     response = await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
     assert response.provider == "groq"
     assert len(gemini.calls) == 1
+
+
+async def test_provider_failure_summary_hides_raw_provider_details(db):
+    """Users see a short reason per provider; raw text with account ids stays in logs."""
+    from app.core.errors import ProviderBusy
+
+    gemini = FakeClient("gemini", [ProviderBusy("gemini is overloaded")] * 2)
+    groq = FakeClient(
+        "groq", [GatewayError("groq HTTP 413: request too large; organization org_private")]
+    )
+    openrouter = FakeClient("openrouter", [GatewayError("rate limit or quota exceeded")])
+    gateway = LiveAIGateway(
+        {"gemini": gemini, "groq": groq, "openrouter": openrouter},
+        UsageLedger(get_sessionmaker()),
+    )
+    with pytest.raises(GatewayError) as raised:
+        await gateway.parse_documents(REQUEST.model_copy(update={"user_id": None}))
+    message = raised.value.message
+    assert "groq/openai/gpt-oss-120b: request exceeded this provider's token limit" in message
+    assert "rate-limited or quota exhausted" in message
+    assert "gemini/gemini-flash-lite-latest: temporarily overloaded" in message
+    assert "org_private" not in message
+
+
+def test_groq_output_budget_fits_its_tokens_per_minute_limit():
+    """Groq counts prompt plus max_tokens against 8,000 a minute (HTTP 413 otherwise)."""
+    from app.gateway.live import CHARS_PER_TOKEN, TOKEN_MARGIN, output_budget
+
+    groq = Route("groq", GROQ_LARGE, 8192)
+    system, user = "s" * 3000, "u" * 9000
+    prompt = (len(system) + len(user)) // CHARS_PER_TOKEN
+    budget = output_budget(groq, system, user)
+    assert budget == 8000 - prompt - TOKEN_MARGIN
+    assert prompt + budget + TOKEN_MARGIN <= 8000
+    # A small prompt still keeps the route's own, lower ceiling.
+    assert output_budget(Route("groq", GROQ_LARGE, 4096), "s", "u") == 4096
+    # Providers without a per-minute limit get the route's ceiling unchanged.
+    assert output_budget(Route("gemini", GEMINI_FLASH, 8192), system, user) == 8192
+
+
+async def test_a_prompt_too_large_for_groq_skips_it_without_a_call(db):
+    gemini = FakeClient("gemini", [GatewayError("gemini is overloaded")])
+    groq = FakeClient("groq", [GOOD])
+    openrouter = FakeClient("openrouter", [GOOD])
+    gateway = LiveAIGateway(
+        {"gemini": gemini, "groq": groq, "openrouter": openrouter},
+        UsageLedger(get_sessionmaker()),
+    )
+    huge = REQUEST.model_copy(
+        update={
+            "user_id": None,
+            "documents": [DocumentInput(kind=DocumentKind.RESUME, text="x" * 30_000)],
+        }
+    )
+    response = await gateway.parse_documents(huge)
+    assert response.provider == "openrouter"
+    assert groq.calls == []
