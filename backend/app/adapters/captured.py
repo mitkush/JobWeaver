@@ -10,6 +10,7 @@ class CapturedAdapter(WindowedSourceAdapter):
     label = "Careers page (captured)"
     priority = 99
     default_enabled = False
+    push_only = True
     disabled_reason = "Added on demand from a careers page through the browser extension."
     per_query = False
 

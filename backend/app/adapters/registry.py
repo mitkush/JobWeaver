@@ -63,4 +63,7 @@ def pool_of(cls: type[SourceAdapter]) -> set[str]:
 
 def run_order() -> list[type[SourceAdapter]]:
     """Each fallback runs after all upstream Sources have had their turn."""
-    return sorted(registered_adapters(), key=lambda cls: (len(upstream_of(cls)), cls.priority))
+    return sorted(
+        (cls for cls in registered_adapters() if not cls.push_only),
+        key=lambda cls: (len(upstream_of(cls)), cls.priority),
+    )

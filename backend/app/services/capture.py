@@ -5,7 +5,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import NormalizedPosting
@@ -14,10 +14,11 @@ from app.adapters.normalize import normalize_company
 from app.adapters.posting_policy import blocked_company
 from app.core.errors import ValidationFailedError
 from app.models.job import Job, UserJob
-from app.models.posting import Posting
+from app.models.posting import Company, Posting
 from app.models.user import User
 from app.schemas.capture import CapturedJobOut, CaptureIn
 from app.services.correspondence import lock_grouping, refresh_jobs, source_priorities
+from app.services.extension_drafts import apply_link_matches
 from app.services.fetching import save_postings
 
 
@@ -27,25 +28,27 @@ async def save(session: AsyncSession, user: User, body: CaptureIn) -> CapturedJo
     # Same transaction lock as grouping: repeated captures cannot create duplicate Jobs,
     # and dedup cannot remove the chosen Job before its personal link is saved.
     await lock_grouping(session)
-    candidates = list(
-        (
-            await session.scalars(
-                select(Job)
-                .outerjoin(Posting, Posting.job_id == Job.id)
-                .where(or_(Job.apply_url == body.url, Posting.apply_url == body.url))
-                .distinct()
-            )
-        ).all()
-    )
+    candidates = (
+        await session.execute(
+            select(Job, Posting.apply_url)
+            .join(Company, Company.id == Job.company_id)
+            .outerjoin(Posting, Posting.job_id == Job.id)
+            .where(Company.normalized_name == normalize_company(body.company))
+        )
+    ).all()
     # Only reuse an unambiguous exact URL AND matching identity. A shared careers index
     # or conflicting advert must not silently attach the wrong Job.
-    matches = [
-        j
-        for j in candidates
+    matches = {
+        j.id: j
+        for j, posting_url in candidates
         if normalize_company(j.company_name) == normalize_company(body.company)
         and " ".join(j.title.casefold().split()) == " ".join(body.title.casefold().split())
-    ]
-    job = matches[0] if len(matches) == 1 else None
+        and any(
+            apply_link_matches(body.url, url) or apply_link_matches(url or "", body.url)
+            for url in (j.apply_url, posting_url)
+        )
+    }
+    job = next(iter(matches.values())) if len(matches) == 1 else None
     matched = job is not None
     now = datetime.now(UTC)
     if job is None:
@@ -62,7 +65,9 @@ async def save(session: AsyncSession, user: User, body: CaptureIn) -> CapturedJo
                     source_job_id=ref,
                     title=body.title,
                     company=body.company,
-                    description=body.description,
+                    # Reviewed/pasted browser text is User-owned, not shared Source data.
+                    # Keep the shared Posting as public identity metadata only.
+                    description="",
                     apply_url=body.url,
                 )
             ],
@@ -99,6 +104,7 @@ async def save(session: AsyncSession, user: User, body: CaptureIn) -> CapturedJo
         "title": body.title,
         "company": body.company,
     }
+    link.page_required_skills = None
     await session.flush()
     return CapturedJobOut(
         job_id=job.id, title=body.title, company=body.company, matched_existing=matched

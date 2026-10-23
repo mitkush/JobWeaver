@@ -18,8 +18,10 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("user_jobs", sa.Column("captured_at", sa.DateTime(timezone=True)))
     op.add_column("user_jobs", sa.Column("page_description", postgresql.JSONB()))
+    op.add_column("user_jobs", sa.Column("page_required_skills", postgresql.ARRAY(sa.String(100))))
 
 
 def downgrade() -> None:
+    op.drop_column("user_jobs", "page_required_skills")
     op.drop_column("user_jobs", "page_description")
     op.drop_column("user_jobs", "captured_at")

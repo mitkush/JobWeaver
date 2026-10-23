@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.adapters.normalize import normalize_city
 from app.adapters.posting_policy import BLOCKED_COMPANIES
@@ -218,7 +219,22 @@ async def _open_jobs(session: AsyncSession, job_ids: Iterable[uuid.UUID] | None 
         Job.work_mode,
         Job.required_skills,
         Job.primary_posting_id,
-    ).where(Job.expired_at.is_(None), _allowed_company())
+    ).where(
+        Job.expired_at.is_(None),
+        _allowed_company(),
+        or_(
+            ~exists().where(
+                Posting.job_id == Job.id,
+                Posting.closed_at.is_(None),
+                Posting.source.in_([cls.name for cls in registered_adapters() if cls.push_only]),
+            ),
+            exists().where(
+                Posting.job_id == Job.id,
+                Posting.closed_at.is_(None),
+                Posting.source.not_in([cls.name for cls in registered_adapters() if cls.push_only]),
+            ),
+        ),
+    )
     if job_ids is not None:
         query = query.where(Job.id.in_(list(job_ids)))
     return (await session.execute(query)).all()
@@ -490,9 +506,14 @@ async def load_user_skills(session: AsyncSession, user: User) -> UserSkills:
     return user_skills((f.text for f in facts if f.kind == FactKind.SKILL), (f.text for f in facts))
 
 
+def _requirements(job: Job, link: UserJob) -> list[str] | None:
+    return link.page_required_skills if link.captured_at is not None else job.required_skills
+
+
 def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, UserJob]]:
     stmt = (
         select(Job, UserJob)
+        .options(defer(UserJob.page_description))
         .join(UserJob, UserJob.job_id == Job.id)
         .where(UserJob.user_id == user.id, Job.expired_at.is_(None), _allowed_company())
     )
@@ -665,11 +686,11 @@ async def list_feed(
             contact_email=job.contact_email,
             apply_url=job.apply_url,
             skill_gaps=None
-            if job.required_skills is None
-            else skill_gaps(job.required_skills, skills),
+            if _requirements(job, link) is None
+            else skill_gaps(_requirements(job, link) or [], skills),
             skill_matches=None
-            if job.required_skills is None
-            else skill_matches(job.required_skills, skills),
+            if _requirements(job, link) is None
+            else skill_matches(_requirements(job, link) or [], skills),
             possible_duplicate=job.id in duplicates,
             hidden=link.hidden_at is not None,
             draft_id=draft_ids.get(job.id),
@@ -804,7 +825,11 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         title=job.title,
         company=job.company_name,
         company_id=job.company_id,
-        description=primary.description if primary else "",
+        description=str(link.page_description["description"])
+        if link.page_description
+        else primary.description
+        if primary
+        else "",
         locations=_locations(job),
         work_mode=job.work_mode,
         posted_at=job.posted_at,
@@ -814,11 +839,13 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
             SourceBadge(name=s, label=labels.get(s, (s, None))[0], site=labels.get(s, (s, None))[1])
             for s in job.sources
         ],
-        required_skills=job.required_skills,
-        skill_gaps=None if job.required_skills is None else skill_gaps(job.required_skills, skills),
+        required_skills=_requirements(job, link),
+        skill_gaps=None
+        if _requirements(job, link) is None
+        else skill_gaps(_requirements(job, link) or [], skills),
         skill_matches=None
-        if job.required_skills is None
-        else skill_matches(job.required_skills, skills),
+        if _requirements(job, link) is None
+        else skill_matches(_requirements(job, link) or [], skills),
         hidden=link.hidden_at is not None,
         expired=job.expired_at is not None,
         postings=[_posting_out(p, labels, job.primary_posting_id) for p in postings],

@@ -485,6 +485,8 @@ class Fetcher:
 
     async def run_source(self, name: str, trigger: str = "schedule") -> SourceOutcome:
         cls = get_adapter_class(name)
+        if cls.push_only:
+            return SourceOutcome(name, "skipped", "This Source only accepts browser captures")
         async with self.sessionmaker() as session:
             source = await self._source_row(session, name)
             if not source.enabled:
@@ -904,6 +906,8 @@ class Fetcher:
 
     async def _claim_manual_run(self, name: str) -> SourceOutcome | None:
         """Counts one manual run; returns a skip outcome when today's limit is reached."""
+        if get_adapter_class(name).push_only:
+            return SourceOutcome(name, "skipped", "This Source only accepts browser captures")
         today = self.clock().date().isoformat()
         async with self.sessionmaker() as session:
             source = await self._source_row(session, name)

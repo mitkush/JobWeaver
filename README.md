@@ -79,6 +79,13 @@ the advert/form tab and choose **Use this Draft** once generation finishes. On a
 Job, your reviewed page text is personal and never replaces the shared Source description.
 Creating another Draft preserves existing Drafts and their manual edits.
 
+Reviewed JD text is stored only on your own Job link, including the first capture.
+Capture-only Jobs are not added to other Users' Feeds by Preferences matching. Required
+skills are extracted from your JD through the AI gateway when the Draft is generated and
+kept on your link and Draft snapshot, so skill checks and Skill Gaps use that description.
+An extraction failure leaves a retryable failed Draft rather than skipping skill checks.
+The push-only capture Source has no scheduled fetches or Admin fetch controls.
+
 Capture adds backend migration 0016 and new extension permissions (access list version 3).
 Deploy the server before rebuilding/reloading the extension, then reconnect and approve
 the new access list. This slice does not add AI custom-question answers or regenerate an
