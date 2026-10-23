@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 from app.core.config import get_settings
 from app.main import app
 from app.models import ExtensionCredential, ExtensionGrant
-from app.services.extension import s256
+from app.services.extension import SCOPES_VERSION, s256
 
 EXT = "abcdefghijklmnopabcdefghijklmnop"
 OTHER_EXT = "ponmlkjihgfedcbaponmlkjihgfedcba"
@@ -42,7 +42,12 @@ def pkce() -> tuple[str, str]:
 
 async def approve(client: httpx.AsyncClient, challenge: str, extension_id: str = EXT) -> str:
     response = await client.post(
-        "/api/extension/approve", json={"extension_id": extension_id, "challenge": challenge}
+        "/api/extension/approve",
+        json={
+            "extension_id": extension_id,
+            "challenge": challenge,
+            "scopes_version": SCOPES_VERSION,
+        },
     )
     assert response.status_code == 200, response.text
     return response.json()["code"]
@@ -156,20 +161,26 @@ async def test_unapproved_or_malformed_extension_ids_cannot_be_approved(alice, m
     _, client = alice
     _, challenge = pkce()
     bad = await client.post(
-        "/api/extension/approve", json={"extension_id": "not-an-id", "challenge": challenge}
+        "/api/extension/approve",
+        json={
+            "extension_id": "not-an-id",
+            "challenge": challenge,
+            "scopes_version": SCOPES_VERSION,
+        },
     )
     assert bad.status_code == 422
     monkeypatch.setenv("EXTENSION_IDS", "")
     get_settings.cache_clear()
     off = await client.post(
-        "/api/extension/approve", json={"extension_id": EXT, "challenge": challenge}
+        "/api/extension/approve",
+        json={"extension_id": EXT, "challenge": challenge, "scopes_version": SCOPES_VERSION},
     )
     assert off.status_code == 403
 
 
 async def test_approving_needs_a_signed_in_user_and_the_csrf_check(alice, anon):
     _, challenge = pkce()
-    body = {"extension_id": EXT, "challenge": challenge}
+    body = {"extension_id": EXT, "challenge": challenge, "scopes_version": SCOPES_VERSION}
     assert (await anon.post("/api/extension/approve", json=body)).status_code == 401
     _, client = alice
     no_csrf = await client.post("/api/extension/approve", json=body, headers={"X-CSRF-Token": ""})
@@ -231,3 +242,27 @@ async def test_deleting_the_account_removes_its_connections(alice, db):
     assert (await db.scalars(select(ExtensionCredential))).all() == []
     async with ext_client(token=token) as ext:
         assert (await ext.get("/api/ext/me")).status_code == 401
+
+
+async def test_the_page_lists_the_access_it_asks_for_and_approves_only_that(alice):
+    _, client = alice
+    listed = (await client.get("/api/extension/scopes")).json()
+    assert listed["version"] == SCOPES_VERSION
+    assert "Read your reviewed application profile" in listed["scopes"]
+    _, challenge = pkce()
+    outdated = await client.post(
+        "/api/extension/approve",
+        json={"extension_id": EXT, "challenge": challenge, "scopes_version": SCOPES_VERSION - 1},
+    )
+    assert outdated.status_code == 409
+
+
+async def test_connections_approved_for_less_access_must_be_approved_again(alice, db):
+    _, client = alice
+    token = await connect(client)
+    await db.execute(update(ExtensionCredential).values(scopes_version=SCOPES_VERSION - 1))
+    await db.commit()
+    async with ext_client(token=token) as ext:
+        refused = await ext.get("/api/ext/me")
+    assert refused.status_code == 401
+    assert "approve the new access" in refused.json()["error"]["message"]

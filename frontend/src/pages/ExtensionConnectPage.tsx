@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { Me } from "@/api/client";
-import { useApproveExtension } from "@/api/hooks";
+import { useApproveExtension, useExtensionScopes } from "@/api/hooks";
 import { PageHeader } from "@/app/AppShell";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,14 @@ export function ExtensionConnectPage({ me }: { me: Me }) {
   const challenge = params.get("challenge") ?? "";
   const valid = EXTENSION_ID.test(extensionId) && CHALLENGE.test(challenge);
   const approve = useApproveExtension();
+  const scopes = useExtensionScopes(valid);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function connect() {
     setResult(null);
     try {
-      const grant = await approve.mutateAsync({ extension_id: extensionId, challenge });
+      if (!scopes.data) return;
+      const grant = await approve.mutateAsync({ extension_id: extensionId, challenge, scopes_version: scopes.data.version });
       const reply = await sendCodeToExtension(extensionId, grant.code);
       setResult(
         reply.ok
@@ -57,12 +59,18 @@ export function ExtensionConnectPage({ me }: { me: Me }) {
                 <Puzzle className="mt-0.5 size-5 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden />
                 <div className="text-sm text-slate-700 dark:text-slate-300">
                   <p>The extension will be able to:</p>
-                  <ul className="mt-2 space-y-1">
-                    <li className="flex gap-2">
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden />
-                      See your name and email
-                    </li>
-                  </ul>
+                  {scopes.isError ? (
+                    <p className="mt-2 text-red-700 dark:text-red-400">{scopes.error.message}</p>
+                  ) : (
+                    <ul className="mt-2 space-y-1">
+                      {(scopes.data?.scopes ?? []).map((scope) => (
+                        <li key={scope} className="flex gap-2">
+                          <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden />
+                          {scope}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <p className="mt-3 text-slate-600 dark:text-slate-400">
                     It never submits forms or sends anything for you. The connection lasts until it expires or you
                     revoke it in Settings. Extension ID <span className="font-mono">{extensionId}</span>.
@@ -71,7 +79,7 @@ export function ExtensionConnectPage({ me }: { me: Me }) {
               </div>
               {result && !result.ok && <Alert tone="error">{result.message}</Alert>}
               <div className="flex flex-wrap gap-2">
-                <Button loading={approve.isPending} onClick={connect}>
+                <Button loading={approve.isPending} disabled={!scopes.data} onClick={connect}>
                   Connect extension
                 </Button>
               </div>

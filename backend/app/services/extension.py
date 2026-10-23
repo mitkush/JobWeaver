@@ -16,12 +16,27 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AuthError, ForbiddenError, NotFoundError, ValidationFailedError
+from app.core.errors import (
+    AuthError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationFailedError,
+)
 from app.core.security import hash_token, new_token
 from app.models.extension import ExtensionCredential, ExtensionGrant
 from app.models.user import User
 
 GRANT_SECONDS = 120
+# What a connected extension can do, shown on the approval page. Adding access raises the
+# version: connections approved for an older list are refused until approved again.
+SCOPES_VERSION = 2
+SCOPES = (
+    "See your name and email",
+    "Read your reviewed application profile",
+    "Read your Saved Answers for a Job",
+    "List your Drafts and download their resume and cover letter PDFs",
+)
 EXTENSION_ID = re.compile(r"[a-p]{32}")
 CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")
 VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")
@@ -45,7 +60,7 @@ def _now() -> datetime:
 
 
 async def approve(
-    session: AsyncSession, user: User, extension_id: str, challenge: str
+    session: AsyncSession, user: User, extension_id: str, challenge: str, scopes_version: int
 ) -> tuple[str, datetime]:
     """The User approved the connection on a signed-in page; returns the one-time code."""
     if not EXTENSION_ID.fullmatch(extension_id) or not CHALLENGE.fullmatch(challenge):
@@ -54,6 +69,8 @@ async def approve(
         )
     if not _allowed(extension_id):
         raise ForbiddenError("This extension is not approved for this JobWeaver server")
+    if scopes_version != SCOPES_VERSION:
+        raise ConflictError("What the extension can access has changed. Reload this page.")
     now = _now()
     await session.execute(
         delete(ExtensionGrant).where(
@@ -68,6 +85,7 @@ async def approve(
             extension_id=extension_id,
             code_hash=hash_token(code),
             challenge=challenge,
+            scopes_version=scopes_version,
             expires_at=expires,
         )
     )
@@ -105,6 +123,7 @@ async def exchange(
         extension_id=grant.extension_id,
         token_hash=hash_token(token),
         expires_at=now + timedelta(hours=get_settings().extension_credential_hours),
+        scopes_version=grant.scopes_version,
         last_used_at=now,
     )
     session.add(credential)
@@ -133,6 +152,10 @@ async def resolve(
     ):
         raise AuthError("Connect the extension to JobWeaver again")
     credential, user = row
+    if credential.scopes_version < SCOPES_VERSION:
+        raise AuthError(
+            "The extension can do more now. Connect it again to approve the new access."
+        )
     # Service-worker requests carry the extension's origin; anything else is refused.
     if origin is not None and origin != extension_origin(credential.extension_id):
         raise ForbiddenError("This credential belongs to another extension")

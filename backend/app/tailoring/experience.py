@@ -88,3 +88,20 @@ def experience_years(facts: Iterable[FactSnapshot], today: date | None = None) -
 def years_text(years: float) -> str:
     """ "5.5+" or "5+": the form the resume and email use."""
     return f"{years:g}+"
+
+
+def role_dates(text: str) -> tuple[str, str | None, int, int] | None:
+    """The first date range in a line, as ("YYYY" or "YYYY-MM" start, end or None when
+    current, match start, match end). Months are kept only when the line names them."""
+    match = _RANGE.search(text)
+    if match is None:
+        return None
+
+    def when(year: str, month: str | None) -> str:
+        if month and month.casefold() in _MONTHS:
+            return f"{year}-{_MONTHS[month.casefold()]:02d}"
+        return year
+
+    start = when(match["ay"], match["am"])
+    end = None if match["now"] else when(match["by"], match["bm"])
+    return start, end, match.start(), match.end()

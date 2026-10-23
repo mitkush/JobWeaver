@@ -11,11 +11,13 @@ import { CompanyPage } from "@/pages/CompanyPage";
 import { FactBankPage } from "@/pages/FactBankPage";
 import { FeedPage } from "@/pages/FeedPage";
 import { DraftPage } from "@/pages/DraftPage";
+import { ApplicationProfilePage } from "@/pages/ApplicationProfilePage";
 import { ExtensionConnectPage } from "@/pages/ExtensionConnectPage";
 import { JobPage } from "@/pages/JobPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PreferencesPage } from "@/pages/PreferencesPage";
+import { SavedAnswersPage } from "@/pages/SavedAnswersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SignInPage } from "@/pages/SignInPage";
 
@@ -59,6 +61,8 @@ export function App() {
       <Route path="/fact-bank" element={<Authenticated>{() => <FactBankPage />}</Authenticated>} />
       <Route path="/preferences" element={<Authenticated>{() => <PreferencesPage />}</Authenticated>} />
       <Route path="/extension/connect" element={<Authenticated>{(me) => <ExtensionConnectPage me={me} />}</Authenticated>} />
+      <Route path="/settings/profile" element={<Authenticated>{() => <ApplicationProfilePage />}</Authenticated>} />
+      <Route path="/settings/answers" element={<Authenticated>{() => <SavedAnswersPage />}</Authenticated>} />
       <Route path="/settings" element={<Authenticated>{(me) => <SettingsPage me={me} />}</Authenticated>} />
       <Route
         path="/admin/sources"

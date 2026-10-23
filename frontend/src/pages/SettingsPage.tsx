@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast-context";
 import { ExtensionCard } from "@/features/extension/ExtensionCard";
+import { ProfileCard } from "@/features/extension/ProfileCard";
 import { GmailCard } from "@/features/gmail/GmailCard";
 import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { COUNTRIES } from "@/lib/countries";
@@ -47,7 +48,8 @@ export function SettingsPage({ me }: { me: Me }) {
             title="Browser extension"
             description="Fills application forms from your Drafts. It never submits a form for you."
           />
-          <CardBody>
+          <CardBody className="space-y-6">
+            <ProfileCard />
             <ExtensionCard />
           </CardBody>
         </Card>

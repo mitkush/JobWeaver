@@ -17,6 +17,7 @@ from app.api import (
     health,
     me,
     preferences,
+    profile,
     sources,
 )
 from app.api.csrf import CSRFMiddleware
@@ -67,6 +68,7 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
         drafts,
         applications,
         extension,
+        profile,
     )
     for module in modules:
         app.include_router(module.router)

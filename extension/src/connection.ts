@@ -66,6 +66,7 @@ export async function handleExternal(deps: Deps, message: unknown, sender: { ori
     const error = body && "error" in body ? body.error?.message : undefined;
     return { ok: false, error: error ?? "JobWeaver refused the connection. Try again." };
   }
+  await deps.store.remove("notice");
   await deps.store.set("connection", {
     token: body.token,
     expiresAt: body.expires_at,
@@ -95,6 +96,9 @@ export async function apiFetch(deps: Deps, path: string, init: RequestInit = {})
     headers: { ...init.headers, Authorization: `Bearer ${connection.token}` },
   });
   if (response.status === 401 || response.status === 403) {
+    // Keep JobWeaver's reason, e.g. that new access needs approving, for the popup.
+    const body = (await response.clone().json().catch(() => null)) as { error?: { message?: string } } | null;
+    await deps.store.set("notice", body?.error?.message ?? "JobWeaver ended the connection. Connect again.");
     await deps.store.remove("connection");
     return null;
   }
@@ -102,10 +106,15 @@ export async function apiFetch(deps: Deps, path: string, init: RequestInit = {})
 }
 
 /** The connection as JobWeaver sees it now, so a revoke in Settings shows at once. */
-export async function status(deps: Deps): Promise<{ connected: false } | { connected: true; email: string; expiresAt: string }> {
+export async function status(
+  deps: Deps,
+): Promise<{ connected: false; error?: string } | { connected: true; email: string; expiresAt: string }> {
   const response = await apiFetch(deps, "/api/ext/me");
   const connection = await currentConnection(deps);
-  if (!response?.ok || !connection) return { connected: false };
+  if (!response?.ok || !connection) {
+    const notice = await deps.store.get<string>("notice");
+    return notice ? { connected: false, error: notice } : { connected: false };
+  }
   const me = (await response.json()) as { email: string };
   return { connected: true, email: me.email, expiresAt: connection.expiresAt };
 }
@@ -113,4 +122,5 @@ export async function status(deps: Deps): Promise<{ connected: false } | { conne
 export async function disconnect(deps: Deps): Promise<void> {
   await apiFetch(deps, "/api/ext/token", { method: "DELETE" }).catch(() => null);
   await deps.store.remove("connection");
+  await deps.store.remove("notice");
 }

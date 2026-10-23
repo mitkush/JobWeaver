@@ -956,6 +956,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scopes
+         * @description What a connected extension can do, for the approval page to show.
+         */
+        get: operations["scopes_api_extension_scopes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/approve": {
         parameters: {
             query?: never;
@@ -1037,6 +1057,182 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Profile */
+        get: operations["ext_profile_api_ext_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/saved-answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Saved Answers */
+        get: operations["ext_saved_answers_api_ext_saved_answers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Drafts */
+        get: operations["ext_drafts_api_ext_drafts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/drafts/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Draft Match */
+        get: operations["ext_draft_match_api_ext_drafts_match_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Draft */
+        get: operations["ext_draft_api_ext_drafts__draft_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/drafts/{draft_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ext Draft Pdf */
+        get: operations["ext_draft_pdf_api_ext_drafts__draft_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["get_profile_api_profile_get"];
+        /** Save Profile */
+        put: operations["save_profile_api_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile/suggestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Profile Suggestion
+         * @description Values from the Fact Bank and the Google account to review; nothing is saved.
+         */
+        get: operations["profile_suggestion_api_profile_suggestion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/saved-answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Saved Answers */
+        get: operations["list_saved_answers_api_saved_answers_get"];
+        put?: never;
+        /** Create Saved Answer */
+        post: operations["create_saved_answer_api_saved_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/saved-answers/{answer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Saved Answer */
+        put: operations["update_saved_answer_api_saved_answers__answer_id__put"];
+        post?: never;
+        /** Delete Saved Answer */
+        delete: operations["delete_saved_answer_api_saved_answers__answer_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1405,6 +1601,27 @@ export interface components {
             expected_version: number;
             content: components["schemas"]["DraftContent"];
         };
+        /** EducationEntry */
+        EducationEntry: {
+            /** School */
+            school: string;
+            /**
+             * Degree
+             * @default
+             */
+            degree?: string;
+            /**
+             * Field
+             * @default
+             */
+            field?: string;
+            /** Start */
+            start?: string | null;
+            /** End */
+            end?: string | null;
+            /** Fact Ids */
+            fact_ids?: string[];
+        };
         /** EmailCheck */
         EmailCheck: {
             /** Recipient */
@@ -1413,6 +1630,32 @@ export interface components {
             valid: boolean;
             /** Warnings */
             warnings: string[];
+        };
+        /** EmploymentEntry */
+        EmploymentEntry: {
+            /** Employer */
+            employer: string;
+            /**
+             * Title
+             * @default
+             */
+            title?: string;
+            /**
+             * Location
+             * @default
+             */
+            location?: string;
+            /** Start */
+            start?: string | null;
+            /** End */
+            end?: string | null;
+            /**
+             * Current
+             * @default false
+             */
+            current?: boolean;
+            /** Fact Ids */
+            fact_ids?: string[];
         };
         /** EventOut */
         EventOut: {
@@ -1424,12 +1667,104 @@ export interface components {
              */
             at: string;
         };
+        /**
+         * ExtDraftMatch
+         * @description Drafts whose Job's apply link matches the page; more than one means the User picks.
+         */
+        ExtDraftMatch: {
+            /** Drafts */
+            drafts: components["schemas"]["ExtDraftSummary"][];
+        };
+        /** ExtDraftSummary */
+        ExtDraftSummary: {
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Apply Host */
+            apply_host: string | null;
+            /** Current Version */
+            current_version: number;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            saved_at: string;
+            /** Application Status */
+            application_status: string | null;
+        };
+        /** ExtDraftVersion */
+        ExtDraftVersion: {
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Apply Url */
+            apply_url: string | null;
+            /** Number */
+            number: number;
+            /** Current Version */
+            current_version: number;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            saved_at: string;
+            /** Warnings */
+            warnings: number;
+            /**
+             * Template
+             * @enum {string}
+             */
+            template: "standard" | "compact";
+            /** Resume File */
+            resume_file: string;
+            /** Cover Letter File */
+            cover_letter_file: string;
+            /** Application Status */
+            application_status: string | null;
+        };
+        /**
+         * ExtProfileOut
+         * @description The reviewed profile, without entries whose Facts changed since the review.
+         */
+        ExtProfileOut: {
+            /** Reviewed */
+            reviewed: boolean;
+            /** Version */
+            version: number;
+            /** Needs Review */
+            needs_review: boolean;
+            content: components["schemas"]["ProfileContent"] | null;
+        };
         /** ExtensionApproveIn */
         ExtensionApproveIn: {
             /** Extension Id */
             extension_id: string;
             /** Challenge */
             challenge: string;
+            /** Scopes Version */
+            scopes_version: number;
         };
         /** ExtensionConnectionOut */
         ExtensionConnectionOut: {
@@ -1462,6 +1797,13 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /** ExtensionScopesOut */
+        ExtensionScopesOut: {
+            /** Version */
+            version: number;
+            /** Scopes */
+            scopes: string[];
         };
         /** ExtensionTokenIn */
         ExtensionTokenIn: {
@@ -2064,6 +2406,75 @@ export interface components {
             /** Work Modes */
             work_modes: components["schemas"]["WorkMode"][];
         };
+        /**
+         * ProfileContent
+         * @description What the extension may fill. Free of AI: the User reviews every value (ADR-0017).
+         */
+        ProfileContent: {
+            /**
+             * First Name
+             * @default
+             */
+            first_name?: string;
+            /**
+             * Last Name
+             * @default
+             */
+            last_name?: string;
+            /**
+             * Email
+             * @default
+             */
+            email?: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone?: string;
+            /** Phone Fact Id */
+            phone_fact_id?: string | null;
+            /**
+             * City
+             * @default
+             */
+            city?: string;
+            /** Country */
+            country?: string | null;
+            /** Links */
+            links?: components["schemas"]["ProfileLink"][];
+            /** Employment */
+            employment?: components["schemas"]["EmploymentEntry"][];
+            /** Education */
+            education?: components["schemas"]["EducationEntry"][];
+        };
+        /** ProfileLink */
+        ProfileLink: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "linkedin" | "github" | "portfolio" | "website" | "other";
+            /** Url */
+            url: string;
+            /** Fact Id */
+            fact_id?: string | null;
+        };
+        /** ProfileOut */
+        ProfileOut: {
+            content: components["schemas"]["ProfileContent"] | null;
+            /** Version */
+            version: number;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Stale */
+            stale: string[];
+        };
+        /** ProfileSave */
+        ProfileSave: {
+            content: components["schemas"]["ProfileContent"];
+            /** Expected Version */
+            expected_version: number;
+        };
         /** QuerySpend */
         QuerySpend: {
             /** Query Key */
@@ -2125,6 +2536,73 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "running" | "succeeded" | "failed" | "skipped";
+        /** SavedAnswerIn */
+        SavedAnswerIn: {
+            /** Question */
+            question: string;
+            /** Answer */
+            answer: string;
+            /**
+             * Scope
+             * @default general
+             * @enum {string}
+             */
+            scope?: "general" | "country" | "company";
+            /** Country */
+            country?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Period */
+            period?: ("year" | "month" | "hour") | null;
+            /** Company Id */
+            company_id?: string | null;
+            /**
+             * Sensitive
+             * @default false
+             */
+            sensitive?: boolean;
+        };
+        /** SavedAnswerOut */
+        SavedAnswerOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Question */
+            question: string;
+            /** Answer */
+            answer: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "general" | "country" | "company";
+            /** Country */
+            country: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Period */
+            period: ("year" | "month" | "hour") | null;
+            /** Company Id */
+            company_id: string | null;
+            /** Company Name */
+            company_name: string;
+            /** Sensitive */
+            sensitive: boolean;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "user" | "suggestion";
+            /** Job Id */
+            job_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** SourceBadge */
         SourceBadge: {
             /** Name */
@@ -4346,6 +4824,37 @@ export interface operations {
             };
         };
     };
+    scopes_api_extension_scopes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionScopesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     approve_api_extension_approve_post: {
         parameters: {
             query?: never;
@@ -4528,6 +5037,443 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExtensionUserOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_profile_api_ext_profile_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_saved_answers_api_ext_saved_answers_get: {
+        parameters: {
+            query: {
+                job_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedAnswerOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_drafts_api_ext_drafts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtDraftSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_draft_match_api_ext_drafts_match_get: {
+        parameters: {
+            query: {
+                url: string;
+            };
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtDraftMatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_draft_api_ext_drafts__draft_id__get: {
+        parameters: {
+            query?: {
+                number?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtDraftVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_draft_pdf_api_ext_drafts__draft_id__pdf_get: {
+        parameters: {
+            query: {
+                number: number;
+                kind?: "resume" | "cover_letter";
+                template?: ("standard" | "compact") | null;
+            };
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_api_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_profile_api_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    profile_suggestion_api_profile_suggestion_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileContent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_saved_answers_api_saved_answers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedAnswerOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_saved_answer_api_saved_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedAnswerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_saved_answer_api_saved_answers__answer_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                answer_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedAnswerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_saved_answer_api_saved_answers__answer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                answer_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

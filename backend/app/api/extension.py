@@ -6,28 +6,44 @@ worker with a bearer credential; it is exempt from the cookie CSRF check because
 reads cookies."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Query, Response
 
 from app.api.deps import CurrentUser, DbSession, ExtensionCaller
 from app.core.errors import JobWeaverError
+from app.schemas.application_profile import SavedAnswerOut
 from app.schemas.extension import (
+    ExtDraftMatch,
+    ExtDraftSummary,
+    ExtDraftVersion,
     ExtensionApproveIn,
     ExtensionConnectionOut,
     ExtensionGrantOut,
+    ExtensionScopesOut,
     ExtensionTokenIn,
     ExtensionTokenOut,
     ExtensionUserOut,
+    ExtProfileOut,
 )
+from app.services import application_profile, extension_drafts, saved_answers
 from app.services import extension as service
 
 router = APIRouter(tags=["extension"])
 
 
+@router.get("/api/extension/scopes")
+async def scopes(_: CurrentUser) -> ExtensionScopesOut:
+    """What a connected extension can do, for the approval page to show."""
+    return ExtensionScopesOut(version=service.SCOPES_VERSION, scopes=list(service.SCOPES))
+
+
 @router.post("/api/extension/approve")
 async def approve(db: DbSession, user: CurrentUser, body: ExtensionApproveIn) -> ExtensionGrantOut:
-    code, expires = await service.approve(db, user, body.extension_id, body.challenge)
+    code, expires = await service.approve(
+        db, user, body.extension_id, body.challenge, body.scopes_version
+    )
     await db.commit()
     return ExtensionGrantOut(code=code, expires_at=expires)
 
@@ -76,3 +92,76 @@ async def disconnect(db: DbSession, caller: ExtensionCaller) -> None:
     credential, _ = caller
     await service.disconnect(db, credential)
     await db.commit()
+
+
+@router.get("/api/ext/profile")
+async def ext_profile(db: DbSession, caller: ExtensionCaller) -> ExtProfileOut:
+    _, user = caller
+    result = await application_profile.for_extension(db, user)
+    await db.commit()
+    return result
+
+
+@router.get("/api/ext/saved-answers")
+async def ext_saved_answers(
+    db: DbSession, caller: ExtensionCaller, job_id: uuid.UUID
+) -> list[SavedAnswerOut]:
+    _, user = caller
+    rows = await saved_answers.applicable(db, user, job_id)
+    await db.commit()
+    return [SavedAnswerOut.model_validate(r, from_attributes=True) for r in rows]
+
+
+@router.get("/api/ext/drafts")
+async def ext_drafts(db: DbSession, caller: ExtensionCaller) -> list[ExtDraftSummary]:
+    _, user = caller
+    result = await extension_drafts.recent(db, user)
+    await db.commit()
+    return result
+
+
+@router.get("/api/ext/drafts/match")
+async def ext_draft_match(
+    db: DbSession,
+    caller: ExtensionCaller,
+    url: Annotated[str, Query(min_length=1, max_length=2048)],
+) -> ExtDraftMatch:
+    _, user = caller
+    result = await extension_drafts.match(db, user, url)
+    await db.commit()
+    return ExtDraftMatch(drafts=result)
+
+
+@router.get("/api/ext/drafts/{draft_id}")
+async def ext_draft(
+    db: DbSession,
+    caller: ExtensionCaller,
+    draft_id: uuid.UUID,
+    number: Annotated[int | None, Query(ge=1)] = None,
+) -> ExtDraftVersion:
+    _, user = caller
+    result = await extension_drafts.version_detail(db, user, draft_id, number)
+    await db.commit()
+    return result
+
+
+@router.get("/api/ext/drafts/{draft_id}/pdf")
+async def ext_draft_pdf(
+    db: DbSession,
+    caller: ExtensionCaller,
+    draft_id: uuid.UUID,
+    number: Annotated[int, Query(ge=1)],
+    kind: Literal["resume", "cover_letter"] = "resume",
+    template: Literal["standard", "compact"] | None = None,
+) -> Response:
+    _, user = caller
+    data, name = await extension_drafts.pdf(db, user, draft_id, kind, number, template)
+    await db.commit()
+    return Response(
+        data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''" + quote(name),
+            "Cache-Control": "private, no-store",
+        },
+    )
