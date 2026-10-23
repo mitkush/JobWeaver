@@ -63,7 +63,8 @@ options and whether it is required. Never page HTML, other field values or the f
 JobWeaver answers each one through a typed AI Gateway task, after the AI notice and region
 checks (ADR-0007, ADR-0012), with one of:
 
-- **Saved Answer:** reuse what the User saved for the same question before.
+- **Saved Answer:** reuse what the User saved for the same question before, only within
+  its scope (see Data to prepare).
 - **Suggestion:** a complete answer ready to edit, not a fragment, written only from the
   User's Facts with a Tailoring Trace (ADR-0005) and in the User's Writing Style. Its length
   follows the field: a sentence for a single-line input, one or two full paragraphs for a
