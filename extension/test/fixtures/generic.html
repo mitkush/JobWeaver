@@ -1,0 +1,22 @@
+<form id="apply">
+  <label for="fn">First name *</label><input id="fn" name="applicant.firstName" required>
+  <label for="ln">Last Name</label><input id="ln">
+  <label>Email address <input type="email" name="email"></label>
+  <input id="ph" name="phone_number" placeholder="Phone">
+  <label for="li">LinkedIn profile URL</label><input id="li" type="url">
+  <label for="site">Personal website</label><input id="site">
+  <label for="city">City</label><input id="city" value="Mumbai">
+  <label for="country">Country</label>
+  <select id="country"><option value="">Select…</option><option value="in">India</option><option value="us">United States</option></select>
+  <label for="ref">Referrer name</label><input id="ref">
+  <label for="sal">Expected salary</label><input id="sal">
+  <label for="visa">Will you require visa sponsorship?</label><input id="visa">
+  <label for="why">Why do you want to work here?</label><textarea id="why"></textarea>
+  <label for="cv">Resume/CV</label><input id="cv" type="file" accept=".pdf" style="display:none">
+  <label for="cl">Cover letter</label><input id="cl" type="file">
+  <input type="hidden" name="token" value="x">
+  <input type="password" name="pw">
+  <div style="display:none"><label for="ghost">Middle name</label><input id="ghost"></div>
+  <input id="dis" disabled aria-label="Email">
+  <button type="submit">Submit application</button>
+</form>

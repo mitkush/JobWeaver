@@ -131,3 +131,28 @@ select {
 .actions {
   flex-wrap: wrap;
 }
+.fields {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.fields li {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.fields label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.value {
+  font: 12px/1.4 ui-monospace, monospace;
+  word-break: break-all;
+}
+.source,
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}

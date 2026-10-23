@@ -2,6 +2,7 @@
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
 import { clear, pageState, select } from "./drafts";
+import { fillTab, forgetTab, scanTab, undoTab, type TabPort } from "./fill/session";
 
 declare const __JOBWEAVER_ORIGIN__: string;
 
@@ -25,7 +26,22 @@ const deps: Deps = {
 // Session storage stays private to the extension's own pages and service worker.
 void chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 
-chrome.tabs.onRemoved.addListener((tabId) => void clear(deps, tabId));
+const port: TabPort = {
+  async inject(tabId) {
+    // Main frame only; embedded forms on other sites come with host permissions later.
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] });
+  },
+  send: (tabId, message) => chrome.tabs.sendMessage(tabId, message, { frameId: 0 }),
+};
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void clear(deps, tabId);
+  void forgetTab(deps, tabId);
+});
+// A new page in the tab means a new form: the last scan no longer applies.
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.url) void forgetTab(deps, tabId);
+});
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   handleExternal(deps, message, sender)
@@ -39,6 +55,9 @@ export type PopupMessage =
   | { type: "page"; tabId: number; url?: string }
   | { type: "select"; tabId: number; draftId: string; number?: number }
   | { type: "clear"; tabId: number }
+  | { type: "scan"; tabId: number }
+  | { type: "fill"; tabId: number; refs: string[] }
+  | { type: "undo"; tabId: number }
   | { type: "open"; path: string };
 
 async function handle(message: PopupMessage): Promise<unknown> {
@@ -58,6 +77,12 @@ async function handle(message: PopupMessage): Promise<unknown> {
     case "clear":
       await clear(deps, message.tabId);
       return null;
+    case "scan":
+      return scanTab(deps, port, message.tabId);
+    case "fill":
+      return fillTab(deps, port, message.tabId, message.refs);
+    case "undo":
+      return undoTab(port, message.tabId);
     case "open":
       // Only JobWeaver's own pages; the path never comes from the visited site.
       if (!message.path.startsWith("/") || message.path.startsWith("//")) return null;
@@ -73,6 +98,8 @@ chrome.runtime.onMessage.addListener((message: PopupMessage, sender, sendRespons
   }
   handle(message)
     .then(sendResponse)
-    .catch(() => sendResponse({ connected: false, error: "JobWeaver could not be reached." }));
+    .catch((error: unknown) =>
+      sendResponse({ connected: false, error: error instanceof Error && /Cannot access|cannot be scripted/i.test(error.message) ? "This page cannot be filled (a browser or store page)." : "JobWeaver could not be reached." }),
+    );
   return true;
 });
