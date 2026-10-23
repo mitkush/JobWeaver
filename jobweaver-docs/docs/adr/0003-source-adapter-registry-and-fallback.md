@@ -4,6 +4,8 @@ Each Source is one module implementing a fixed interface and registering itself.
 
 **Amended by ADR-0016:** a Standby provider may stand in for a Source that reads the same jobs.
 
+**Amended by ADR-0017:** the push-only `captured` Source receives Postings from the Application Extension and does not fetch.
+
 **Considered and rejected:** a single pipeline that fails as a whole (one flaky free tier would blank the Feed), substituting a "backup" Source for a failed one (Sources are not interchangeable; jobs only on LinkedIn are simply missed while it is down, and the UI says so).
 
 **Consequences:** closed jobs can only be detected on snapshot Sources, so windowed-only Jobs expire by an age limit (default 30 days after posting) unless a snapshot Source still lists them, plus an apply-link check before drafting; Source Status is a first-class screen; every adapter has recorded-fixture tests for success, limit-exceeded and malformed responses; all Sources ship in V1 and free-tier limits are discovered at run time rather than verified up front.
