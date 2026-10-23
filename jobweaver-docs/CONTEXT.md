@@ -122,15 +122,15 @@ The JobWeaver browser extension (FR-E14). It fills an employer's application for
 
 ## Saved Answer
 
-An answer the User gave to a form question (notice period, salary, work authorisation, or any answer they chose to keep), reused by the Application Extension when the same question appears again. Sensitive questions are only ever filled from Saved Answers.
+An answer the User gave to a form question (notice period, salary, work authorisation, or any answer they chose to keep), reused by the Application Extension when the same question appears again within its scope: general, the same country (and currency for salary), or the same Company. Sensitive questions are only ever filled from Saved Answers.
 
 ## Writing Style
 
-How a User writes, taken only from text they wrote themselves (summary, cover letters, answers they edited): sentence length, formality, phrasing and spelling, with a few short excerpts. Used to make Application Extension Suggestions read like the User. It holds no facts about the User; the Fact Bank stays the only source of content (ADR-0005).
+How a User writes, taken only from text they wrote themselves (summary, cover letters, answers they edited): sentence length, formality, phrasing and spelling, with a few short excerpts whose names, numbers, dates and technologies are redacted. Used to make Application Extension Suggestions read like the User. It holds no facts about the User; the Fact Bank stays the only source of content (ADR-0005).
 
 ## Captured Job
 
-A Job saved from a page the User opened, through the Application Extension, rather than fetched by a Source. Stored as a Posting from the push-only `captured` Source and linked to the capturing User (ADR-0017).
+A Job saved from a page the User opened, through the Application Extension, rather than fetched by a Source. Stored as a Posting from the push-only `captured` Source and linked to the capturing User by a link that Feed rebuilds keep (ADR-0017).
 
 ## Follow-up Reminder
 

@@ -91,8 +91,16 @@ Suggestions should read like the User, not like generic AI text. JobWeaver build
 cover letters, Saved Answers they edited, and the final text of Suggestions they reworked
 before saving. The profile records observable traits only (typical sentence length,
 formality, first-person phrasing, words and openers the User uses or avoids, British or
-American spelling) plus up to three short excerpts as examples. It never contains facts
-about the User, so it cannot introduce claims (ADR-0005).
+American spelling) plus up to three short excerpts as examples. Excerpts come from text
+that can hold claims (employers, achievements, numbers, outdated roles), so they are
+redacted before storage: Company, product and person names, numbers, dates and
+technologies are replaced with placeholders such as `[COMPANY]` or `[NUMBER]`, and an
+excerpt that is still mostly claims after redaction is dropped. The prompt treats
+excerpts as tone examples only. Redaction is not relied on alone: every Suggestion is
+checked independently against the User's current Facts by the existing tailoring checks
+(`backend/app/tailoring/checks.py`: technologies not in the Fact Bank, numbers without
+evidence), and a failing Suggestion is regenerated once, then dropped to Fact notes
+(ADR-0005).
 
 - Built by a typed AI Gateway task, in recorded mode in CI, after the AI notice and region
   checks; rebuilt when its inputs change, and shown in Settings where the User can edit or
@@ -125,13 +133,28 @@ autofill value. Store Fact references for imported claims; a removed or changed 
 make dependent values require review. Never derive years of experience or seniority from
 a job description.
 
-Saved Answers hold User-entered answers keyed by a normalised question: notice period,
-salary expectations with currency and period, relocation, work authorisation and any
-answer the User chose to keep from a form. Missing values remain unanswered.
+Saved Answers hold User-entered answers keyed by a normalised question plus the context
+it applies to, so an answer is never reused where it would be wrong:
+
+- **Scope:** `general` (notice period, relocation), `country` (work authorisation,
+  sponsorship, salary, which also stores currency and period) or `company` (for example
+  "Why this company?").
+- **Applicability:** the country, currency and Company the answer was given for.
+- **Provenance:** User-entered, or a Suggestion the User edited, with the Job and date.
+
+Matching uses scope: a `general` answer is offered anywhere; a `country` answer only for a
+Job in the same country, and salary only in the same currency and period; a `company`
+answer is never filled for another Company and is at most shown as a starting point to
+rework. Missing values remain unanswered.
 
 Captured Jobs (ADR-0017) are stored as Postings from a push-only `captured` Source and
-linked to the capturing User like any Feed Job (ADR-0002). They contain only the public
-advert, never User data.
+linked to the capturing User (ADR-0002). They contain only the public advert, never User
+data. The link must be durable: today a Feed rebuild deletes links that no longer match
+Preferences unless a Draft or Application exists (`backend/app/services/feed.py:431-435`),
+so a captured Job outside Preferences would vanish before drafting. The User's link
+records that it was captured (for example `captured_at` on `user_jobs`), the rebuild keeps
+captured links like drafted ones, and a test proves a captured, nonmatching Job survives
+rebuilds. Removing it is an explicit User action.
 
 Proposed storage is a profile record with validated structured content and a version,
 Saved Answers, and revocable extension authorisations. Final schema and retention rules
@@ -211,8 +234,8 @@ User edits.
 | 2. Reviewed profile, Saved Answers and Draft selection | Settings profile and Saved Answers editors; typed scoped APIs; Fact-change handling tested; exact saved Draft/PDF version shown. |
 | 3. First working application | Generic adapter plus Greenhouse adapter; preview, selective fill, safe overwrite, Undo and PDF attachment with download fallback; fixture browser tests prove correct fields, attached file and no submit action. |
 | 4. More forms and tracking | Lever and Ashby adapters, embedded-form host permissions, multi-step rescans; explicit Applied confirmation is idempotent; stale-version/expired-session errors preserve form input. |
-| 5. Form questions and Writing Style | Gateway tasks in recorded mode for answers and for building the Writing Style; Saved Answer, Suggestion, Fact notes and Leave empty paths; Suggestions are complete answers within the field's length limit, use the Writing Style and pass the stock-phrase check; the Writing Style editor in Settings; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, all proved by tests. |
-| 6. Captured Jobs | Capture from JSON-LD and page text with User review; push-only `captured` Source; the Captured Job appears only through the capturing User's link and flows into the existing Draft. |
+| 5. Form questions and Writing Style | Gateway tasks in recorded mode for answers and for building the Writing Style; Saved Answer, Suggestion, Fact notes and Leave empty paths; Suggestions are complete answers within the field's length limit, use the Writing Style and pass the stock-phrase check and the Fact checks; Writing Style excerpts are redacted; the Writing Style editor in Settings; Saved Answers are reused only within their scope; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, all proved by tests. |
+| 6. Captured Jobs | Capture from JSON-LD and page text with User review; push-only `captured` Source; a durable captured link that survives Feed rebuilds when the Job does not match Preferences, proved by a test; the Job flows into the existing Draft. |
 | 7. Private testing | Installable extension ZIP, reproducible build, permission review, supported-form matrix and manual trial on real forms without submitting test applications. |
 | Later | Workday multi-step forms, Firefox, store publication. |
 
