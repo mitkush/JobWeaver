@@ -159,9 +159,11 @@ async def budget_for(
     *,
     credential_fingerprint: str | None = None,
     include_legacy: bool = False,
+    settings: Settings | None = None,
 ) -> Budget | None:
     """Spend, month-end projection and the most expensive queries (FR-B5)."""
-    if adapter.monthly_allowance is None:
+    allowance = adapter.credit_allowance(settings or get_settings())
+    if allowance is None:
         return None
     start = period_start(now, adapter.renewal_day)
     renews = next_renewal(now, adapter.renewal_day)
@@ -189,14 +191,14 @@ async def budget_for(
     daily = spent / elapsed_days
     projected = round(daily * period_days)
     runs_out = None
-    if daily > 0 and spent < adapter.monthly_allowance:
-        runs_out = now + timedelta(days=(adapter.monthly_allowance - spent) / daily)
+    if daily > 0 and spent < allowance:
+        runs_out = now + timedelta(days=(allowance - spent) / daily)
         if runs_out >= renews:
             runs_out = None
-    elif spent >= adapter.monthly_allowance:
+    elif spent >= allowance:
         runs_out = now
     return Budget(
-        allowance=adapter.monthly_allowance,
+        allowance=allowance,
         unit=adapter.allowance_unit,
         spent=spent,
         projected=projected,
@@ -604,6 +606,7 @@ class Fetcher:
                     self.clock(),
                     credential_fingerprint=credential.fingerprint,
                     include_legacy=credential.primary,
+                    settings=self.settings,
                 )
                 remaining = max(budget.allowance - budget.spent, 0)
             if not remaining and not adapter.credential_limits_from_errors:
@@ -634,7 +637,7 @@ class Fetcher:
                 "All configured accounts have exhausted their credits or tracked "
                 "allowance. Primary is checked again on the next run."
             )
-        budget = await budget_for(session, type(adapter), self.clock())
+        budget = await budget_for(session, type(adapter), self.clock(), settings=self.settings)
         adapter.allowance_left = budget.allowance - budget.spent if budget else None
         if budget and budget.exhausted:
             raise SourceErrorBudget(
@@ -680,6 +683,27 @@ class Fetcher:
         else:
             queries = [None]
         family = family_of(type(adapter))
+
+        async def known_postings(ids: set[str]) -> set[str]:
+            if not ids:
+                return set()
+            # A separate short session releases the connection before another slow
+            # provider request. Only the page's IDs and cached usability are read.
+            async with self.sessionmaker() as lookup:
+                return set(
+                    (
+                        await lookup.execute(
+                            select(Posting.source_job_id).where(
+                                among(Posting.source, family, String()),
+                                among(Posting.source_job_id, ids, String()),
+                                Posting.description_usable.is_(True),
+                                Posting.closed_at.is_(None),
+                            )
+                        )
+                    ).scalars()
+                )
+
+        adapter.known_postings = known_postings
         # Every search in this run ends its window at the run's start, not when its turn
         # comes: otherwise slow searches before it push each day's window past 24 hours.
         started = self.clock()
@@ -780,6 +804,16 @@ class Fetcher:
                 new + pending_new,
                 result.credits_used,
             )
+            if not result.complete and adapter.retry_incomplete_window:
+                run.status = RunStatus.FAILED
+                run.error = (
+                    "Incomplete search: not all jobs could be collected. Partial postings "
+                    "were saved; the search window remains available for retry or fallback."
+                )
+                outcome.postings_new += new
+                outcome.credits_used += result.credits_used
+                await session.commit()
+                raise SourceUnavailable(run.error)
             if watermark is None:
                 session.add(QueryWatermark(source=adapter.name, query_key=key, last_until=started))
             else:

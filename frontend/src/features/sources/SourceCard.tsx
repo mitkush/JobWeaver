@@ -88,7 +88,7 @@ export function SourceCard({ source }: { source: SourceStatus }) {
           </Alert>
         )}
         {!source.configured && source.enabled && (
-          <Alert tone="info">Add this source's API key to the server settings to start fetching.</Alert>
+          <Alert tone="info">Complete this source's server setup to start fetching.</Alert>
         )}
         {!source.enabled && source.disabled_reason && (
           <Alert tone="info" title="Off by default">

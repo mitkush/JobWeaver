@@ -4,7 +4,7 @@ import asyncio
 import enum
 import hashlib
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
 from typing import TypeVar
 
@@ -190,6 +190,10 @@ class SourceAdapter(ABC):
     def is_configured(self) -> bool:
         return True
 
+    @classmethod
+    def credit_allowance(cls, settings: Settings) -> int | None:
+        return cls.monthly_allowance
+
     def ensure_configured(self) -> None:
         if not self.is_configured():
             raise SourceNotConfigured(f"{self.label} is not configured (API key missing)")
@@ -213,6 +217,10 @@ class SourceAdapter(ABC):
 
 class WindowedSourceAdapter(SourceAdapter):
     mode = FetchMode.WINDOWED
+    # Opt-in fallbacks can preserve partial results without claiming the window is done.
+    retry_incomplete_window: bool = False
+    # Optional, injected lookup: adapters never query the database themselves.
+    known_postings: Callable[[set[str]], Awaitable[set[str]]] | None = None
     # False for Sources fetched once per run regardless of Preferences (e.g. Remotive).
     per_query: bool = True
 
