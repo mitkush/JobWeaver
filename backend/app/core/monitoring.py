@@ -6,6 +6,7 @@ given, which can be a resume or a Draft. Reports keep the exception type, the st
 the route; logs keep the type, the SQL statement and the stack."""
 
 import logging
+import re
 import traceback
 from types import TracebackType
 from typing import Any
@@ -15,6 +16,22 @@ from sqlalchemy.exc import StatementError
 from app.core.config import Settings
 
 REMOVED = "[removed: may contain user content]"
+
+
+class QueryCredentialFilter(logging.Filter):
+    """HTTPX logs complete URLs; some providers require credentials in query strings."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = re.sub(
+            r"([?&](?:api_key|app_key|token)=)[^&\s\"']+",
+            r"\1[redacted]",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if message != redacted:
+            record.msg, record.args = redacted, ()
+        return True
 
 
 class RedactedDatabaseError(Exception):
@@ -36,6 +53,7 @@ class RedactingFormatter(logging.Formatter):
 
 
 def configure_logging() -> None:
+    logging.getLogger("httpx").addFilter(QueryCredentialFilter())
     handler = logging.StreamHandler()
     handler.setFormatter(RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)

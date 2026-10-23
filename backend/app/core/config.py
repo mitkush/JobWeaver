@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     # Piloterr LinkedIn search API: independent third-party job data provider.
     piloterr_api_key: str = Field(default="", repr=False)
     piloterr_linkedin_pages_per_query: int = 1
+    scrapingdog_api_key: str = Field(default="", repr=False)
+    # Local safety ceiling, not a promise of recurring provider credits.
+    scrapingdog_monthly_credits: int = Field(default=100, ge=0)
+    jobspy_timeout_seconds: int = Field(default=900, ge=1, le=1800)
+    jobspy_proxies: list[str] = Field(default_factory=list, repr=False)
     # Piloterr needs LinkedIn geo IDs. Keys may be city names or ISO country codes.
     piloterr_linkedin_geo_ids: dict[str, str] = Field(default_factory=lambda: {"IN": "102713980"})
     serpapi_key: str = ""
