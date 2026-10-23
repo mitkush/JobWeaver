@@ -273,7 +273,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC3: Form questions get a Saved Answer, a Suggestion from Facts with a Tailoring Trace, Fact notes, or nothing. A Suggestion is a complete answer within the field's length limit, in the User's Writing Style; it is outlined for review and never accepted automatically.
 - AC4: Sensitive questions are filled only from Saved Answers; forms that ask for answers not written by AI get Fact notes only.
 - AC5: A job page JobWeaver has not fetched can be captured, reviewed and drafted like any Feed Job.
-- AC6: When a careers page shows a fuller description, the User can keep it as a Page Description that their Drafts use, and the chosen Job carries over from the advert page to the form page or tab it opens.
+- AC6: The User can keep any careers page's description as a Page Description that their Drafts use, each Draft version keeping the description and required skills it was made from, and the chosen Job carries over from the advert page to the form page or tab it opens.
 
 ### Epic F - Applications and Reminders
 

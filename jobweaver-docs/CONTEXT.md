@@ -126,7 +126,7 @@ An answer the User gave to a form question (notice period, salary, work authoris
 
 ## Page Description
 
-A fuller job description read from the Job's own careers page through the Application Extension, kept on one User's link to the Job and used for that User's Drafts instead of the Source's shorter text. It never changes the shared Job (ADR-0002, ADR-0017).
+A job description read from the Job's own careers page through the Application Extension, kept on one User's link to the Job and used for that User's Drafts instead of the Source's text. Each Draft version records the description it was made from. It never changes the shared Job (ADR-0002, ADR-0017).
 
 ## Writing Style
 
