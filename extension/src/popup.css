@@ -1,0 +1,78 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #0f172a;
+  --muted: #475569;
+  --accent: #cc0f70;
+  --accent-fg: #ffffff;
+  --line: #e2e8f0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #07080c;
+    --fg: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #ff2d92;
+    --accent-fg: #07080c;
+    --line: #1e293b;
+  }
+}
+body {
+  margin: 0;
+  width: 320px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, sans-serif;
+}
+main {
+  padding: 16px;
+}
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font: 700 11px/1.4 ui-monospace, monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 4px 0 8px;
+  font-size: 20px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: 700 12px/1.2 ui-monospace, monospace;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button.ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--line);
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:disabled {
+  opacity: 0.6;
+}
+.note {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}

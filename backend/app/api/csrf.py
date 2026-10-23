@@ -16,10 +16,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         # /api/internal/ is called by cron with its own secret, never by a browser.
+        # /api/ext/ takes only a bearer credential and never reads cookies (ADR-0017).
         if (
             request.method not in SAFE_METHODS
             and path.startswith("/api/")
-            and not path.startswith("/api/internal/")
+            and not path.startswith(("/api/internal/", "/api/ext/"))
         ):
             cookie = request.cookies.get(CSRF_COOKIE, "")
             header = request.headers.get(CSRF_HEADER, "")

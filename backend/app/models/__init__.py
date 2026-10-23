@@ -11,6 +11,7 @@ from app.models.draft import (
     DraftVersion,
     GmailHandoff,
 )
+from app.models.extension import ExtensionCredential, ExtensionGrant
 from app.models.fact import DismissedFact, Fact, FactKind, FactOrigin
 from app.models.fetch import FetchRun, QueryWatermark, RunStatus
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
@@ -23,6 +24,8 @@ from app.models.source import Source, SourceState
 from app.models.user import Role, User
 
 __all__ = [
+    "ExtensionCredential",
+    "ExtensionGrant",
     "Application",
     "ApplicationEvent",
     "ApplicationStatus",

@@ -11,6 +11,7 @@ it("saves how long to wait before a follow-up reminder", async () => {
   const me = makeMe();
   const calls = mockFetch({
     "GET /api/ats-boards": () => json([]),
+    "GET /api/extension/connections": () => json([]),
     "PUT /api/me/follow-up-days": () => json({ ...me, follow_up_days: 10 }),
   });
   const user = userEvent.setup();

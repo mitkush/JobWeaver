@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>JobWeaver</title>
+    <link rel="stylesheet" href="./src/popup.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">jobweaver // extension</p>
+      <h1>JobWeaver</h1>
+      <p id="status" role="status">Checking your connection...</p>
+      <div class="actions">
+        <button id="connect" type="button" hidden>Connect</button>
+        <button id="disconnect" type="button" class="ghost" hidden>Disconnect</button>
+      </div>
+      <p class="note">Fills application forms from your Drafts. It never submits a form for you.</p>
+    </main>
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>
