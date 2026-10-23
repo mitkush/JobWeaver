@@ -24,7 +24,8 @@ export function buildManifest(origin: string, version: string) {
     minimum_chrome_version: "116",
     action: { default_popup: "popup.html", default_title: "JobWeaver" },
     background: { service_worker: "background.js", type: "module" },
-    permissions: ["storage"],
+    // activeTab: the popup reads the address of the tab it was opened on, to suggest a Draft.
+    permissions: ["storage", "activeTab"],
     host_permissions: [pattern],
     externally_connectable: { matches: [pattern] },
   };

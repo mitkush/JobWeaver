@@ -11,9 +11,9 @@ it("derives the fixed extension ID the server allows", () => {
   expect(id).toBe("npdbpfgligiimfnoblngghbokehjbafm");
 });
 
-it("asks only for storage and the one JobWeaver origin", () => {
+it("asks only for storage, the clicked tab and the one JobWeaver origin", () => {
   const manifest = buildManifest("https://jobweaver.duckdns.org", "0.1.0");
-  expect(manifest.permissions).toEqual(["storage"]);
+  expect(manifest.permissions).toEqual(["storage", "activeTab"]);
   expect(manifest.host_permissions).toEqual(["https://jobweaver.duckdns.org/*"]);
   expect(manifest.externally_connectable.matches).toEqual(["https://jobweaver.duckdns.org/*"]);
   expect(JSON.stringify(manifest)).not.toContain("<all_urls>");

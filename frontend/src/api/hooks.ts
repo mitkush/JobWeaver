@@ -13,6 +13,8 @@ import {
   type FollowUpRequest,
   type Me,
   type Preferences,
+  type ProfileContent,
+  type SavedAnswerInput,
 } from "./client";
 
 export const keys = {
@@ -31,6 +33,8 @@ export const keys = {
   reminders: ["reminders"] as const,
   company: (id: string) => ["company", id] as const,
   extensionConnections: ["extension", "connections"] as const,
+  profile: ["profile"] as const,
+  savedAnswers: ["saved-answers"] as const,
 };
 
 export function useMe() {
@@ -225,6 +229,46 @@ export function useApproveExtension() {
     mutationFn: (body: { extension_id: string; challenge: string }) =>
       unwrap(api.POST("/api/extension/approve", { body })),
     onSettled: () => client.invalidateQueries({ queryKey: keys.extensionConnections }),
+  });
+}
+
+/** The application profile the extension fills forms with; saving it is the review. */
+export function useProfile() {
+  return useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/api/profile")) });
+}
+
+export function useProfileSuggestion() {
+  return useMutation({ mutationFn: () => unwrap(api.GET("/api/profile/suggestion")) });
+}
+
+export function useSaveProfile() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { content: ProfileContent; expected_version: number }) => unwrap(api.PUT("/api/profile", { body })),
+    onSuccess: (profile) => client.setQueryData(keys.profile, profile),
+  });
+}
+
+export function useSavedAnswers() {
+  return useQuery({ queryKey: keys.savedAnswers, queryFn: () => unwrap(api.GET("/api/saved-answers")) });
+}
+
+export function useSaveAnswer() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: SavedAnswerInput }) =>
+      id
+        ? unwrap(api.PUT("/api/saved-answers/{answer_id}", { params: { path: { answer_id: id } }, body }))
+        : unwrap(api.POST("/api/saved-answers", { body })),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.savedAnswers }),
+  });
+}
+
+export function useDeleteAnswer() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unwrap(api.DELETE("/api/saved-answers/{answer_id}", { params: { path: { answer_id: id } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.savedAnswers }),
   });
 }
 

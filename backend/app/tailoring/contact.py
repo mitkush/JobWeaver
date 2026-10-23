@@ -36,6 +36,16 @@ def is_phone(text: str) -> bool:
     return bool(_PHONE.fullmatch(text))
 
 
+def first_phone(text: str) -> str | None:
+    match = _PHONE.search(text)
+    return match.group(0) if match else None
+
+
+def profile_links(text: str) -> list[str]:
+    """LinkedIn and GitHub profile links in a line, without a trailing slash."""
+    return [m.group(0).rstrip("/") for m in _PROFILE.finditer(text)]
+
+
 # Web addresses and emails in a line, printed as clickable links.
 LINK = re.compile(
     r"(https?://[^\s|,;()]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"

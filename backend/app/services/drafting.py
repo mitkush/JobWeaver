@@ -462,7 +462,7 @@ async def stop_tasks() -> None:
 _TEMPLATE_FITS: dict[tuple[uuid.UUID, int], Literal["standard", "compact"]] = {}
 
 
-async def _fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
+async def fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard", "compact"]:
     """Standard when it fits one page, else Compact when that fits one page; past that,
     whichever fits two pages. A second page holding a few lines looks unfinished."""
     key = (draft.id, row.number)
@@ -507,7 +507,7 @@ async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> Draf
         version=version_out(current) if current else None,
         application_status=status,
         attachment_name=filename(str(job["name"]), str(job["company"]), str(job["title"])),
-        template=await _fitting_template(draft, current) if current else "standard",
+        template=await fitting_template(draft, current) if current else "standard",
     )
 
 

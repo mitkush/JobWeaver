@@ -1,6 +1,7 @@
 """Import every model so Alembic and create_all see the full metadata."""
 
 from app.models.ai_usage import AIUsage
+from app.models.application_profile import ApplicationProfile, SavedAnswer
 from app.models.base import Base
 from app.models.document import Document, DocumentKind
 from app.models.draft import (
@@ -24,6 +25,8 @@ from app.models.source import Source, SourceState
 from app.models.user import Role, User
 
 __all__ = [
+    "ApplicationProfile",
+    "SavedAnswer",
     "ExtensionCredential",
     "ExtensionGrant",
     "Application",
