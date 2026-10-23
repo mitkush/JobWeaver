@@ -12,7 +12,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY backend/pyproject.toml ./
 COPY backend/app ./app
-RUN pip install .
+ARG BACKEND_EXTRAS=""
+RUN if [ -n "$BACKEND_EXTRAS" ]; then pip install ".[${BACKEND_EXTRAS}]"; else pip install .; fi
 COPY backend/alembic.ini ./
 COPY backend/alembic ./alembic
 COPY backend/scripts/backfill_description_mentions.py ./scripts/backfill_description_mentions.py

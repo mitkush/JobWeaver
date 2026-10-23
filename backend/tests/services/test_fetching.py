@@ -828,6 +828,34 @@ async def test_incomplete_opt_in_search_keeps_postings_and_spend_but_hands_windo
     assert "Partial postings were saved" in run.error
 
 
+async def test_known_postings_lookup_uses_only_active_usable_ids_in_the_source_family(
+    db, fetcher, standby, monkeypatch
+):
+    from app.services.fetching import save_postings
+
+    await add_preferences(db)
+    await save_postings(
+        db, standby.name, [posting("cached"), posting("closed"), posting("empty")], START
+    )
+    await save_postings(db, "other-site", [posting("unrelated")], START)
+    rows = (await db.execute(select(Posting))).scalars().all()
+    for row in rows:
+        row.description_usable = row.source_job_id != "empty"
+        if row.source_job_id == "closed":
+            row.closed_at = START
+    await db.commit()
+    found = []
+
+    async def search(self, query, window):
+        found.append(await self.known_postings({"cached", "closed", "empty", "unrelated", "new"}))
+        return FetchResult(postings=[])
+
+    monkeypatch.setattr(FakeSearch, "fetch_window", search)
+    result = await fetcher.run_source(FakeSearch.name)
+    assert result.status == "succeeded"
+    assert found and all(ids == {"cached"} for ids in found)
+
+
 async def test_standby_runs_while_its_main_is_disabled(db, fetcher, standby):
     await add_preferences(db)
     await fetcher.sync_sources()

@@ -74,3 +74,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t jobweaver .
+      - run: docker run --rm --network none --entrypoint python jobweaver -c "import importlib.util; assert importlib.util.find_spec('jobspy') is None"
+      - run: docker build --build-arg BACKEND_EXTRAS=jobspy -t jobweaver-jobspy .
+      - run: docker run --rm --network none --entrypoint python jobweaver-jobspy -c "from jobspy import scrape_jobs"

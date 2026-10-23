@@ -20,10 +20,10 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "rapidfuzz>=3.9",
     "sentry-sdk[fastapi]>=2.20,<3",
-    "python-jobspy==1.4.1",
 ]
 
 [project.optional-dependencies]
+jobspy = ["python-jobspy==1.4.1"]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",

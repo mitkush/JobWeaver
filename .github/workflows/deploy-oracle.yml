@@ -59,6 +59,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          # Optional backend extras, e.g. repository variable BACKEND_EXTRAS=jobspy.
+          build-args: BACKEND_EXTRAS=${{ vars.BACKEND_EXTRAS }}
           push: true
           # One version per deploy; no extra untagged attestation versions to clean up.
           provenance: false

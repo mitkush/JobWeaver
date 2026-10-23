@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -54,6 +55,7 @@ async def test_search_fetches_full_details_and_counts_both_calls(caplog):
     assert seen[1].url.params["sort_by"] == "day"
     assert seen[1].url.params["location"] == "India"
     assert seen[1].url.params["work_type"] == "remote"
+    assert "type" not in seen[1].url.params
     assert "secret" not in caplog.text
     assert "[redacted]" in caplog.text
 
@@ -113,6 +115,26 @@ async def test_local_budget_tighter_than_provider_balance():
         source.allowance_left = 5
         with pytest.raises(SourceQuotaExhausted):
             await source.fetch_window(QUERY, WINDOW)
+
+
+async def test_existing_linkedin_ids_with_descriptions_do_not_buy_details():
+    paid_details = []
+
+    def handler(request):
+        if request.url.path == "/account":
+            return httpx.Response(200, json={"requestLimit": 100, "requestUsed": 0})
+        if "job_id" in request.url.params:
+            paid_details.append(request.url.params["job_id"])
+            return httpx.Response(200, json=[DETAIL])
+        return httpx.Response(200, json=[LISTING, dict(LISTING, job_id="new-job")])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        source = adapter(http)
+        source.known_postings = AsyncMock(return_value={"12345"})
+        result = await source.fetch_window(QUERY, WINDOW)
+        source.known_postings.assert_awaited_once_with({"12345", "new-job"})
+    assert paid_details == ["new-job"]
+    assert result.credits_used == 10 and len(result.postings) == 1
 
 
 @pytest.mark.parametrize("payload", [{}, {"requestLimit": True, "requestUsed": 0}])

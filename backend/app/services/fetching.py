@@ -683,6 +683,27 @@ class Fetcher:
         else:
             queries = [None]
         family = family_of(type(adapter))
+
+        async def known_postings(ids: set[str]) -> set[str]:
+            if not ids:
+                return set()
+            # A separate short session releases the connection before another slow
+            # provider request. Only the page's IDs and cached usability are read.
+            async with self.sessionmaker() as lookup:
+                return set(
+                    (
+                        await lookup.execute(
+                            select(Posting.source_job_id).where(
+                                among(Posting.source, family, String()),
+                                among(Posting.source_job_id, ids, String()),
+                                Posting.description_usable.is_(True),
+                                Posting.closed_at.is_(None),
+                            )
+                        )
+                    ).scalars()
+                )
+
+        adapter.known_postings = known_postings
         # Every search in this run ends its window at the run's start, not when its turn
         # comes: otherwise slow searches before it push each day's window past 24 hours.
         started = self.clock()
@@ -786,7 +807,7 @@ class Fetcher:
             if not result.complete and adapter.retry_incomplete_window:
                 run.status = RunStatus.FAILED
                 run.error = (
-                    "Incomplete search: credit or provider cap reached. Partial postings "
+                    "Incomplete search: not all jobs could be collected. Partial postings "
                     "were saved; the search window remains available for retry or fallback."
                 )
                 outcome.postings_new += new

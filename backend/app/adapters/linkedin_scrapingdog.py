@@ -103,7 +103,7 @@ class LinkedInScrapingdogAdapter(WindowedSourceAdapter):
                 f"{self.label} needs credits for search and a full job detail"
             )
 
-        params: dict[str, Any] = {"type": "listings", "field": query.keywords}
+        params: dict[str, Any] = {"field": query.keywords}
         for days, value in ((1, "day"), (7, "week"), (30, "month")):
             if window.within_days(days):
                 params["sort_by"] = value
@@ -130,6 +130,13 @@ class LinkedInScrapingdogAdapter(WindowedSourceAdapter):
                 raise SourceBadResponse(
                     f"{self.label} returned unexpected listings", credits_used=spent
                 )
+            ids = {str(row["job_id"]) for row in rows if row.get("job_id")}
+            try:
+                known = await self.known_postings(ids) if self.known_postings else set()
+            except Exception as exc:
+                raise SourceUnavailable(
+                    f"{self.label} could not check existing jobs", credits_used=spent
+                ) from exc
             for row in rows:
                 job_id = str(row.get("job_id") or "")
                 if not job_id:
@@ -139,6 +146,8 @@ class LinkedInScrapingdogAdapter(WindowedSourceAdapter):
                 if job_id in seen:
                     continue
                 seen.add(job_id)
+                if job_id in known:
+                    continue
                 posted_at = parse_datetime(row.get("job_posting_date"), now=window.until)
                 # Search dates are whole days; keep the boundary day for overlap safety.
                 if posted_at and posted_at.date() < window.since.date():

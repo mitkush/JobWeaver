@@ -1,6 +1,7 @@
 """Self-hosted JobSpy LinkedIn collection, opt-in and last in the fallback chain."""
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import math
@@ -14,7 +15,7 @@ from app.adapters.base import (
     SourceQuery,
     WindowedSourceAdapter,
 )
-from app.adapters.errors import SourceBadResponse, SourceUnavailable
+from app.adapters.errors import SourceBadResponse
 from app.adapters.normalize import (
     country_display,
     extract_contact_email,
@@ -36,7 +37,8 @@ class LinkedInJobSpyAdapter(WindowedSourceAdapter):
     retry_incomplete_window = True
     default_enabled = False
     disabled_reason = (
-        "Experimental self-hosted LinkedIn scraper; no API key, but LinkedIn may block requests."
+        "Experimental self-hosted LinkedIn scraper; requires the optional JobSpy package. "
+        "No API key, but LinkedIn may block requests."
     )
 
     def is_configured(self) -> bool:
@@ -50,25 +52,34 @@ class LinkedInJobSpyAdapter(WindowedSourceAdapter):
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            limit=8 * 1024 * 1024,
         )
+        result: dict[str, Any] = {"jobs": [], "error": False, "complete": False}
         try:
             async with asyncio.timeout(self.settings.jobspy_timeout_seconds):
-                stdout, _ = await process.communicate(json.dumps(payload).encode())
-        except TimeoutError as exc:
-            raise SourceUnavailable(f"{self.label} timed out; search was stopped") from exc
+                assert process.stdin is not None and process.stdout is not None
+                process.stdin.write(json.dumps(payload).encode())
+                await process.stdin.drain()
+                process.stdin.close()
+                while line := await process.stdout.readline():
+                    frame = json.loads(line)
+                    if not isinstance(frame, dict) or not isinstance(frame.get("jobs"), list):
+                        raise ValueError("Invalid worker checkpoint")
+                    result["jobs"].extend(frame["jobs"])
+                    result["error"] = result["error"] or bool(frame.get("error"))
+                    result["complete"] = bool(frame.get("complete"))
+                await process.wait()
+        except (TimeoutError, ValueError, UnicodeDecodeError, BrokenPipeError):
+            # Even a hard timeout keeps every complete checkpoint already received.
+            result["error"], result["complete"] = True, False
         finally:
             # Cancellation and timeouts stop the worker, including its blocking requests.
             if process.returncode is None:
-                process.kill()
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
                 await process.wait()
         if process.returncode:
-            raise SourceUnavailable(f"{self.label} worker exited before completing the search")
-        try:
-            result = json.loads(stdout)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise SourceBadResponse(f"{self.label} returned unreadable data") from exc
-        if not isinstance(result, dict):
-            raise SourceBadResponse(f"{self.label} returned unexpected data")
+            result["error"], result["complete"] = True, False
         return result
 
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult:
@@ -82,28 +93,29 @@ class LinkedInJobSpyAdapter(WindowedSourceAdapter):
         result = await self._collect(
             {
                 "keywords": keywords,
-                "location": ", ".join(part for part in where if part),
+                "location": ", ".join(part for part in where if part) or "Worldwide",
                 "hours_old": max(1, math.ceil(window.hours)),
                 "proxies": self.settings.jobspy_proxies,
+                "max_results": self.settings.jobspy_max_results,
+                "time_budget": max(1, self.settings.jobspy_timeout_seconds - 5),
             }
         )
-        if result.get("error"):
-            raise SourceUnavailable(f"{self.label} search was blocked or incomplete; retry later")
         rows = result.get("jobs")
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise SourceBadResponse(f"{self.label} returned unexpected jobs")
         postings = []
         seen = set()
+        complete = bool(result.get("complete")) and not result.get("error")
         for row in rows:
             posting = self.to_posting(row)
             if posting is None:
-                # Missing details are often a block on the detail request. Do not turn
-                # that into a successful search that loses the window across fallbacks.
-                raise SourceUnavailable(f"{self.label} returned jobs without full details")
+                # Keep the good rows, but leave the window open for the missed details.
+                complete = False
+                continue
             if posting.source_job_id not in seen:
                 seen.add(posting.source_job_id)
                 postings.append(posting)
-        return FetchResult(postings=postings, complete=len(rows) < 1000)
+        return FetchResult(postings=postings, complete=complete)
 
     @staticmethod
     def to_posting(row: dict[str, Any]) -> NormalizedPosting | None:
