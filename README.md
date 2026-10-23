@@ -67,7 +67,7 @@ Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the A
 
 ## Application Extension (FR-E14, in progress)
 
-A Chrome/Brave extension that will fill application forms from your Drafts; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). Stage 1 only connects it to your account.
+A Chrome/Brave extension that fills application forms from your reviewed profile and a chosen Draft; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). On a form, open the extension, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in; questions, salary, visa and referrer fields stay for you. **Undo** restores what JobWeaver changed. It never submits.
 
 1. Set `EXTENSION_IDS=npdbpfgligiimfnoblngghbokehjbafm` on the server.
 2. Build it for your server: `cd extension && npm ci && JOBWEAVER_ORIGIN=https://your-host npm run build` (defaults to the production host; use `http://localhost:5173` locally).

@@ -76,6 +76,10 @@ export async function select(deps: Deps, tabId: number, draftId: string, number?
   return chosen;
 }
 
+export async function currentSelection(deps: Deps, tabId: number): Promise<Selection | null> {
+  return (await deps.store.get<Selection>(selectionKey(tabId))) ?? null;
+}
+
 export async function clear(deps: Deps, tabId: number): Promise<void> {
   await deps.store.remove(selectionKey(tabId));
 }

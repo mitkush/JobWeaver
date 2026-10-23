@@ -1,5 +1,7 @@
 import type { PopupMessage } from "./background";
 import type { DraftSummary, DraftVersion, PageState } from "./drafts";
+import type { FillResult, ScanResult } from "./fill/session";
+import type { FillReport } from "./fill/types";
 import { fromNow } from "./time";
 
 type Status = { connected: false; error?: string } | { connected: true; email: string; expiresAt: string };
@@ -27,10 +29,16 @@ function button(label: string, onClick: () => void, variant = ""): HTMLButtonEle
   return el;
 }
 
+/** Children for replaceChildren, without the parts a condition left out. */
+const parts = (...items: (Node | string | null)[]) => items.filter((i): i is Node | string => i !== null);
+
 const open = (path: string) => void ask({ type: "open", path });
 
+/** The tab the User is looking at: the active tab of the last focused browser window,
+ * which is the one the toolbar button belongs to. */
 async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const window = await chrome.windows.getLastFocused({ windowTypes: ["normal"] });
+  const [tab] = await chrome.tabs.query({ active: true, windowId: window.id });
   return tab;
 }
 
@@ -102,6 +110,92 @@ function chooseSection(tabId: number, state: PageState, refresh: () => void): HT
   );
 }
 
+function download(name: string, base64: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const a = h("a", { href: url, download: name }) as HTMLAnchorElement;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+const SOURCES = { profile: "Profile", draft: "Draft PDF" } as const;
+
+/** Scan, preview with a tick per field, fill only what is ticked, undo. */
+function fillSection(tabId: number): HTMLElement {
+  const section = h("section", { class: "panel" }, h("p", { class: "label" }, "Fill this form"));
+  const body = h("div");
+  const scanButton = button("Scan this form", () => void runScan());
+  section.append(body, h("div", { class: "actions" }, scanButton));
+  // Reopened after checking the page: show the last fill with its Undo and downloads.
+  void ask<FillResult | null>({ type: "lastFill", tabId }).then((last) => {
+    if (last && !body.childElementCount) showReport(last);
+  });
+
+  async function runScan() {
+    scanButton.disabled = true;
+    const result = await ask<ScanResult & { error?: string }>({ type: "scan", tabId });
+    scanButton.disabled = false;
+    if (result.error || !result.proposals) {
+      body.replaceChildren(h("p", { class: "warn-text" }, result.error ?? "This page could not be scanned."));
+      return;
+    }
+    showPreview(result);
+  }
+
+  function showPreview(result: ScanResult) {
+    const rows = result.proposals.map((p) => {
+      const box = h("input", { type: "checkbox", value: p.ref, id: `f-${p.ref}` }) as HTMLInputElement;
+      // A field that already holds something is overwritten only when ticked here.
+      box.checked = !p.overwrite;
+      return h(
+        "li",
+        {},
+        box,
+        h(
+          "label",
+          { for: `f-${p.ref}` },
+          h("span", { class: "title" }, p.label),
+          h("span", { class: "value" }, p.value),
+          h("span", { class: "source" }, p.overwrite ? `${SOURCES[p.source]} - replaces what is there` : SOURCES[p.source]),
+        ),
+      );
+    });
+    const fillButton = button("Fill ticked fields", async () => {
+      const refs = Array.from(body.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked"), (b) => b.value);
+      fillButton.disabled = true;
+      showReport(await ask<FillResult>({ type: "fill", tabId, refs }));
+    });
+    body.replaceChildren(...parts(
+      result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
+      result.profileReviewed ? null : h("p", { class: "warn-text" }, "Review your profile to fill your details."),
+      rows.length ? h("ul", { class: "fields" }, ...rows) : h("p", {}, "Nothing here JobWeaver can fill."),
+      result.manual.length ? h("p", { class: "muted" }, `For you to fill: ${result.manual.slice(0, 8).join(", ")}${result.manual.length > 8 ? "…" : ""}`) : null,
+      rows.length ? h("p", { class: "muted" }, "Filling puts the ticked values into this site's form, which may save them before you submit. JobWeaver never submits.") : null,
+      rows.length ? h("div", { class: "actions" }, fillButton) : null,
+    ));
+  }
+
+  function showReport(report: FillResult) {
+    const label = (ref: string) => report.labels[ref] ?? "A field";
+    const undoButton = button("Undo", async () => {
+      undoButton.disabled = true;
+      const undone = await ask<FillReport>({ type: "undo", tabId });
+      body.replaceChildren(
+        h("p", {}, `Undid ${undone.filled.length} ${undone.filled.length === 1 ? "field" : "fields"}.`),
+        ...undone.failed.map((f) => h("p", { class: "muted" }, `${label(f.ref)}: ${f.reason}`)),
+      );
+    }, "ghost");
+    body.replaceChildren(
+      h("p", { class: "ok" }, `Filled ${report.filled.length} ${report.filled.length === 1 ? "field" : "fields"}. Check them on the page, then submit yourself.`),
+      ...report.failed.map((f) => h("p", { class: "warn-text" }, `${label(f.ref)}: ${f.reason}`)),
+      ...report.downloads.map((d) => button(`Download ${d.name} to attach it yourself`, () => download(d.name, d.base64), "ghost")),
+      h("div", { class: "actions" }, undoButton),
+    );
+  }
+
+  return section;
+}
+
 async function render() {
   const status = await ask<Status>({ type: "status" });
   connectButton.hidden = status.connected;
@@ -117,10 +211,12 @@ async function render() {
   const tabId = tab.id;
   const state = await ask<PageState>({ type: "page", tabId, url: tab.url });
   const refresh = () => void render();
-  content.replaceChildren(
+  content.replaceChildren(...parts(
     profileSection(state),
     state.selected ? selectedSection(tabId, state.selected, refresh) : chooseSection(tabId, state, refresh),
-  );
+    // Browser pages cannot be filled; without activeTab the address is unknown, so offer it.
+    !tab.url || /^https?:/.test(tab.url) ? fillSection(tabId) : null,
+  ));
 }
 
 connectButton.addEventListener("click", async () => {
