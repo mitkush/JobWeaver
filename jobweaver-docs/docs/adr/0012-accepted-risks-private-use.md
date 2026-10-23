@@ -7,3 +7,5 @@ Gemini's terms also require paid services for apps made available to users in th
 Risk (2) also affects the founder's friends, so the founder cannot accept it for them: every User accepts a one-line AI data notice in onboarding before any document is sent to an AI provider.
 
 **Consequences:** these are recorded, not re-debated, during V1; the fallback design (ADR-0003, ADR-0007) limits the impact of (3); a **pre-launch review** of (1) and (2), plus Google verification for Gmail (ADR-0006), is a required gate before JobWeaver is offered publicly or for money.
+
+**Added by ADR-0017:** publishing the Application Extension in a browser store is part of the pre-launch review; until then it is installed unpacked by Users.

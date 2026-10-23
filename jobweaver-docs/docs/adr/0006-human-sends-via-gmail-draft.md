@@ -5,3 +5,5 @@ Nothing leaves JobWeaver on its own. "Save draft" only saves. The outward action
 **Considered and rejected:** sending directly via `gmail.send` (removes the User's final check in their own mail client), compose-link only (no attachment, more manual work on every application), reading replies to automate the tracker (needs a further restricted scope; out of V1).
 
 **Consequences:** `gmail.compose` is a **restricted** scope (checked 5 Oct 2026), so a public launch needs Google verification plus an annual third-party security assessment (CASA). The cheaper public path is `gmail.send`, which is only "sensitive" (verification, no assessment) but sends directly and cannot create drafts, so it would change this decision; that choice belongs to the launch gate (ADR-0012), not V1. Gmail tokens are encrypted at rest.
+
+**Extended by ADR-0017:** the same rule covers application forms; the Application Extension fills them and the User submits.

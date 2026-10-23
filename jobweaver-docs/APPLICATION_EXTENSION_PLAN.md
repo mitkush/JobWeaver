@@ -1,43 +1,85 @@
 # Application form extension plan
 
-Status: proposed, for review in a draft PR. This document adds no extension, endpoint,
-permission, migration or deployment change. The stages below are implementation proposals,
-not promises that a particular third-party form already works.
+Status: proposed, for review in a draft PR. Decisions are recorded in ADR-0017 and FR-E14.
+This document adds no extension, endpoint, permission, migration or deployment change. The
+stages below are implementation proposals, not promises that a particular third-party form
+already works.
 
 ## Goal and first release
 
-Help a User apply to a Job from their Feed by filling a form with reviewed information
-and using a specific saved Draft version. The User reviews the destination form, attaches
-files and submits it themselves, then explicitly marks the Application Applied.
+Help a User apply to a Job on any careers site or application form: fill the form from
+reviewed information and a selected saved Draft version, attach the Tailored Resume, and
+suggest answers to the form's own questions. The User reviews everything on the employer's
+page and submits it themselves, then explicitly marks the Application Applied. The extension
+never submits, never clicks Next and never applies in bulk (PRD non-goal: not an auto-apply
+bot).
 
-Start with an unpacked Manifest V3 extension for Chrome and Brave on desktop. Support
-Greenhouse and Lever application forms first, with tested adapters for their supported
-hosts and form variants. A generic mapper can offer basic contact fields only when the
-mapping is unambiguous. Unsupported fields stay visible as manual work.
+Start with an unpacked Manifest V3 extension for Chrome and Brave on desktop. It works on
+any site through a generic field mapper. Greenhouse, Lever and Ashby get dedicated form
+adapters because they cover most apply links in the Feed and their layouts are stable; a
+dedicated adapter is a higher-confidence mapping, not a prerequisite. Fields the mapper
+cannot identify stay visible as manual work.
 
 Outside the first release: automatic submission or Next-button clicks, bulk applications,
-LinkedIn Easy Apply, Workday, CAPTCHA handling, automatic file uploads, AI-generated custom
-answers, scraping new Jobs and public extension-store distribution. Adding an application
-form adapter is separate from adding a Source Adapter: it does not discover Postings.
+LinkedIn Easy Apply, Workday account creation, CAPTCHA handling, scraping Jobs in the
+background and public extension-store distribution. Adding an application form adapter is
+separate from adding a Source Adapter.
 
 ## User flow
 
-1. On a saved Draft, select a version and PDF layout, then open the application link.
-   Unsaved edits must be saved before that version can be used.
-2. Click the extension and connect JobWeaver if necessary. Select the intended Job and
-   Draft; show Company, title, destination hostname, version number and save time.
+1. On any page with a job advert or application form, click the extension and connect
+   JobWeaver if necessary.
+2. The extension suggests the Job by matching the page URL against stored apply links.
    URL matching may suggest a Job, but cannot silently select an ambiguous match.
-3. Scan the current form on demand. Preview each proposed field, its value and its source.
-   Allow selection of individual fields. Existing nonempty fields are skipped by default;
-   overwriting requires a separate explicit selection.
-4. Click Fill selected fields. Report filled, skipped and failed fields separately.
+   - **Known Job:** show Company, title, destination hostname, the saved Draft version
+     and its save time, or a Create Draft action.
+   - **Unknown Job:** offer Capture this job. The extension reads the advert from the
+     page (JSON-LD `JobPosting` when present, otherwise the visible text or the User's
+     selection), shows it for review and sends it to JobWeaver as a Captured Job
+     (ADR-0017). The User then creates the Draft.
+3. Tailoring, checks and edits happen on JobWeaver's Draft page, which the extension opens.
+   The popup shows the Draft's state, its warning count and the version that will be used.
+   Unsaved edits must be saved before that version can be used.
+4. Scan the current form on demand. Preview each proposed field, its value and its source:
+   profile, Saved Answer, Draft, Fact notes or AI suggestion. Allow selection of individual
+   fields. Existing nonempty fields are skipped by default; overwriting requires a separate
+   explicit selection.
+5. Click Fill selected fields. Report filled, skipped and failed fields separately, and
+   outline them on the page: exact data, needs review (AI suggestion), left empty.
    Preserve existing input on errors and rescan after a page transition when requested.
-5. Download the selected Tailored Resume or Cover Letter using JobWeaver's existing PDF
-   generation and validation. Attach files manually in the first release. Display the
-   exact version and filename so a newer Draft cannot silently replace the selected PDF.
-6. Review and submit on the employer's site. The extension never clicks Submit. A separate
-   I submitted this application action updates the Application through JobWeaver.
-   Filling fields or detecting a confirmation page alone does not mark it Applied.
+6. Attach the selected Tailored Resume and Cover Letter to matching file inputs, using
+   JobWeaver's existing PDF generation. Display the exact version and file name so a newer
+   Draft cannot silently replace the selected PDF. If a site rejects programmatic
+   attachment, download the file and ask the User to attach it.
+7. Review and submit on the employer's site. A separate I submitted this application action
+   updates the Application through JobWeaver. Filling fields or detecting a confirmation
+   page alone does not mark it Applied.
+
+## Questions on the form
+
+Fields that are not profile data (for example "Why do you want to work here?" or "Years of
+experience with Rails") are sent to JobWeaver as question text only: label, field type,
+options and whether it is required. Never page HTML, other field values or the full URL.
+JobWeaver answers each one through a typed AI Gateway task, after the AI notice and region
+checks (ADR-0007, ADR-0012), with one of:
+
+- **Saved Answer:** reuse what the User saved for the same question before.
+- **Suggestion:** a short, plain-spoken answer written only from the User's Facts, with a
+  Tailoring Trace (ADR-0005). Never auto-accepted; outlined as needs review.
+- **Fact notes:** the relevant Facts as short notes beside the field, with no prose.
+- **Leave empty.**
+
+Two rules are enforced in code, not left to the prompt:
+
+- **Sensitive questions** (work authorisation, sponsorship, salary, notice period, legal
+  declarations, consent, demographic, disability and veteran questions) are filled only
+  from Saved Answers the User entered. Otherwise they stay empty. Never a Suggestion.
+- **Forms that ask for answers not written by AI** (detected from instructions such as
+  "do not use AI" or "not AI-generated", and settable by the User per page) get Fact
+  notes only. The extension does not generate prose for them, and does not rewrite AI text
+  to look human-written: the User writes those answers, with their own Facts at hand.
+
+Edited answers can be saved as Saved Answers so the next form reuses them.
 
 ## Existing building blocks and gaps
 
@@ -46,6 +88,9 @@ form adapter is separate from adding a Source Adapter: it does not discover Post
 | `backend/app/api/drafts.py` | Reuse versioned PDF and explicit Applied behavior through the existing services; retain ownership, warning and expected-version checks. |
 | `backend/app/api/deps.py` | Current authentication resolves a session cookie. It does not yet support extension credentials. |
 | `backend/app/services/auth.py` | Reuse the Google-authenticated User identity; add a narrowly scoped extension authorisation flow. |
+| `backend/app/services/accounts.py` | `ensure_ai_allowed` gates every question-answering call. |
+| `backend/app/tailoring/contact.py` | `contact_facts()` already extracts phone and profile links; reuse it to suggest profile values. |
+| `backend/app/adapters/ats_urls.py` | Recognises Greenhouse, Lever and Ashby apply URLs; reuse it to pick a form adapter and to match a page to a Job. |
 | `backend/app/models/user.py` | Name and email exist, but this is not a structured application profile. |
 | Fact Bank and Draft snapshots | Preserve reviewed Facts, saved edits and Tailoring Trace; do not parse display text into assumed employment history. |
 
@@ -58,21 +103,25 @@ autofill value. Store Fact references for imported claims; a removed or changed 
 make dependent values require review. Never derive years of experience or seniority from
 a job description.
 
-An optional saved-answer section can hold User-entered notice period, salary expectations
-with currency/period, relocation and work-authorisation answers. Missing values remain
-unanswered. Protected demographic, disability, veteran, consent and legal declaration
-fields remain manual in the first release, even if their labels look familiar.
+Saved Answers hold User-entered answers keyed by a normalised question: notice period,
+salary expectations with currency and period, relocation, work authorisation and any
+answer the User chose to keep from a form. Missing values remain unanswered.
 
-Proposed storage is a profile record with validated structured content and a version, plus
-revocable extension authorisations. Final schema and retention rules belong to the first
-implementation PR; all User-owned records and queries carry `user_id` (ADR-0001).
+Captured Jobs (ADR-0017) are stored as Postings from a push-only `captured` Source and
+linked to the capturing User like any Feed Job (ADR-0002). They contain only the public
+advert, never User data.
+
+Proposed storage is a profile record with validated structured content and a version,
+Saved Answers, and revocable extension authorisations. Final schema and retention rules
+belong to the first implementation PR; all User-owned records and queries carry `user_id`
+(ADR-0001).
 
 ## Extension and backend boundary
 
 ```text
 User-approved JobWeaver connection -> extension service worker -> scoped backend API
 Application page <-> on-demand content script <-> extension preview and fill controls
-Scoped backend API -> existing ownership-checked Draft/Application services
+Scoped backend API -> existing ownership-checked Draft/Application services and AI Gateway
 ```
 
 The service worker holds authorisation and talks only to a fixed JobWeaver origin.
@@ -80,14 +129,18 @@ Content scripts receive only the selected field values required for the current 
 never the session cookie, extension credential, full Fact Bank or provider API keys.
 Treat destination HTML and field labels as untrusted data. Validate message schemas,
 sender tab/frame and current URL; no page-provided URL may become a privileged fetch.
-Render labels as text, not HTML. Invalidate a prepared fill when the page or form changes.
+Render labels as text, not HTML. Question text sent for answers is data, never
+instructions to the AI. Invalidate a prepared fill when the page or form changes.
 
 Use `activeTab`, `scripting` and extension session storage, with host access restricted
-to the JobWeaver origin. Do not request cookies, browsing history or `<all_urls>`.
-Start with top-level and same-origin form content. Cross-origin embedded forms need a
-separate explicit host-permission design; show a manual fallback until supported.
-Allowlisted field types, visible/enabled controls and recognised form adapters determine
-what can be filled. Do not touch hidden inputs, passwords or arbitrary page scripts.
+to the JobWeaver origin. `activeTab` gives temporary access to whichever site the User
+clicked the extension on, so any site works without `<all_urls>`. Do not request cookies,
+browsing history or `<all_urls>`. Cross-origin embedded forms (for example a Greenhouse
+form inside a company careers page) need access to the frame's origin: request it as an
+optional host permission, per host, at the moment it is needed, and show a manual fallback
+if the User declines. Allowlisted field types, visible/enabled controls and recognised form
+adapters determine what can be filled. Do not touch hidden inputs, passwords or arbitrary
+page scripts.
 
 ## Authorisation proposal
 
@@ -102,53 +155,44 @@ The browser prototype must verify this handshake, sender-origin checks and unpac
 extension ID setup before profile endpoints ship. Keep credentials in extension session
 storage accessible only to trusted extension contexts; after restart or expiry, reconnect
 rather than adding a permanent refresh secret in the first release. Do not weaken existing
-cookie/CSRF rules or enable wildcard CORS to make the extension work.
+cookie/CSRF rules or enable wildcard CORS to make the extension work: the extension calls
+the API from its service worker, which host permissions already allow (ADR-0008 unchanged).
 
-Proposed scopes: read the reviewed profile, list owned Draft metadata and fetch a selected
-Draft/version, download its validated PDF, and explicitly mark its Application Applied.
-No Admin access, Source controls, Gmail access or arbitrary API proxy. Typed extension API
-responses expose the minimum data; regenerate frontend API types when endpoints are added.
-Credential revocation and account deletion invalidate subsequent requests immediately.
+Proposed scopes: read the reviewed profile and Saved Answers, list owned Draft metadata and
+fetch a selected Draft/version, download its validated PDF, capture a Job, request answers
+to form questions, save an answer, and explicitly mark an Application Applied. No Admin
+access, Source controls, Gmail access or arbitrary API proxy. Typed extension API responses
+expose the minimum data; regenerate frontend API types when endpoints are added. Credential
+revocation and account deletion invalidate subsequent requests immediately.
 
 ## Form mapping and correctness
 
-Implement a registry of form adapters under a new extension directory, separate from the
-backend Source registry. Each adapter detects a supported page, enumerates fields and
-fills permitted controls. Shared mapping uses labels, autocomplete metadata and known
+Implement a registry of form adapters under a new `extension/` directory, separate from
+the backend Source registry. The generic adapter handles any page; Greenhouse, Lever and
+Ashby adapters override it where they recognise the form. Each adapter enumerates fields
+and fills permitted controls. Shared mapping uses labels, `autocomplete` metadata and known
 field identities, rather than matching every input containing words such as name.
 
-Use deterministic matching for first-release fields. Test framework-controlled inputs,
-dropdown values, repeated employment rows, validation messages and rerendered forms.
-Ambiguous selectors or option meanings require manual entry. Keep a per-fill in-memory
-record to offer Undo only where the current value still equals what the extension wrote;
-never undo subsequent User changes. Rescanning must not overwrite User edits.
-
-## Later AI answers and architecture decisions
-
-Custom-question suggestions are a later stage. They must use typed tasks in the existing
-AI Gateway, recorded test mode, usage accounting, quotas, fallback and current AI notice
-and region checks (ADR-0007). Generate only from the User's reviewed Facts, with a Tailoring
-Trace and explicit review before insertion (ADR-0005). Send only necessary question text
-and Facts; do not send full page HTML or follow instructions embedded in the page.
-Use background work if generation can exceed a short request deadline.
-
-ADR-0006 currently describes the outward action as Gmail Hand-off. Before shipping form
-filling, propose an explicit ADR amendment and corresponding PRD/glossary changes covering
-User-initiated disclosure of selected values to application sites while retaining human
-submission. Filling may trigger an employer site's autosave before Submit, so the preview
-must explain that pressing Fill shares those selected values with that site. This plan
-does not silently change the existing decision. No new AI provider is needed.
+Use deterministic matching for profile fields and AI only for the form's own questions.
+Test framework-controlled inputs (set the native value and dispatch input/change events),
+dropdown values, repeated employment rows, file inputs, validation messages, multi-step
+forms and rerendered forms. Ambiguous selectors or option meanings require manual entry.
+Keep a per-fill in-memory record to offer Undo only where the current value still equals
+what the extension wrote; never undo subsequent User changes. Rescanning must not overwrite
+User edits.
 
 ## Delivery stages and acceptance
 
 | Stage | Reviewable result and completion checks |
 | --- | --- |
-| 1. Connection prototype and policy | ADR/PRD changes reviewed; Chrome/Brave handshake demonstrated; credential expiry, replay, wrong-origin, revocation and cross-user tests pass. |
-| 2. Reviewed profile and Draft selection | Settings profile editor and typed scoped APIs; validation and Fact-change handling tested; exact saved Draft/PDF version shown; no application-site access needed yet. |
-| 3. First working application | Greenhouse adapter, preview, selective fill, safe overwrite and Undo; manual attachment and submission; fixture browser tests prove correct fields and no submit action. |
-| 4. Second adapter and tracking | Lever adapter and explicit Applied confirmation; duplicate confirmation is idempotent; stale-version/expired-session errors preserve form input. |
-| 5. Private testing | Installable extension ZIP, reproducible build, permission review, supported-form matrix and manual trial on real forms without submitting test applications. |
-| Later | Generic mapping improvements, further ATS adapters, supported upload automation and separately reviewed AI question suggestions. |
+| 1. Policy and connection prototype | ADR-0017 and PRD/glossary changes reviewed; Chrome/Brave handshake demonstrated; credential expiry, replay, wrong-origin, revocation and cross-user tests pass. |
+| 2. Reviewed profile, Saved Answers and Draft selection | Settings profile and Saved Answers editors; typed scoped APIs; Fact-change handling tested; exact saved Draft/PDF version shown. |
+| 3. First working application | Generic adapter plus Greenhouse adapter; preview, selective fill, safe overwrite, Undo and PDF attachment with download fallback; fixture browser tests prove correct fields, attached file and no submit action. |
+| 4. More forms and tracking | Lever and Ashby adapters, embedded-form host permissions, multi-step rescans; explicit Applied confirmation is idempotent; stale-version/expired-session errors preserve form input. |
+| 5. Form questions | Gateway task in recorded mode; Saved Answer, Suggestion, Fact notes and Leave empty paths; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, both proved by tests. |
+| 6. Captured Jobs | Capture from JSON-LD and page text with User review; push-only `captured` Source; the Captured Job appears only through the capturing User's link and flows into the existing Draft. |
+| 7. Private testing | Installable extension ZIP, reproducible build, permission review, supported-form matrix and manual trial on real forms without submitting test applications. |
+| Later | Workday multi-step forms, Firefox, store publication. |
 
 For each implementation stage, run relevant backend ownership/auth tests, frontend tests,
 extension type/lint checks and browser tests. Fixtures must cover filled fields, existing
@@ -159,18 +203,21 @@ browser/site variants and known manual steps rather than claiming universal auto
 ## Rollout, cost and open decisions
 
 Use a server feature flag and a private unpacked-extension pilot first. Disabling extension
-authorisation must leave the existing Feed, Drafts and Applications usable. Ordinary filling
-uses no AI credits and runs in the browser; no new microservice is planned. Measure actual
-API latency and resource use on the current VM before expanding scope. Do not log profile
-values, form answers, credentials, resumes or complete destination URLs with query strings.
+authorisation must leave the existing Feed, Drafts and Applications usable. Filling profile
+fields uses no AI credits and runs in the browser; form questions use the existing free AI
+providers and their quotas. No new microservice is planned. Measure actual API latency and
+resource use on the current VM before expanding scope. Do not log profile values, form
+answers, question text, credentials, resumes or complete destination URLs with query
+strings.
 
 Review before implementation: exact profile fields and schema; authorisation lifetime and
-connection UX; initial Greenhouse/Lever form variants; whether optional saved answers belong
-in the first release. Public store publication, Firefox/Safari and automatic uploads require
-their own follow-up decisions. No changes to production are authorised by merging this plan.
+connection UX; the sensitive-question list; how a form's instruction against AI answers is
+detected. Public store publication, Firefox/Safari and Workday require their own follow-up
+decisions. No changes to production are authorised by merging this plan.
 
 ## Browser references
 
 - [Temporary access through activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab).
+- [Optional host permissions requested at runtime](https://developer.chrome.com/docs/extensions/reference/api/permissions).
 - [Extension messaging and trust boundaries](https://developer.chrome.com/docs/extensions/develop/concepts/messaging).
 - [Service-worker requests and host permissions](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests).

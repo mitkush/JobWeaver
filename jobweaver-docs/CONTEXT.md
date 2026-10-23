@@ -116,6 +116,18 @@ Creating a real draft in the User's Gmail, with the Tailored Resume attached, fr
 
 A User's record of applying to a Job, one per User and Job, with a status: **Drafted -> Applied -> Replied -> Interview -> Offer** or **Rejected**. Every status change is kept with its time. Updated by the User; JobWeaver does not read Gmail replies.
 
+## Application Extension
+
+The JobWeaver browser extension (FR-E14). It fills an employer's application form from the User's application profile, Saved Answers and a saved Draft version, and attaches its PDFs; the User reviews and submits (ADR-0017). It never submits or applies on its own.
+
+## Saved Answer
+
+An answer the User gave to a form question (notice period, salary, work authorisation, or any answer they chose to keep), reused by the Application Extension when the same question appears again. Sensitive questions are only ever filled from Saved Answers.
+
+## Captured Job
+
+A Job saved from a page the User opened, through the Application Extension, rather than fetched by a Source. Stored as a Posting from the push-only `captured` Source and linked to the capturing User (ADR-0017).
+
 ## Follow-up Reminder
 
 An in-app reminder when an Application has stayed **Applied** for N days (default 7, set per User), with a one-click follow-up email placed in Gmail Drafts. A reminder only; nothing is sent.
