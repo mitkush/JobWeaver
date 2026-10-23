@@ -156,3 +156,18 @@ select {
   color: var(--muted);
   font-size: 12px;
 }
+/* The review editor keeps public advert text readable inside the popup. */
+.panel input[type="text"], .panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  margin: 6px 0 10px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  font: inherit;
+}
+.panel textarea { resize: vertical; min-height: 140px; }
+.panel label { display: block; margin-top: 8px; }
+.panel p { overflow-wrap: anywhere; }

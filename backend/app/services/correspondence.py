@@ -261,10 +261,16 @@ async def merge_jobs(
     # A User keeps the Job in their Feed, with their hidden state, whichever side they had.
     await session.execute(
         text(
-            "INSERT INTO user_jobs (id, user_id, job_id, hidden_at, created_at, updated_at) "
-            "SELECT gen_random_uuid(), user_id, :survivor, hidden_at, now(), now() "
+            "INSERT INTO user_jobs (id, user_id, job_id, hidden_at, captured_at, "
+            "page_description, page_required_skills, created_at, updated_at) "
+            "SELECT gen_random_uuid(), user_id, :survivor, hidden_at, captured_at, "
+            "page_description, page_required_skills, now(), now() "
             "FROM user_jobs WHERE job_id = :gone "
-            "ON CONFLICT (user_id, job_id) DO NOTHING"
+            "ON CONFLICT (user_id, job_id) DO UPDATE SET "
+            "captured_at = COALESCE(user_jobs.captured_at, excluded.captured_at), "
+            "page_required_skills = CASE WHEN user_jobs.page_description IS NULL "
+            "THEN excluded.page_required_skills ELSE user_jobs.page_required_skills END, "
+            "page_description = COALESCE(user_jobs.page_description, excluded.page_description)"
         ),
         {"survivor": survivor.id, "gone": gone.id},
     )
@@ -672,6 +678,13 @@ class Correspondence:
                             Job.required_skills.is_(None),
                             Job.expired_at.is_(None),
                             exists().where(UserJob.job_id == Job.id),
+                            Job.primary_posting_id.in_(
+                                select(Posting.id).where(
+                                    Posting.source.not_in(
+                                        [cls.name for cls in registered_adapters() if cls.push_only]
+                                    )
+                                )
+                            ),
                         )
                         .order_by(Job.posted_at.desc().nulls_last(), Job.id)
                         .limit(size * self.settings.skills_max_batches_per_run)

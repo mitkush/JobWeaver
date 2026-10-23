@@ -173,6 +173,8 @@ class SourceAdapter(ABC):
     budget_pool: str | None = None
     # Sources that are not reliable enough to run unless an admin turns them on.
     default_enabled: bool = True
+    # On-demand browser imports have no scheduled or manual fetch operation.
+    push_only: bool = False
     disabled_reason: str | None = None
 
     def __init__(self, http: httpx.AsyncClient, settings: Settings) -> None:

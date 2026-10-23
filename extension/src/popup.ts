@@ -3,6 +3,8 @@ import type { DraftSummary, DraftVersion, PageState } from "./drafts";
 import type { FillResult, ScanResult } from "./fill/session";
 import type { FillReport } from "./fill/types";
 import { fromNow } from "./time";
+import type { Captured } from "./capture";
+import type { PageJob } from "./job-read";
 
 type Status = { connected: false; error?: string } | { connected: true; email: string; expiresAt: string };
 
@@ -57,6 +59,73 @@ function profileSection(state: PageState): HTMLElement {
   return h("section", { class: "panel" }, h("p", { class: "ok" }, `Profile reviewed (version ${profile.version}).`));
 }
 
+/** Read before any Draft exists, then review before storing public advert text. */
+function captureSection(tabId: number, refresh: () => void): HTMLElement {
+  const section = h("section", { class: "panel" }, h("p", { class: "label" }, "Careers-page job"));
+  const body = h("div");
+  const read = button("Read this job", async () => {
+    read.disabled = true;
+    try {
+      const result = await ask<PageJob & { error?: string }>({ type: "readJob", tabId });
+      if (result.error) { body.replaceChildren(h("p", { class: "warn-text" }, result.error)); return; }
+      showReview(result);
+    } finally { read.disabled = false; }
+  });
+  section.append(h("p", { class: "muted" }, "Start here even if this Job is not in JobWeaver. Read its JD, review it, then create a Draft from your Fact Bank."), body, h("div", { class: "actions" }, read));
+  void ask<(Captured & { error?: string }) | null>({ type: "capturedJob", tabId }).then((saved) => {
+    if (saved && !saved.error && !body.childElementCount) showSaved(saved);
+  });
+
+  function showReview(job: PageJob) {
+    const title = h("input", { type: "text", value: job.title, maxlength: "500", id: "capture-title" }) as HTMLInputElement;
+    const company = h("input", { type: "text", value: job.company, maxlength: "255", id: "capture-company" }) as HTMLInputElement;
+    const description = h("textarea", { id: "capture-description", rows: "12", maxlength: "50000" }, job.description) as HTMLTextAreaElement;
+    const error = h("p", { class: "warn-text", role: "status" });
+    const save = button("Save reviewed job", async () => {
+      save.disabled = true;
+      error.textContent = "";
+      try {
+        const result = await ask<Captured & { error?: string }>({ type: "saveJob", tabId, job: { ...job, title: title.value, company: company.value, description: description.value } });
+        if (result.error) { error.textContent = result.error; return; }
+        showSaved(result);
+      } finally { save.disabled = false; }
+    });
+    body.replaceChildren(
+      h("p", { class: "muted" }, `Read from ${job.method}. Nothing has been sent yet.`),
+      h("p", { class: "muted" }, job.url),
+      h("label", { for: "capture-title" }, "Job title"), title,
+      h("label", { for: "capture-company" }, "Company"), company,
+      h("label", { for: "capture-description" }, "Public job description"), description,
+      job.truncated ? h("p", { class: "warn-text" }, "The JD was limited to 50,000 characters. Review the extracted text.") : h("span"),
+      h("p", { class: "muted" }, "Review and edit this public advert only. Remove any personal, account or application information. Saving sends these fields to JobWeaver; it does not call AI."),
+      error, h("div", { class: "actions" }, save),
+    );
+  }
+
+  function showSaved(saved: Captured) {
+    const error = h("p", { class: "warn-text", role: "status" });
+    const create = button("Create Draft from this JD", async () => {
+      create.disabled = true;
+      const result = await ask<Captured & { error?: string }>({ type: "createCapturedDraft", tabId });
+      if (result.error) { error.textContent = result.error; create.disabled = false; return; }
+      showSaved(result);
+      if (result.draft_id) open(`/drafts/${result.draft_id}`);
+    });
+    const use = button("Use this Draft", async () => {
+      const chosen = await ask<(DraftVersion & { error?: string }) | null>({ type: "select", tabId, draftId: saved.draft_id! });
+      if (!chosen || chosen.error) { error.textContent = chosen?.error ?? "The Draft is still preparing. Open it to check progress, then try again."; return; }
+      refresh();
+    });
+    body.replaceChildren(
+      h("p", { class: "title" }, `${saved.company} - ${saved.title}`),
+      h("p", { class: "muted" }, saved.matched_existing ? "Linked to the existing Job. Your reviewed page JD will be used for a new Draft." : "Captured and saved to your Feed. Your Fact Bank supplies the resume content."),
+      error,
+      saved.draft_id ? h("div", { class: "actions" }, button("Open Draft", () => open(`/drafts/${saved.draft_id}`), "ghost"), use) : h("div", { class: "actions" }, create),
+    );
+  }
+  return section;
+}
+
 function selectedSection(tabId: number, d: DraftVersion, refresh: () => void): HTMLElement {
   const newer = d.current_version > d.number;
   return h(
@@ -97,7 +166,7 @@ function chooseSection(tabId: number, state: PageState, refresh: () => void): HT
       ? "This page looks like the apply link of:"
       : suggested.length > 1
         ? `This page matches ${suggested.length} Drafts. Choose one:`
-        : "This page is not linked to a Draft. Choose one:";
+        : "No matching Draft. Read this job above, or choose a saved Draft manually:";
   return h(
     "section",
     { class: "panel" },
@@ -213,6 +282,7 @@ async function render() {
   const refresh = () => void render();
   content.replaceChildren(...parts(
     profileSection(state),
+    !tab.url || /^https?:/.test(tab.url) ? captureSection(tabId, refresh) : null,
     state.selected ? selectedSection(tabId, state.selected, refresh) : chooseSection(tabId, state, refresh),
     // Browser pages cannot be filled; without activeTab the address is unknown, so offer it.
     !tab.url || /^https?:/.test(tab.url) ? fillSection(tabId) : null,

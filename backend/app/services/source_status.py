@@ -49,6 +49,8 @@ async def list_statuses(
     labels = {cls.name: cls.label for cls in registered_adapters()}
     out = []
     for cls in registered_adapters():
+        if cls.push_only:
+            continue
         source = rows.get(cls.name)
         adapter = cls(get_sources_http(), get_settings())
         account = (
@@ -145,9 +147,11 @@ async def list_statuses(
 
 async def set_enabled(session: AsyncSession, name: str, enabled: bool) -> None:
     try:
-        get_adapter_class(name)
+        cls = get_adapter_class(name)
     except KeyError as exc:
         raise NotFoundError("Unknown source") from exc
+    if cls.push_only:
+        raise ValidationFailedError("This Source only accepts browser captures; it cannot fetch")
     source = (await session.execute(select(Source).where(Source.name == name))).scalar_one_or_none()
     if source is None:
         source = Source(name=name)

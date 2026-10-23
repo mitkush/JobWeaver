@@ -7,6 +7,27 @@ already works.
 
 ## Goal and first release
 
+### Capture delivery slice (brought forward)
+
+Careers-page reading and Captured Jobs are implemented ahead of the remaining stages:
+the User can start on a public advert outside JobWeaver, review extracted or pasted text,
+save it, and explicitly create a Draft using their own Fact Bank. An unambiguous apply-link
+match (including tracking parameters and ATS host/path variants) with matching Company/title
+reuses an existing Job. The reviewed Page Description and durable capture marker live on
+the User's link; shared capture Postings hold only identity metadata, with no reviewed JD
+text. Capture-only Jobs do not enter other Users' Feeds through automatic matching.
+
+This first slice creates a separate Draft with a fixed `job_snapshot` for the reviewed JD.
+It does not regenerate an existing Draft into a new version or alter any older snapshot.
+Per-version job contexts and custom-question suggestions remain follow-ups before that
+regeneration feature ships. Requirements for a personal Page Description are extracted
+through the existing gateway during Draft generation, behind its AI notice and region
+checks, with User-attributed usage. Results stay on the User's link and new Draft snapshot,
+never the shared Job. The Source's required-skills list is not reused for another JD.
+Tab context carries to tabs opened from the advert; the User confirms the chosen Draft
+on the form. No automatic Next or Submit action is added. Extension access-list version
+3 requires renewed approval for saving Jobs and creating Drafts.
+
 Help a User apply to a Job on any careers site or application form: fill the form from
 reviewed information and a selected saved Draft version, attach the Tailored Resume, and
 suggest answers to the form's own questions. The User reviews everything on the employer's

@@ -145,7 +145,7 @@ class LiveAIGateway(BaseAIGateway):
     ) -> GatewayResponse[ExtractSkillsResult]:
         return await self._run(
             "extract_skills",
-            None,
+            request.user_id,
             prompts.EXTRACT_SKILLS_SYSTEM,
             prompts.extract_skills_user(request),
             ExtractSkillsResult,

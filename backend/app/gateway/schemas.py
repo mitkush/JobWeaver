@@ -57,9 +57,13 @@ class JobAdvert(BaseModel):
 
 
 class ExtractSkillsRequest(BaseModel):
-    """Public job-advert text only; never User data (ADR-0002, ADR-0010)."""
+    """Advert text from ingestion or a reviewed Page Description (ADR-0010).
+
+    user_id attributes usage internally; it is not included in the provider prompt.
+    """
 
     jobs: list[JobAdvert] = Field(min_length=1, max_length=10)
+    user_id: uuid.UUID | None = None
 
 
 class JobSkills(BaseModel):

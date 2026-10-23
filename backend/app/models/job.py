@@ -110,6 +110,11 @@ class UserJob(Base):
     user_id: Mapped[uuid.UUID] = user_fk()
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Explicitly saved Jobs survive Preferences and automatic Feed rebuilds.
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Reviewed page text belongs to this User, never overwrites a shared Posting.
+    page_description: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    page_required_skills: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)))
     # Why the Job is in this Feed: "title" or "keywords". None when it no longer matches
     # the Preferences but stays because the User hid it, drafted for it or applied.
     match_kind: Mapped[str | None] = mapped_column(String(16), default="title")

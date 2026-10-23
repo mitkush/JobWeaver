@@ -25,7 +25,12 @@ from app.core.errors import (
 )
 from app.documents.pdf import filename, page_count, render_pdf
 from app.gateway.base import BaseAIGateway
-from app.gateway.schemas import ReviseDraftRequest, TailorDraftRequest
+from app.gateway.schemas import (
+    ExtractSkillsRequest,
+    JobAdvert,
+    ReviseDraftRequest,
+    TailorDraftRequest,
+)
 from app.models import (
     Application,
     Document,
@@ -42,7 +47,7 @@ from app.models.posting import Posting
 from app.schemas.drafts import DraftOut, HandoffIn, HandoffOut, VersionOut
 from app.services import applications
 from app.services.accounts import ensure_ai_allowed
-from app.services.correspondence import refresh_jobs, source_priorities
+from app.services.correspondence import clean_skills, refresh_jobs, source_priorities
 from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
@@ -279,10 +284,26 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
         .order_by(Draft.created_at.desc())
     )
     if existing is not None:
+        current_link = await session.scalar(
+            select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
+        )
+        if (
+            current_link
+            and current_link.page_description
+            and str(current_link.page_description["description"])
+            != existing.job_snapshot.get("description")
+        ):
+            raise ConflictError(
+                "A Draft is already generating with another description. Wait for it to finish."
+            )
         return existing
     from app.models import Posting
 
     primary = await session.get(Posting, job.primary_posting_id) if job.primary_posting_id else None
+    link = await session.scalar(
+        select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
+    )
+    page = link.page_description if link and link.page_description else None
     document = await session.scalar(
         select(Document).where(
             Document.user_id == user.id,
@@ -298,10 +319,23 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
         job_snapshot={
             "title": job.title,
             "company": job.company_name,
-            "description": primary.description if primary else "",
+            "description": str(page["description"])
+            if page
+            else primary.description
+            if primary
+            else "",
+            "description_origin": dict(page)
+            if page
+            else {
+                "posting_id": str(primary.id) if primary else None,
+                "url": primary.apply_url if primary else None,
+            },
             "contact_email": job.contact_email,
             "apply_url": job.apply_url,
-            "required_skills": list(job.required_skills or []),
+            # The shared Job's AI skill list describes its Source text, not this User's
+            # Page Description. Do not reuse it for a different description.
+            "required_skills": [] if page else list(job.required_skills or []),
+            "page_skills_pending": bool(page),
             "name": user.name or "Applicant",
             "email": user.email,
         },
@@ -350,6 +384,44 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             facts = await _facts(session, user)
             draft.state, draft.progress = "generating", "Choosing your experience"
             await session.commit()
+            if draft.job_snapshot.get("page_skills_pending"):
+                draft.progress = "Reading requirements from your reviewed job description"
+                await session.commit()
+                async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
+                    extracted = await gateway.extract_skills(
+                        ExtractSkillsRequest(
+                            user_id=user.id,
+                            jobs=[
+                                JobAdvert(
+                                    ref="1",
+                                    title=str(draft.job_snapshot["title"]),
+                                    description=str(draft.job_snapshot["description"]),
+                                )
+                            ],
+                        )
+                    )
+                found = next((j.skills for j in extracted.result.jobs if j.ref == "1"), None)
+                if found is None:
+                    raise GatewayError("The AI did not return job requirements. Retry generation.")
+                requirements = clean_skills(found)
+                user = await session.get(User, user_id, populate_existing=True)
+                if user is None:
+                    return
+                ensure_ai_allowed(user)
+                draft = await owned_draft(session, user, draft_id, lock=True)
+                draft.job_snapshot = {
+                    **draft.job_snapshot,
+                    "required_skills": requirements,
+                    "page_skills_pending": False,
+                }
+                link = await session.scalar(
+                    select(UserJob).where(
+                        UserJob.user_id == user_id, UserJob.job_id == draft.job_id
+                    )
+                )
+                if link and link.page_description == draft.job_snapshot.get("description_origin"):
+                    link.page_required_skills = requirements
+                await session.commit()
             draft.progress = "Writing the Tailored Resume, Cover Letter and Application Email"
             await session.commit()
             async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):

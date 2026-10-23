@@ -4,8 +4,9 @@
 import { adapterFor, scanFields } from "./fill/fields";
 import { Filler } from "./fill/apply";
 import type { FillItem, Scan } from "./fill/types";
+import { readJob } from "./job-read";
 
-type Message = { type: "jw.scan" } | { type: "jw.fill"; scanId: string; items: FillItem[] } | { type: "jw.undo" };
+type Message = { type: "jw.scan" | "jw.read-job" | "jw.page-url" } | { type: "jw.fill"; scanId: string; items: FillItem[] } | { type: "jw.undo" };
 
 declare global {
   interface Window {
@@ -21,7 +22,12 @@ if (!window.__jobweaver) {
 
   chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return false;
-    if (message.type === "jw.scan") {
+    if (message.type === "jw.read-job") {
+      try { sendResponse(readJob(document, location.href, window.getSelection()?.toString() ?? "")); }
+      catch (error) { sendResponse({ error: (error as Error).message }); }
+    } else if (message.type === "jw.page-url") {
+      sendResponse({ url: location.href });
+    } else if (message.type === "jw.scan") {
       const id = crypto.randomUUID();
       scan = { id, url: location.href };
       const adapter = adapterFor(new URL(location.href));
