@@ -124,6 +124,10 @@ The JobWeaver browser extension (FR-E14). It fills an employer's application for
 
 An answer the User gave to a form question (notice period, salary, work authorisation, or any answer they chose to keep), reused by the Application Extension when the same question appears again within its scope: general, the same country (and currency for salary), or the same Company. Sensitive questions are only ever filled from Saved Answers.
 
+## Page Description
+
+A fuller job description read from the Job's own careers page through the Application Extension, kept on one User's link to the Job and used for that User's Drafts instead of the Source's shorter text. It never changes the shared Job (ADR-0002, ADR-0017).
+
 ## Writing Style
 
 How a User writes, taken only from text they wrote themselves (summary, cover letters, answers they edited): sentence length, formality, phrasing and spelling, with a few short excerpts whose names, numbers, dates and technologies are redacted. Used to make Application Extension Suggestions read like the User. It holds no facts about the User; the Fact Bank stays the only source of content (ADR-0005).

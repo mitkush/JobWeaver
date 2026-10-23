@@ -32,7 +32,9 @@ separate from adding a Source Adapter.
 2. The extension suggests the Job by matching the page URL against stored apply links.
    URL matching may suggest a Job, but cannot silently select an ambiguous match.
    - **Known Job:** show Company, title, destination hostname, the saved Draft version
-     and its save time, or a Create Draft action.
+     and its save time, or a Create Draft action. When the page carries a fuller job
+     description than JobWeaver stored, offer Use this page's description (see Page
+     description below).
    - **Unknown Job:** offer Capture this job. The extension reads the advert from the
      page (JSON-LD `JobPosting` when present, otherwise the visible text or the User's
      selection), shows it for review and sends it to JobWeaver as a Captured Job
@@ -54,6 +56,46 @@ separate from adding a Source Adapter.
 7. Review and submit on the employer's site. A separate I submitted this application action
    updates the Application through JobWeaver. Filling fields or detecting a confirmation
    page alone does not mark it Applied.
+
+## Page description and two-step applications
+
+A company careers page often shows a longer job description than the one a Source
+returned (aggregators and LinkedIn snippets truncate it), and many sites split applying
+into two pages: the advert, then an Apply button that opens the form on the same tab, a
+new tab or another host (for example a Greenhouse or Workday form).
+
+**Reading the fuller description.** On the advert page the extension reads the description
+from JSON-LD `JobPosting` when present, otherwise from the main content or the User's
+selection, and compares it with the stored one. When it is materially longer or contains
+sections the stored one lacks (responsibilities, requirements, qualifications), the popup
+shows the difference and offers Use this page's description. Nothing is read or sent
+without the User's click.
+
+**Where it is stored.** As a **Page Description** on the User's own link to the Job
+(`user_jobs`), with the page's canonical URL, its hostname and the time it was read. It is
+not written into the shared Job or Posting (ADR-0002): the text comes from one User's
+browser, is unverified, and other Users keep the Source's description unless they read the
+page themselves. It is public advert text only, never User data.
+
+**How the Draft uses it.** Creating a Draft uses the Page Description when the User has
+one, else the Primary Posting's description (`backend/app/services/drafting.py:285`). The
+Draft's `job_snapshot` records which one was used and from which URL. When a Draft already
+exists, the popup offers Regenerate with the full description, which creates a new Draft
+version through the existing flow; it never overwrites a version or the User's manual
+edits (FR-E6). Required skills and Skill Gaps are recomputed from the description the Draft
+used.
+
+**Keeping the Job across the two steps.** When the User selects or captures a Job on the
+advert page, the extension stores that choice for the tab in extension session storage,
+keyed by tab ID. It carries over when the same tab navigates to the form, and to a new tab
+opened from it (through the opener tab ID). On the form page the popup shows the carried
+Job and asks for one confirmation before filling, because the form's own URL rarely
+matches a stored apply link. The context expires when the tab closes, after a time limit,
+or when the User picks another Job. A cross-origin form host needs the optional host
+permission described below, requested at that moment.
+
+**When the advert and the form are on one page,** both steps happen there: the
+description is read from the page and the form is filled after the User confirms.
 
 ## Questions on the form
 
@@ -148,6 +190,10 @@ Job in the same country, and salary only in the same currency and period; a `com
 answer is never filled for another Company and is at most shown as a starting point to
 rework. Missing values remain unanswered.
 
+Page Descriptions are stored on `user_jobs` as described in Page description and two-step
+applications; a Captured Job's own advert text is its Posting description, so it needs
+none.
+
 Captured Jobs (ADR-0017) are stored as Postings from a push-only `captured` Source and
 linked to the capturing User (ADR-0002). They contain only the public advert, never User
 data. The link must be durable: today a Feed rebuild deletes links that no longer match
@@ -236,7 +282,7 @@ User edits.
 | 3. First working application | Generic adapter plus Greenhouse adapter; preview, selective fill, safe overwrite, Undo and PDF attachment with download fallback; fixture browser tests prove correct fields, attached file and no submit action. |
 | 4. More forms and tracking | Lever and Ashby adapters, embedded-form host permissions, multi-step rescans; explicit Applied confirmation is idempotent; stale-version/expired-session errors preserve form input. |
 | 5. Form questions and Writing Style | Gateway tasks in recorded mode for answers and for building the Writing Style; Saved Answer, Suggestion, Fact notes and Leave empty paths; Suggestions are complete answers within the field's length limit, use the Writing Style and pass the stock-phrase check and the Fact checks; Writing Style excerpts are redacted; the Writing Style editor in Settings; Saved Answers are reused only within their scope; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, all proved by tests. |
-| 6. Captured Jobs | Capture from JSON-LD and page text with User review; push-only `captured` Source; a durable captured link that survives Feed rebuilds when the Job does not match Preferences, proved by a test; the Job flows into the existing Draft. |
+| 6. Captured Jobs and Page Descriptions | Capture from JSON-LD and page text with User review; Page Description stored on the User's link, used by new Drafts and by Regenerate with the full description as a new version; Job context carried from the advert tab to the form tab and to tabs it opens, with confirmation, proved by browser tests; push-only `captured` Source; a durable captured link that survives Feed rebuilds when the Job does not match Preferences, proved by a test; the Job flows into the existing Draft. |
 | 7. Private testing | Installable extension ZIP, reproducible build, permission review, supported-form matrix and manual trial on real forms without submitting test applications. |
 | Later | Workday multi-step forms, Firefox, store publication. |
 
