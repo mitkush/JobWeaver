@@ -30,6 +30,7 @@ export const keys = {
   applications: ["applications"] as const,
   reminders: ["reminders"] as const,
   company: (id: string) => ["company", id] as const,
+  extensionConnections: ["extension", "connections"] as const,
 };
 
 export function useMe() {
@@ -199,6 +200,32 @@ export function useSavePreferences() {
 export function useDisconnectGmail() {
   const setMe = useSetMe();
   return useMutation({ mutationFn: () => unwrap(api.DELETE("/api/gmail")), onSuccess: setMe });
+}
+
+/** Application Extension connections (ADR-0017). */
+export function useExtensionConnections() {
+  return useQuery({
+    queryKey: keys.extensionConnections,
+    queryFn: () => unwrap(api.GET("/api/extension/connections")),
+  });
+}
+
+export function useRevokeExtensionConnection() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE("/api/extension/connections/{connection_id}", { params: { path: { connection_id: id } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.extensionConnections }),
+  });
+}
+
+export function useApproveExtension() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { extension_id: string; challenge: string }) =>
+      unwrap(api.POST("/api/extension/approve", { body })),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.extensionConnections }),
+  });
 }
 
 export function useDeleteAccount() {

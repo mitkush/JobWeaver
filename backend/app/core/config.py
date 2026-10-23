@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # Comma-separated in the environment.
     admin_emails: Annotated[list[str], NoDecode] = []
     dev_login_enabled: bool = False
+    # Application Extension (ADR-0017): IDs of the extensions allowed to connect, comma-
+    # separated. Empty turns the extension connection off.
+    extension_ids: Annotated[list[str], NoDecode] = []
+    # The extension keeps its credential in session storage and reconnects after expiry.
+    extension_credential_hours: int = Field(default=12, ge=1, le=168)
 
     gateway_mode: Literal["live", "recorded"] = "live"
     gateway_recorded_dir: str = "tests/fixtures/gateway"
@@ -121,6 +126,13 @@ class Settings(BaseSettings):
     def _pause_date_needs_timezone(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.utcoffset() is None:
             raise ValueError("BRIGHTDATA_PRIMARY_PAUSED_UNTIL needs a timezone, such as Z")
+        return value
+
+    @field_validator("extension_ids", mode="before")
+    @classmethod
+    def _split_extension_ids(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [e.strip() for e in value.split(",") if e.strip()]
         return value
 
     @field_validator("admin_emails", mode="before")

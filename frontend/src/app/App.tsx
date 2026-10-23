@@ -11,6 +11,7 @@ import { CompanyPage } from "@/pages/CompanyPage";
 import { FactBankPage } from "@/pages/FactBankPage";
 import { FeedPage } from "@/pages/FeedPage";
 import { DraftPage } from "@/pages/DraftPage";
+import { ExtensionConnectPage } from "@/pages/ExtensionConnectPage";
 import { JobPage } from "@/pages/JobPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
@@ -39,7 +40,7 @@ function Authenticated({ children }: { children: (me: Me) => ReactNode }) {
     );
   }
   const onboarding = me.data.onboarding.next_step !== "done";
-  const allowed = location.pathname.startsWith("/onboarding") || location.pathname === "/settings";
+  const allowed = location.pathname.startsWith("/onboarding") || ["/settings", "/extension/connect"].includes(location.pathname);
   if (onboarding && !allowed) return <Navigate to="/onboarding" replace />;
   return <AppShell me={me.data}>{children(me.data)}</AppShell>;
 }
@@ -57,6 +58,7 @@ export function App() {
       <Route path="/companies/:companyId" element={<Authenticated>{() => <CompanyPage />}</Authenticated>} />
       <Route path="/fact-bank" element={<Authenticated>{() => <FactBankPage />}</Authenticated>} />
       <Route path="/preferences" element={<Authenticated>{() => <PreferencesPage />}</Authenticated>} />
+      <Route path="/extension/connect" element={<Authenticated>{(me) => <ExtensionConnectPage me={me} />}</Authenticated>} />
       <Route path="/settings" element={<Authenticated>{(me) => <SettingsPage me={me} />}</Authenticated>} />
       <Route
         path="/admin/sources"

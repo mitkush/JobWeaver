@@ -11,6 +11,7 @@ from app.api import (
     applications,
     auth,
     drafts,
+    extension,
     fact_bank,
     feed,
     health,
@@ -65,6 +66,7 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
         feed,
         drafts,
         applications,
+        extension,
     )
     for module in modules:
         app.include_router(module.router)

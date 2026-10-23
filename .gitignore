@@ -18,3 +18,6 @@ frontend/dist/
 .env.*
 !.env.example
 docker-compose.override.yml
+
+# Extension
+extension/dist/

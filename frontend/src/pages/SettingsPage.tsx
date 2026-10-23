@@ -10,6 +10,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast-context";
+import { ExtensionCard } from "@/features/extension/ExtensionCard";
 import { GmailCard } from "@/features/gmail/GmailCard";
 import { CompanyBoards } from "@/features/sources/CompanyBoards";
 import { COUNTRIES } from "@/lib/countries";
@@ -38,6 +39,16 @@ export function SettingsPage({ me }: { me: Me }) {
           <CardHeader title="Gmail" description="Used only to create drafts in your Gmail. JobWeaver never sends email." />
           <CardBody>
             <GmailCard me={me} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Browser extension"
+            description="Fills application forms from your Drafts. It never submits a form for you."
+          />
+          <CardBody>
+            <ExtensionCard />
           </CardBody>
         </Card>
 

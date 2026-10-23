@@ -26,6 +26,7 @@ export type FollowUp = Schemas["FollowUpOut"];
 export type FollowUpRequest = Schemas["FollowUpIn"];
 export type FollowUpResult = Schemas["FollowUpResult"];
 export type CompanyHistory = Schemas["CompanyHistoryOut"];
+export type ExtensionConnection = Schemas["ExtensionConnectionOut"];
 export type FeedQuery = NonNullable<paths["/api/feed"]["get"]["parameters"]["query"]>;
 
 export class ApiError extends Error {

@@ -65,12 +65,24 @@ Recorded AI fixtures exercise unsupported skills and fabricated metrics. Truthfu
 
 Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the AI gateway. The gateway applies the configured per-model daily cap and records usage. On Mistral Studio's Free mode, Mistral may use input and output data to train its models; review its data controls before enabling it for users' resumes.
 
+## Application Extension (FR-E14, in progress)
+
+A Chrome/Brave extension that will fill application forms from your Drafts; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). Stage 1 only connects it to your account.
+
+1. Set `EXTENSION_IDS=npdbpfgligiimfnoblngghbokehjbafm` on the server.
+2. Build it for your server: `cd extension && npm ci && JOBWEAVER_ORIGIN=https://your-host npm run build` (defaults to the production host; use `http://localhost:5173` locally).
+3. In Chrome or Brave open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select `extension/dist`.
+4. Click the extension, then **Connect**, and approve on the JobWeaver page that opens.
+
+The connection lasts `EXTENSION_CREDENTIAL_HOURS` (default 12) or until the browser closes, and **Settings > Browser extension** revokes it at once.
+
 ## Checks
 
 ```bash
 cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pytest
 cd frontend && npm run typecheck && npm run lint && npm test && npm run build
 cd frontend && npm run gen:api   # regenerate API types after any backend API change
+cd extension && npm run typecheck && npm test && npm run build
 ```
 
 Backend tests need a Postgres database `jobweaver_test` (user/password `jobweaver`), or set `TEST_DATABASE_URL`. Tests run the AI Gateway in recorded mode: zero live AI calls.

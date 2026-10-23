@@ -956,6 +956,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_extension_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extension/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connections */
+        get: operations["connections_api_extension_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extension/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke */
+        delete: operations["revoke_api_extension_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Token */
+        post: operations["token_api_ext_token_post"];
+        /** Disconnect */
+        delete: operations["disconnect_api_ext_token_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_ext_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1337,6 +1423,70 @@ export interface components {
              * Format: date-time
              */
             at: string;
+        };
+        /** ExtensionApproveIn */
+        ExtensionApproveIn: {
+            /** Extension Id */
+            extension_id: string;
+            /** Challenge */
+            challenge: string;
+        };
+        /** ExtensionConnectionOut */
+        ExtensionConnectionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Extension Id */
+            extension_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** ExtensionGrantOut */
+        ExtensionGrantOut: {
+            /** Code */
+            code: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** ExtensionTokenIn */
+        ExtensionTokenIn: {
+            /** Code */
+            code: string;
+            /** Verifier */
+            verifier: string;
+        };
+        /** ExtensionTokenOut */
+        ExtensionTokenOut: {
+            /** Token */
+            token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            user: components["schemas"]["ExtensionUserOut"];
+        };
+        /** ExtensionUserOut */
+        ExtensionUserOut: {
+            /** Name */
+            name: string;
+            /** Email */
+            email: string;
         };
         /**
          * FactBankChanges
@@ -4183,6 +4333,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanyHistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_extension_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionApproveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionGrantOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connections_api_extension_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionConnectionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_api_extension_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_api_ext_token_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionTokenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionTokenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_api_ext_token_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_api_ext_me_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionUserOut"];
                 };
             };
             /** @description Validation Error */
