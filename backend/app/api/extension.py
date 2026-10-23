@@ -21,6 +21,7 @@ from app.schemas.extension import (
     ExtensionApproveIn,
     ExtensionConnectionOut,
     ExtensionGrantOut,
+    ExtensionScopesOut,
     ExtensionTokenIn,
     ExtensionTokenOut,
     ExtensionUserOut,
@@ -32,9 +33,17 @@ from app.services import extension as service
 router = APIRouter(tags=["extension"])
 
 
+@router.get("/api/extension/scopes")
+async def scopes(_: CurrentUser) -> ExtensionScopesOut:
+    """What a connected extension can do, for the approval page to show."""
+    return ExtensionScopesOut(version=service.SCOPES_VERSION, scopes=list(service.SCOPES))
+
+
 @router.post("/api/extension/approve")
 async def approve(db: DbSession, user: CurrentUser, body: ExtensionApproveIn) -> ExtensionGrantOut:
-    code, expires = await service.approve(db, user, body.extension_id, body.challenge)
+    code, expires = await service.approve(
+        db, user, body.extension_id, body.challenge, body.scopes_version
+    )
     await db.commit()
     return ExtensionGrantOut(code=code, expires_at=expires)
 

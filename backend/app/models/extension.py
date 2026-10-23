@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import DateTime, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, user_fk
@@ -21,6 +21,8 @@ class ExtensionGrant(Base):
     code_hash: Mapped[str] = mapped_column(String(64), unique=True)
     # base64url(SHA-256(verifier)), sent by the extension when it opened the page.
     challenge: Mapped[str] = mapped_column(String(64))
+    # The version of the access list (services.extension.SCOPES) the User saw and approved.
+    scopes_version: Mapped[int] = mapped_column(Integer, default=1)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -35,5 +37,7 @@ class ExtensionCredential(Base):
     extension_id: Mapped[str] = mapped_column(String(32))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Below the current SCOPES_VERSION the credential is refused until approved again.
+    scopes_version: Mapped[int] = mapped_column(Integer, default=1)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

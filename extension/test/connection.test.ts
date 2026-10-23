@@ -123,10 +123,16 @@ describe("using the connection", () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer secret-token");
   });
 
-  it("forgets a credential JobWeaver refuses, e.g. after a revoke in Settings", async () => {
-    const { deps, data } = await connected(() => json({ error: { message: "Connect again" } }, 401));
-    expect(await status(deps)).toEqual({ connected: false });
+  it("forgets a credential JobWeaver refuses and shows JobWeaver's reason", async () => {
+    const reason = "The extension can do more now. Connect it again to approve the new access.";
+    const { deps, data } = await connected(() => json({ error: { message: reason } }, 401));
+    expect(await status(deps)).toEqual({ connected: false, error: reason });
     expect(data.has("connection")).toBe(false);
+
+    // Connecting again clears the reason.
+    await startConnect(deps);
+    await handleExternal(deps, { type: "jobweaver.connect", code: "c2" }, PAGE);
+    expect(data.has("notice")).toBe(false);
   });
 
   it("forgets an expired credential without calling JobWeaver", async () => {

@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, ValidationFailedError
@@ -99,16 +100,52 @@ async def get(session: AsyncSession, user: User) -> ProfileOut:
     )
 
 
+def _detach(content: ProfileContent, gone: set[uuid.UUID]) -> ProfileContent:
+    """Drops citations of Facts that no longer exist: the User re-reviewed the values, so
+    they stand on their own now, and the entry is no longer stale."""
+    return content.model_copy(
+        update={
+            "phone_fact_id": None if content.phone_fact_id in gone else content.phone_fact_id,
+            "links": [
+                link.model_copy(update={"fact_id": None}) if link.fact_id in gone else link
+                for link in content.links
+            ],
+            "employment": [
+                e.model_copy(update={"fact_ids": [i for i in e.fact_ids if i not in gone]})
+                for e in content.employment
+            ],
+            "education": [
+                e.model_copy(update={"fact_ids": [i for i in e.fact_ids if i not in gone]})
+                for e in content.education
+            ],
+        }
+    )
+
+
 async def save(
     session: AsyncSession, user: User, content: ProfileContent, expected: int
 ) -> ProfileOut:
-    profile = await _profile(session, user)
+    """Saving is the review. The row lock makes the version check atomic, and the unique
+    index turns two simultaneous first saves into one save and one conflict."""
+    conflict = ConflictError("Your profile changed in another tab. Reload it before saving.")
+    profile = await session.scalar(
+        select(ApplicationProfile)
+        .where(ApplicationProfile.user_id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if (profile.version if profile else 0) != expected:
-        raise ConflictError("Your profile changed in another tab. Reload it before saving.")
+        raise conflict
     facts = {f.id: f for f in await _facts(session, user)}
     citations = cited(content)
-    if not citations <= facts.keys():
-        raise ValidationFailedError("The profile cites Facts that are not in your Fact Bank")
+    unknown = citations - facts.keys()
+    if unknown:
+        # Another User's Fact is refused; a Fact that no longer exists is let go.
+        owners = (await session.scalars(select(Fact.user_id).where(Fact.id.in_(unknown)))).all()
+        if owners:
+            raise ValidationFailedError("The profile cites Facts that are not in your Fact Bank")
+        content = _detach(content, unknown)
+        citations -= unknown
     now = datetime.now(UTC)
     if profile is None:
         profile = ApplicationProfile(user_id=user.id, content={}, version=0, reviewed_at=now)
@@ -117,7 +154,11 @@ async def save(
     profile.fact_hashes = {str(i): fact_hash(facts[i]) for i in citations}
     profile.version += 1
     profile.reviewed_at = now
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise conflict from exc
     return ProfileOut(content=content, version=profile.version, reviewed_at=now, stale=[])
 
 

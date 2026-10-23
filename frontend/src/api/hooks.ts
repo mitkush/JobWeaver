@@ -223,10 +223,15 @@ export function useRevokeExtensionConnection() {
   });
 }
 
+/** What a connected extension can do; the approval page shows exactly this list. */
+export function useExtensionScopes(enabled = true) {
+  return useQuery({ queryKey: ["extension", "scopes"], queryFn: () => unwrap(api.GET("/api/extension/scopes")), enabled });
+}
+
 export function useApproveExtension() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: { extension_id: string; challenge: string }) =>
+    mutationFn: (body: { extension_id: string; challenge: string; scopes_version: number }) =>
       unwrap(api.POST("/api/extension/approve", { body })),
     onSettled: () => client.invalidateQueries({ queryKey: keys.extensionConnections }),
   });

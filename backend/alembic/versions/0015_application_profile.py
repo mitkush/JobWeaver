@@ -1,4 +1,5 @@
-"""Application profile and Saved Answers for the Application Extension (ADR-0017).
+"""Application profile and Saved Answers for the Application Extension (ADR-0017), and
+the version of the access list each extension connection was approved for.
 
 Revision ID: 0015
 Revises: 0014
@@ -65,9 +66,16 @@ def upgrade() -> None:
         sa.Column("job_id", sa.Uuid(), sa.ForeignKey("jobs.id", ondelete="SET NULL")),
     )
     op.create_index("idx_saved_answers_user_key", "saved_answers", ["user_id", "question_key"])
+    # Existing connections were approved for name and email only: version 1.
+    for table in ("extension_grants", "extension_credentials"):
+        op.add_column(
+            table, sa.Column("scopes_version", sa.Integer(), nullable=False, server_default="1")
+        )
 
 
 def downgrade() -> None:
+    for table in ("extension_grants", "extension_credentials"):
+        op.drop_column(table, "scopes_version")
     op.drop_index("idx_saved_answers_user_key", "saved_answers")
     op.drop_table("saved_answers")
     op.drop_index("idx_application_profiles_user", "application_profiles")

@@ -346,3 +346,74 @@ async def test_extension_routes_need_the_credential(anon, alice):
     for path in ("/api/ext/profile", "/api/ext/drafts", "/api/ext/drafts/match?url=https://a.b/c"):
         assert (await client.get(path)).status_code == 401
         assert (await anon.get(path)).status_code == 401
+
+
+async def test_saving_again_lets_go_of_a_deleted_fact_and_uses_the_entry(alice):
+    _, client = alice
+    phone = await add_fact(client, "link", "Contact", "+91 98765 43210")
+    role = await add_fact(client, "experience", "Acme Corp", "Developer, 2021 - 2023")
+    content = {
+        "phone": "+91 98765 43210",
+        "phone_fact_id": phone,
+        "employment": [{"employer": "Acme Corp", "title": "Developer", "fact_ids": [role]}],
+    }
+    assert (await save_profile(client, content)).status_code == 200
+    for fact in (phone, role):
+        assert (await client.delete(f"/api/facts/{fact}")).status_code == 204
+    assert (await client.get("/api/profile")).json()["stale"] == ["phone", "employment.0"]
+
+    # The editor still holds the deleted IDs; saving is the User's review of the values.
+    resaved = await save_profile(client, content | {"phone": "+91 90000 00000"}, expected=1)
+    assert resaved.status_code == 200, resaved.text
+    body = (await client.get("/api/profile")).json()
+    assert body["stale"] == []
+    assert body["content"]["phone_fact_id"] is None
+    assert body["content"]["employment"][0]["fact_ids"] == []
+    token = await ext_connect(client)
+    async with ext_client(token=token) as ext:
+        used = (await ext.get("/api/ext/profile")).json()
+    assert used["needs_review"] is False
+    assert used["content"]["phone"] == "+91 90000 00000"
+    assert [e["employer"] for e in used["content"]["employment"]] == ["Acme Corp"]
+
+
+async def test_simultaneous_saves_of_one_version_conflict(alice, monkeypatch):
+    import asyncio
+
+    from app.services import application_profile
+
+    _, client = alice
+    assert (await save_profile(client, {"city": "Pune"})).status_code == 200
+    # Hold the first save after its version check, long enough for the second to read the
+    # same version; without a lock both would succeed and one edit would be lost.
+    facts = application_profile._facts
+    calls = 0
+
+    async def slow_first(session, user):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(0.3)
+        return await facts(session, user)
+
+    monkeypatch.setattr(application_profile, "_facts", slow_first)
+    first = asyncio.create_task(save_profile(client, {"city": "Mumbai"}, expected=1))
+    await asyncio.sleep(0.05)
+    second = await save_profile(client, {"city": "Chennai"}, expected=1)
+    results = [await first, second]
+    assert [r.status_code for r in results] == [200, 409]
+    current = (await client.get("/api/profile")).json()
+    assert current["version"] == 2
+    assert current["content"]["city"] == "Mumbai"
+
+
+async def test_simultaneous_first_saves_conflict(alice):
+    import asyncio
+
+    _, client = alice
+    results = await asyncio.gather(
+        save_profile(client, {"city": "Mumbai"}),
+        save_profile(client, {"city": "Chennai"}),
+    )
+    assert sorted(r.status_code for r in results) == [200, 409]
+    assert (await client.get("/api/profile")).json()["version"] == 1

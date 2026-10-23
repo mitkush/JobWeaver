@@ -956,6 +956,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scopes
+         * @description What a connected extension can do, for the approval page to show.
+         */
+        get: operations["scopes_api_extension_scopes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/approve": {
         parameters: {
             query?: never;
@@ -1743,6 +1763,8 @@ export interface components {
             extension_id: string;
             /** Challenge */
             challenge: string;
+            /** Scopes Version */
+            scopes_version: number;
         };
         /** ExtensionConnectionOut */
         ExtensionConnectionOut: {
@@ -1775,6 +1797,13 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /** ExtensionScopesOut */
+        ExtensionScopesOut: {
+            /** Version */
+            version: number;
+            /** Scopes */
+            scopes: string[];
         };
         /** ExtensionTokenIn */
         ExtensionTokenIn: {
@@ -4782,6 +4811,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanyHistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scopes_api_extension_scopes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionScopesOut"];
                 };
             };
             /** @description Validation Error */

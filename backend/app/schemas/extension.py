@@ -10,6 +10,13 @@ from app.schemas.application_profile import ProfileContent
 class ExtensionApproveIn(BaseModel):
     extension_id: str = Field(max_length=32)
     challenge: str = Field(max_length=64)
+    # The access list version the page showed the User.
+    scopes_version: int
+
+
+class ExtensionScopesOut(BaseModel):
+    version: int
+    scopes: list[str]
 
 
 class ExtensionGrantOut(BaseModel):
