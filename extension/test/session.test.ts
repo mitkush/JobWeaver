@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Deps } from "../src/connection";
-import { fillTab, scanTab, type TabPort } from "../src/fill/session";
+import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "../src/fill/session";
 import type { FillItem, Scan } from "../src/fill/types";
 
 const ORIGIN = "https://jobweaver.example";
@@ -98,6 +98,22 @@ describe("scan and fill", () => {
     await scanTab(deps, port, 5);
     const result = await fillTab(deps, port, 5, ["r1", "r3"]);
     expect(result.downloads).toEqual([{ name: "Asha_Acme.pdf", base64: btoa("%PDF") }]);
+  });
+
+  it("keeps the result for a reopened popup until Undo or a new page", async () => {
+    const { deps, port } = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    await scanTab(deps, port, 5);
+    await fillTab(deps, port, 5, ["r1", "r3"]);
+    // The popup closed when the User clicked the page; reopening finds the result.
+    expect(await lastFill(deps, 5)).toMatchObject({ filled: ["r1", "r3"], labels: { r1: "First name", r3: "Resume" } });
+    expect(await lastFill(deps, 6)).toBeNull();
+    await undoTab(deps, port, 5);
+    expect(await lastFill(deps, 5)).toBeNull();
+
+    await scanTab(deps, port, 5);
+    await fillTab(deps, port, 5, ["r1"]);
+    await forgetTab(deps, 5); // the tab moved to another page
+    expect(await lastFill(deps, 5)).toBeNull();
   });
 
   it("fills nothing without a scan of this tab", async () => {

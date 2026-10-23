@@ -24,11 +24,15 @@ export type ScanResult = {
 export type FillResult = FillReport & {
   /** PDFs a site refused, for the popup to offer as downloads. */
   downloads: { name: string; base64: string }[];
+  /** Field labels by ref, so a reopened popup can describe the result. */
+  labels: Record<string, string>;
 };
 
 type Stored = { scan: Scan; proposals: Proposal[]; draft: { id: string; number: number } | null };
 
 const key = (tabId: number) => `fill:${tabId}`;
+// Kept until Undo or a new page: the popup closes whenever the User clicks the page.
+const resultKey = (tabId: number) => `filled:${tabId}`;
 
 function toBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -70,7 +74,7 @@ async function pdf(deps: Deps, draft: { id: string; number: number }, kind: "res
 /** Fills only the ticked proposals from the last scan of this tab. */
 export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: string[]): Promise<FillResult> {
   const stored = await deps.store.get<Stored>(key(tabId));
-  if (!stored) return { filled: [], failed: [{ ref: "", reason: "Scan the form first" }], downloads: [] };
+  if (!stored) return { filled: [], failed: [{ ref: "", reason: "Scan the form first" }], downloads: [], labels: {} };
   const wanted = new Set(refs);
   const items: FillItem[] = [];
   const pdfs = new Map<string, string>();
@@ -98,13 +102,24 @@ export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: st
     const item = items.find((i) => i.ref === failure.ref);
     if (item?.kind === "file") downloads.push({ name: item.file.name, base64: item.file.base64 });
   }
-  return { filled: report.filled, failed: [...failed, ...report.failed], downloads };
+  const labels = Object.fromEntries(stored.proposals.map((p) => [p.ref, p.label]));
+  const result: FillResult = { filled: report.filled, failed: [...failed, ...report.failed], downloads, labels };
+  if (result.filled.length || result.downloads.length) await deps.store.set(resultKey(tabId), result);
+  return result;
 }
 
-export async function undoTab(port: TabPort, tabId: number): Promise<FillReport> {
-  return port.send<FillReport>(tabId, { type: "jw.undo" });
+/** The last fill on this tab, for a popup reopened after checking the page. */
+export async function lastFill(deps: Deps, tabId: number): Promise<FillResult | null> {
+  return (await deps.store.get<FillResult>(resultKey(tabId))) ?? null;
+}
+
+export async function undoTab(deps: Deps, port: TabPort, tabId: number): Promise<FillReport> {
+  const report = await port.send<FillReport>(tabId, { type: "jw.undo" });
+  await deps.store.remove(resultKey(tabId));
+  return report;
 }
 
 export async function forgetTab(deps: Deps, tabId: number): Promise<void> {
   await deps.store.remove(key(tabId));
+  await deps.store.remove(resultKey(tabId));
 }

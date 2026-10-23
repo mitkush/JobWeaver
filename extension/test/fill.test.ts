@@ -73,6 +73,19 @@ describe("finding fields", () => {
     expect(labels).toContain("Resume/CV");
   });
 
+  it("counts a real first option as a choice, and only placeholders as empty", () => {
+    document.body.innerHTML = `
+      <label for="a">Country</label><select id="a"><option value="US">United States</option><option value="IN">India</option></select>
+      <label for="b">Country of residence</label><select id="b"><option value="">Select…</option><option value="IN">India</option></select>
+      <label for="c">City</label><select id="c"><option value="x">-- Choose --</option><option value="BLR">Bengaluru</option></select>
+      <label for="d">Location</label><select id="d"><option disabled selected>Pick one</option><option value="BLR">Bengaluru</option></select>`;
+    const fields = scan();
+    expect(fields.map((f) => f.hasValue)).toEqual([true, false, false, false]);
+    // A populated dropdown is only replaced when the User ticks it.
+    const country = propose(fields, profile, files).find((p) => p.label === "Country")!;
+    expect(country).toMatchObject({ value: "India", overwrite: true });
+  });
+
   it("uses Greenhouse's field ids on Greenhouse forms", () => {
     load("greenhouse.html");
     const adapter = adapterFor(new URL("https://job-boards.greenhouse.io/acme/jobs/4012345"));
@@ -162,9 +175,8 @@ describe("filling", () => {
     expect(report.failed).toHaveLength(1);
   });
 
-  it("attaches a PDF to a file input", () => {
-    const fields = scan();
-    // jsdom has no DataTransfer; a minimal stand-in and a writable files list.
+  describe("attachments", () => {
+    // jsdom has no DataTransfer and a read-only files list; minimal stand-ins.
     class FakeTransfer {
       private list: File[] = [];
       items = { add: (file: File) => void this.list.push(file) };
@@ -172,17 +184,49 @@ describe("filling", () => {
         return Object.assign([...this.list], { item: (i: number) => this.list[i] ?? null }) as unknown as FileList;
       }
     }
-    vi.stubGlobal("DataTransfer", FakeTransfer);
-    Object.defineProperty(window, "DataTransfer", { value: FakeTransfer, configurable: true });
-    const input = document.querySelector<HTMLInputElement>("#cv")!;
-    let current: FileList | null = null;
-    Object.defineProperty(input, "files", { get: () => current, set: (v: FileList) => (current = v), configurable: true });
+    let input: HTMLInputElement;
 
-    const report = new Filler(document).fill([
-      { ref: byLabel(fields, "Resume/CV").ref, kind: "file", file: { name: "Asha.pdf", type: "application/pdf", base64: btoa("%PDF-1.7") } },
-    ]);
-    expect(report.failed).toEqual([]);
-    expect(input.files?.[0]?.name).toBe("Asha.pdf");
-    vi.unstubAllGlobals();
+    beforeEach(() => {
+      Object.defineProperty(window, "DataTransfer", { value: FakeTransfer, configurable: true });
+      input = document.querySelector<HTMLInputElement>("#cv")!;
+      let current: FileList = new FakeTransfer().files;
+      Object.defineProperty(input, "files", { get: () => current, set: (v: FileList) => (current = v), configurable: true });
+    });
+
+    const pdf = (ref: string) => ({
+      ref,
+      kind: "file" as const,
+      file: { name: "Asha.pdf", type: "application/pdf", base64: btoa("%PDF-1.7") },
+    });
+
+    it("attaches the PDF", () => {
+      const report = new Filler(document).fill([pdf(byLabel(scan(), "Resume/CV").ref)]);
+      expect(report.failed).toEqual([]);
+      expect(input.files?.[0]?.name).toBe("Asha.pdf");
+    });
+
+    it("brings back the User's own earlier file on undo", () => {
+      const original = new File(["mine"], "original.pdf", { type: "application/pdf" });
+      const before = new FakeTransfer();
+      before.items.add(original);
+      input.files = before.files;
+      const filler = new Filler(document);
+      filler.fill([pdf(byLabel(scan(), "Resume/CV").ref)]);
+      expect(input.files?.[0]?.name).toBe("Asha.pdf");
+      const report = filler.undo();
+      expect(report.failed).toEqual([]);
+      expect(input.files?.[0]).toBe(original);
+    });
+
+    it("keeps a file the User attached after filling, even with the same name", () => {
+      const filler = new Filler(document);
+      filler.fill([pdf(byLabel(scan(), "Resume/CV").ref)]);
+      const theirs = new FakeTransfer();
+      theirs.items.add(new File(["their own edit"], "Asha.pdf", { type: "application/pdf" }));
+      input.files = theirs.files;
+      const report = filler.undo();
+      expect(report.failed).toHaveLength(1);
+      expect(input.files?.[0]?.size).toBe("their own edit".length);
+    });
   });
 });

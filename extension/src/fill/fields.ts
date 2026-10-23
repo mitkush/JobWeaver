@@ -144,12 +144,20 @@ function hidden(el: Element, kind: FieldKind): boolean {
   return false;
 }
 
+const PLACEHOLDER = /^(-+|—+|select\b|choose\b|please (select|choose)|pick\b|none selected|\(none\))/i;
+
+/** "Select…", "-- Choose --", or an empty or disabled option: not a real choice. The
+ * position in the list says nothing: a list may start with a real country. */
+export function isPlaceholder(option: HTMLOptionElement): boolean {
+  const text = option.text.trim();
+  return option.disabled || option.value === "" || text === "" || PLACEHOLDER.test(text);
+}
+
 export function hasValue(el: Control, kind: FieldKind): boolean {
   if (kind === "file") return ((el as HTMLInputElement).files?.length ?? 0) > 0;
   if (kind === "select") {
-    const select = el as HTMLSelectElement;
-    const option = select.options[select.selectedIndex];
-    return Boolean(option && option.value && !option.disabled && select.selectedIndex > 0);
+    const option = (el as HTMLSelectElement).options[(el as HTMLSelectElement).selectedIndex];
+    return Boolean(option && !isPlaceholder(option));
   }
   return el.value.trim() !== "";
 }

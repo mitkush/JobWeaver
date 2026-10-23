@@ -2,7 +2,7 @@
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
 import { clear, pageState, select } from "./drafts";
-import { fillTab, forgetTab, scanTab, undoTab, type TabPort } from "./fill/session";
+import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "./fill/session";
 
 declare const __JOBWEAVER_ORIGIN__: string;
 
@@ -58,6 +58,7 @@ export type PopupMessage =
   | { type: "scan"; tabId: number }
   | { type: "fill"; tabId: number; refs: string[] }
   | { type: "undo"; tabId: number }
+  | { type: "lastFill"; tabId: number }
   | { type: "open"; path: string };
 
 async function handle(message: PopupMessage): Promise<unknown> {
@@ -82,7 +83,9 @@ async function handle(message: PopupMessage): Promise<unknown> {
     case "fill":
       return fillTab(deps, port, message.tabId, message.refs);
     case "undo":
-      return undoTab(port, message.tabId);
+      return undoTab(deps, port, message.tabId);
+    case "lastFill":
+      return lastFill(deps, message.tabId);
     case "open":
       // Only JobWeaver's own pages; the path never comes from the visited site.
       if (!message.path.startsWith("/") || message.path.startsWith("//")) return null;

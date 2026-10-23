@@ -126,6 +126,10 @@ function fillSection(tabId: number): HTMLElement {
   const body = h("div");
   const scanButton = button("Scan this form", () => void runScan());
   section.append(body, h("div", { class: "actions" }, scanButton));
+  // Reopened after checking the page: show the last fill with its Undo and downloads.
+  void ask<FillResult | null>({ type: "lastFill", tabId }).then((last) => {
+    if (last && !body.childElementCount) showReport(last);
+  });
 
   async function runScan() {
     scanButton.disabled = true;
@@ -159,7 +163,7 @@ function fillSection(tabId: number): HTMLElement {
     const fillButton = button("Fill ticked fields", async () => {
       const refs = Array.from(body.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked"), (b) => b.value);
       fillButton.disabled = true;
-      showReport(await ask<FillResult>({ type: "fill", tabId, refs }), result);
+      showReport(await ask<FillResult>({ type: "fill", tabId, refs }));
     });
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
@@ -171,8 +175,8 @@ function fillSection(tabId: number): HTMLElement {
     ));
   }
 
-  function showReport(report: FillResult, result: ScanResult) {
-    const label = (ref: string) => result.proposals.find((p) => p.ref === ref)?.label ?? "A field";
+  function showReport(report: FillResult) {
+    const label = (ref: string) => report.labels[ref] ?? "A field";
     const undoButton = button("Undo", async () => {
       undoButton.disabled = true;
       const undone = await ask<FillReport>({ type: "undo", tabId });

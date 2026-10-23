@@ -5,7 +5,11 @@
 import type { FillItem, FillReport } from "./types";
 
 type Control = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-type Written = { kind: FillItem["kind"]; previous: string; written: string };
+type Written =
+  | { kind: "text" | "textarea" | "select"; previous: string; written: string }
+  // Files are kept as the File objects themselves: the earlier upload comes back on undo,
+  // and a different file with the same name still counts as the User's own change.
+  | { kind: "file"; previous: File[]; written: File };
 
 const OUTLINE = "2px solid #10b981";
 
@@ -35,8 +39,18 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-function fileName(el: HTMLInputElement): string {
-  return el.files?.[0]?.name ?? "";
+function filesOf(el: HTMLInputElement): File[] {
+  return Array.from(el.files ?? []);
+}
+
+function setFiles(el: HTMLInputElement, files: File[]) {
+  const transfer = new (el.ownerDocument.defaultView!.DataTransfer)();
+  for (const file of files) transfer.items.add(file);
+  el.files = transfer.files;
+}
+
+function sameFile(a: File | undefined, b: File): boolean {
+  return a === b || (a !== undefined && a.name === b.name && a.size === b.size && a.lastModified === b.lastModified && a.type === b.type);
 }
 
 export class Filler {
@@ -56,13 +70,13 @@ export class Filler {
       try {
         if (item.kind === "file") {
           const input = el as HTMLInputElement;
-          const previous = fileName(input);
-          const transfer = new view.DataTransfer();
-          transfer.items.add(new view.File([decode(item.file.base64)], item.file.name, { type: item.file.type }));
-          input.files = transfer.files;
+          const previous = filesOf(input);
+          const file = new view.File([decode(item.file.base64)], item.file.name, { type: item.file.type });
+          setFiles(input, [file]);
           announce(input);
-          if (fileName(input) !== item.file.name) throw new Error("The site did not accept the file");
-          this.written.set(item.ref, { kind: "file", previous, written: item.file.name });
+          const now = filesOf(input);
+          if (now.length !== 1 || !sameFile(now[0], file)) throw new Error("The site did not accept the file");
+          this.written.set(item.ref, { kind: "file", previous, written: now[0]! });
         } else if (item.kind === "select") {
           const select = el as HTMLSelectElement;
           const option = Array.from(select.options).find((o) => o.text.trim() === item.value);
@@ -91,20 +105,22 @@ export class Filler {
   /** Restores the previous value where the field still holds what JobWeaver wrote. */
   undo(): FillReport {
     const report: FillReport = { filled: [], failed: [] };
-    const view = this.doc.defaultView!;
     for (const [ref, record] of this.written) {
       const el = find(this.doc, ref);
       if (!el) continue;
-      const current = record.kind === "file" ? fileName(el as HTMLInputElement) : el.value;
-      if (current !== record.written) {
+      const unchanged =
+        record.kind === "file"
+          ? (() => {
+              const now = filesOf(el as HTMLInputElement);
+              return now.length === 1 && sameFile(now[0], record.written);
+            })()
+          : el.value === record.written;
+      if (!unchanged) {
         report.failed.push({ ref, reason: "You changed it after filling, so it was kept" });
         continue;
       }
-      if (record.kind === "file") {
-        (el as HTMLInputElement).files = new view.DataTransfer().files;
-      } else {
-        setValue(el, record.previous);
-      }
+      if (record.kind === "file") setFiles(el as HTMLInputElement, record.previous);
+      else setValue(el, record.previous);
       announce(el);
       el.style.outline = "";
       el.removeAttribute("data-jobweaver-filled");
