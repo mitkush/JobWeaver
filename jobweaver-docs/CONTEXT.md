@@ -116,6 +116,26 @@ Creating a real draft in the User's Gmail, with the Tailored Resume attached, fr
 
 A User's record of applying to a Job, one per User and Job, with a status: **Drafted -> Applied -> Replied -> Interview -> Offer** or **Rejected**. Every status change is kept with its time. Updated by the User; JobWeaver does not read Gmail replies.
 
+## Application Extension
+
+The JobWeaver browser extension (FR-E14). It fills an employer's application form from the User's application profile, Saved Answers and a saved Draft version, and attaches its PDFs; the User reviews and submits (ADR-0017). It never submits or applies on its own.
+
+## Saved Answer
+
+An answer the User gave to a form question (notice period, salary, work authorisation, or any answer they chose to keep), reused by the Application Extension when the same question appears again within its scope: general, the same country (and currency for salary), or the same Company. Sensitive questions are only ever filled from Saved Answers.
+
+## Page Description
+
+A job description read from the Job's own careers page through the Application Extension, kept on one User's link to the Job and used for that User's Drafts instead of the Source's text. Each Draft version records the description it was made from. It never changes the shared Job (ADR-0002, ADR-0017).
+
+## Writing Style
+
+How a User writes, taken only from text they wrote themselves (summary, cover letters, answers they edited): sentence length, formality, phrasing and spelling, with a few short excerpts whose names, numbers, dates and technologies are redacted. Used to make Application Extension Suggestions read like the User. It holds no facts about the User; the Fact Bank stays the only source of content (ADR-0005).
+
+## Captured Job
+
+A Job saved from a page the User opened, through the Application Extension, rather than fetched by a Source. Stored as a Posting from the push-only `captured` Source and linked to the capturing User by a link that Feed rebuilds keep (ADR-0017).
+
 ## Follow-up Reminder
 
 An in-app reminder when an Application has stayed **Applied** for N days (default 7, set per User), with a one-click follow-up email placed in Gmail Drafts. A reminder only; nothing is sent.
