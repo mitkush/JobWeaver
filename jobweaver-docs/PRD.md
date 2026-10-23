@@ -270,7 +270,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 **FR-E14 [V2] - Browser extension.** A Chrome extension that fills application forms on any site from the User's reviewed profile and a saved Draft version; the User reviews and submits (ADR-0017, plan in `APPLICATION_EXTENSION_PLAN.md`).
 - AC1: The extension never submits a form or clicks Next; marking the Application Applied is a separate User action.
 - AC2: Profile fields are filled without AI; the selected Tailored Resume and Cover Letter are attached, or downloaded with a prompt when a site refuses the attachment.
-- AC3: Form questions get a Saved Answer, a Suggestion from Facts with a Tailoring Trace, Fact notes, or nothing; Suggestions are outlined for review and never accepted automatically.
+- AC3: Form questions get a Saved Answer, a Suggestion from Facts with a Tailoring Trace, Fact notes, or nothing. A Suggestion is a complete answer within the field's length limit, in the User's Writing Style; it is outlined for review and never accepted automatically.
 - AC4: Sensitive questions are filled only from Saved Answers; forms that ask for answers not written by AI get Fact notes only.
 - AC5: A job page JobWeaver has not fetched can be captured, reviewed and drafted like any Feed Job.
 

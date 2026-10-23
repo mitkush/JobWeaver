@@ -64,8 +64,11 @@ JobWeaver answers each one through a typed AI Gateway task, after the AI notice 
 checks (ADR-0007, ADR-0012), with one of:
 
 - **Saved Answer:** reuse what the User saved for the same question before.
-- **Suggestion:** a short, plain-spoken answer written only from the User's Facts, with a
-  Tailoring Trace (ADR-0005). Never auto-accepted; outlined as needs review.
+- **Suggestion:** a complete answer ready to edit, not a fragment, written only from the
+  User's Facts with a Tailoring Trace (ADR-0005) and in the User's Writing Style. Its length
+  follows the field: a sentence for a single-line input, one or two full paragraphs for a
+  text area, and never more than a word or character limit stated on the form or set by
+  `maxlength`. Never auto-accepted; outlined as needs review for the User to rework.
 - **Fact notes:** the relevant Facts as short notes beside the field, with no prose.
 - **Leave empty.**
 
@@ -80,6 +83,25 @@ Two rules are enforced in code, not left to the prompt:
   to look human-written: the User writes those answers, with their own Facts at hand.
 
 Edited answers can be saved as Saved Answers so the next form reuses them.
+
+### Writing Style
+
+Suggestions should read like the User, not like generic AI text. JobWeaver builds a
+**Writing Style** profile from text the User wrote themselves: the uploaded summary and
+cover letters, Saved Answers they edited, and the final text of Suggestions they reworked
+before saving. The profile records observable traits only (typical sentence length,
+formality, first-person phrasing, words and openers the User uses or avoids, British or
+American spelling) plus up to three short excerpts as examples. It never contains facts
+about the User, so it cannot introduce claims (ADR-0005).
+
+- Built by a typed AI Gateway task, in recorded mode in CI, after the AI notice and region
+  checks; rebuilt when its inputs change, and shown in Settings where the User can edit or
+  clear it.
+- Passed to the question-answering task alongside the Facts. Every Suggestion also avoids
+  stock phrasing ("I am excited to", "leverage", "passionate about", "in today's
+  fast-paced") through a code check that asks for one rewrite when it finds them.
+- A User's Writing Style is User-owned data, scoped by `user_id` (ADR-0001), and is never
+  used for another User.
 
 ## Existing building blocks and gaps
 
@@ -189,7 +211,7 @@ User edits.
 | 2. Reviewed profile, Saved Answers and Draft selection | Settings profile and Saved Answers editors; typed scoped APIs; Fact-change handling tested; exact saved Draft/PDF version shown. |
 | 3. First working application | Generic adapter plus Greenhouse adapter; preview, selective fill, safe overwrite, Undo and PDF attachment with download fallback; fixture browser tests prove correct fields, attached file and no submit action. |
 | 4. More forms and tracking | Lever and Ashby adapters, embedded-form host permissions, multi-step rescans; explicit Applied confirmation is idempotent; stale-version/expired-session errors preserve form input. |
-| 5. Form questions | Gateway task in recorded mode; Saved Answer, Suggestion, Fact notes and Leave empty paths; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, both proved by tests. |
+| 5. Form questions and Writing Style | Gateway tasks in recorded mode for answers and for building the Writing Style; Saved Answer, Suggestion, Fact notes and Leave empty paths; Suggestions are complete answers within the field's length limit, use the Writing Style and pass the stock-phrase check; the Writing Style editor in Settings; sensitive questions never get a Suggestion and forms that refuse AI answers get Fact notes only, all proved by tests. |
 | 6. Captured Jobs | Capture from JSON-LD and page text with User review; push-only `captured` Source; the Captured Job appears only through the capturing User's link and flows into the existing Draft. |
 | 7. Private testing | Installable extension ZIP, reproducible build, permission review, supported-form matrix and manual trial on real forms without submitting test applications. |
 | Later | Workday multi-step forms, Firefox, store publication. |
