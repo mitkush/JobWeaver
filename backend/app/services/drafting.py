@@ -279,10 +279,26 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
         .order_by(Draft.created_at.desc())
     )
     if existing is not None:
+        current_link = await session.scalar(
+            select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
+        )
+        if (
+            current_link
+            and current_link.page_description
+            and str(current_link.page_description["description"])
+            != existing.job_snapshot.get("description")
+        ):
+            raise ConflictError(
+                "A Draft is already generating with another description. Wait for it to finish."
+            )
         return existing
     from app.models import Posting
 
     primary = await session.get(Posting, job.primary_posting_id) if job.primary_posting_id else None
+    link = await session.scalar(
+        select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
+    )
+    page = link.page_description if link and link.page_description else None
     document = await session.scalar(
         select(Document).where(
             Document.user_id == user.id,
@@ -298,10 +314,22 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
         job_snapshot={
             "title": job.title,
             "company": job.company_name,
-            "description": primary.description if primary else "",
+            "description": str(page["description"])
+            if page
+            else primary.description
+            if primary
+            else "",
+            "description_origin": dict(page)
+            if page
+            else {
+                "posting_id": str(primary.id) if primary else None,
+                "url": primary.apply_url if primary else None,
+            },
             "contact_email": job.contact_email,
             "apply_url": job.apply_url,
-            "required_skills": list(job.required_skills or []),
+            # The shared Job's AI skill list describes its Source text, not this User's
+            # Page Description. Do not reuse it for a different description.
+            "required_skills": [] if page else list(job.required_skills or []),
             "name": user.name or "Applicant",
             "email": user.email,
         },

@@ -30,12 +30,13 @@ from app.models.user import User
 GRANT_SECONDS = 120
 # What a connected extension can do, shown on the approval page. Adding access raises the
 # version: connections approved for an older list are refused until approved again.
-SCOPES_VERSION = 2
+SCOPES_VERSION = 3
 SCOPES = (
     "See your name and email",
     "Read your reviewed application profile",
     "Read your Saved Answers for a Job",
     "List your Drafts and download their resume and cover letter PDFs",
+    "Save reviewed careers-page Jobs and descriptions; create Drafts from your Fact Bank",
 )
 EXTENSION_ID = re.compile(r"[a-p]{32}")
 CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")

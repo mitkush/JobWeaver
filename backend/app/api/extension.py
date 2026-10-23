@@ -9,11 +9,16 @@ import uuid
 from typing import Annotated, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Header, Query, Response
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Response
+from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession, ExtensionCaller
-from app.core.errors import JobWeaverError
+from app.adapters.links import get_link_http
+from app.api.deps import CurrentUser, DbSession, ExtensionCaller, Gateway
+from app.core.errors import JobWeaverError, NotFoundError
+from app.models.job import UserJob
 from app.schemas.application_profile import SavedAnswerOut
+from app.schemas.capture import CapturedDraftOut, CapturedJobOut, CaptureIn
 from app.schemas.extension import (
     ExtDraftMatch,
     ExtDraftSummary,
@@ -27,10 +32,44 @@ from app.schemas.extension import (
     ExtensionUserOut,
     ExtProfileOut,
 )
-from app.services import application_profile, extension_drafts, saved_answers
+from app.services import application_profile, capture, drafting, extension_drafts, saved_answers
 from app.services import extension as service
 
 router = APIRouter(tags=["extension"])
+
+
+@router.post("/api/ext/jobs/capture", status_code=201)
+async def capture_job(db: DbSession, caller: ExtensionCaller, body: CaptureIn) -> CapturedJobOut:
+    _, user = caller
+    result = await capture.save(db, user, body)
+    await db.commit()
+    return result
+
+
+@router.post("/api/ext/jobs/{job_id}/draft", status_code=202)
+async def capture_draft(
+    db: DbSession,
+    caller: ExtensionCaller,
+    job_id: uuid.UUID,
+    gateway: Gateway,
+    background: BackgroundTasks,
+    link_http: Annotated[httpx.AsyncClient, Depends(get_link_http)],
+) -> CapturedDraftOut:
+    _, user = caller
+    # Reuse the web app's ownership, open-link, consent, region and reviewed-Facts checks.
+    if (
+        await db.scalar(
+            select(UserJob.id).where(UserJob.user_id == user.id, UserJob.job_id == job_id)
+        )
+        is None
+    ):
+        raise NotFoundError("Job not found")
+    await drafting.ensure_link_open(db, user, job_id, link_http)
+    draft = await drafting.create(db, user, job_id)
+    await db.commit()
+    result = CapturedDraftOut(draft_id=draft.id, state=draft.state)
+    background.add_task(drafting.generate, draft.id, user.id, gateway)
+    return result
 
 
 @router.get("/api/extension/scopes")

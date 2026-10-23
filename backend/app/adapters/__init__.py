@@ -3,6 +3,7 @@
 from app.adapters import (  # noqa: F401
     adzuna,
     ashby,
+    captured,
     foundit,
     greenhouse,
     hackernews,

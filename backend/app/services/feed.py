@@ -431,6 +431,7 @@ async def _apply_links(
         delete(UserJob).where(
             *gone,
             UserJob.hidden_at.is_(None),
+            UserJob.captured_at.is_(None),
             ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
             ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
         )

@@ -956,6 +956,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ext/jobs/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture Job */
+        post: operations["capture_job_api_ext_jobs_capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/jobs/{job_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture Draft */
+        post: operations["capture_draft_api_ext_jobs__job_id__draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/scopes": {
         parameters: {
             query?: never;
@@ -1420,6 +1454,41 @@ export interface components {
             runs_out_on: string | null;
             /** Top Queries */
             top_queries: components["schemas"]["QuerySpend"][];
+        };
+        /** CaptureIn */
+        CaptureIn: {
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Description */
+            description: string;
+            /** Url */
+            url: string;
+        };
+        /** CapturedDraftOut */
+        CapturedDraftOut: {
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /** State */
+            state: string;
+        };
+        /** CapturedJobOut */
+        CapturedJobOut: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Matched Existing */
+            matched_existing: boolean;
         };
         /** CompanyHistoryOut */
         CompanyHistoryOut: {
@@ -4811,6 +4880,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanyHistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_job_api_ext_jobs_capture_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_draft_api_ext_jobs__job_id__draft_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedDraftOut"];
                 };
             };
             /** @description Validation Error */

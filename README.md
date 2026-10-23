@@ -69,6 +69,22 @@ Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the A
 
 A Chrome/Brave extension that fills application forms from your reviewed profile and a chosen Draft; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). On a form, open the extension, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in; questions, salary, visa and referrer fields stay for you. **Undo** restores what JobWeaver changed. It never submits.
 
+You can also start directly on a company's careers-page advert, without a Job or Draft in
+JobWeaver: click **Read this job**, review the title, Company and public JD, and choose
+**Save reviewed job**. Structured `JobPosting` data, advert regions (including Workday)
+and selected text are supported; when extraction is incomplete, edit or paste the JD in
+the review box. Nothing is uploaded until Save. **Create Draft from this JD** uses your
+reviewed Fact Bank through the existing AI gateway and opens the Draft page. Return to
+the advert/form tab and choose **Use this Draft** once generation finishes. On an existing
+Job, your reviewed page text is personal and never replaces the shared Source description.
+Creating another Draft preserves existing Drafts and their manual edits.
+
+Capture adds backend migration 0016 and new extension permissions (access list version 3).
+Deploy the server before rebuilding/reloading the extension, then reconnect and approve
+the new access list. This slice does not add AI custom-question answers or regenerate an
+existing Draft's versions; those remain later stages. The employer page still needs a
+separate Apply click before there are form fields to scan.
+
 1. Set `EXTENSION_IDS=npdbpfgligiimfnoblngghbokehjbafm` on the server.
 2. Build it for your server: `cd extension && npm ci && JOBWEAVER_ORIGIN=https://your-host npm run build` (defaults to the production host; use `http://localhost:5173` locally).
 3. In Chrome or Brave open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select `extension/dist`.

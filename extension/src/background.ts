@@ -2,6 +2,8 @@
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
 import { clear, pageState, select } from "./drafts";
+import { captured, carryCapture, clearCapture, createCapturedDraft, readPage, savePage } from "./capture";
+import type { PageJob } from "./job-read";
 import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "./fill/session";
 
 declare const __JOBWEAVER_ORIGIN__: string;
@@ -37,6 +39,10 @@ const port: TabPort = {
 chrome.tabs.onRemoved.addListener((tabId) => {
   void clear(deps, tabId);
   void forgetTab(deps, tabId);
+  void clearCapture(deps, tabId);
+});
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id !== undefined && tab.openerTabId !== undefined) void carryCapture(deps, tab.openerTabId, tab.id);
 });
 // A new page in the tab means a new form: the last scan no longer applies.
 chrome.tabs.onUpdated.addListener((tabId, change) => {
@@ -55,6 +61,8 @@ export type PopupMessage =
   | { type: "page"; tabId: number; url?: string }
   | { type: "select"; tabId: number; draftId: string; number?: number }
   | { type: "clear"; tabId: number }
+  | { type: "readJob" | "capturedJob" | "createCapturedDraft"; tabId: number }
+  | { type: "saveJob"; tabId: number; job: PageJob }
   | { type: "scan"; tabId: number }
   | { type: "fill"; tabId: number; refs: string[] }
   | { type: "undo"; tabId: number }
@@ -63,6 +71,10 @@ export type PopupMessage =
 
 async function handle(message: PopupMessage): Promise<unknown> {
   switch (message.type) {
+    case "readJob": return readPage(deps, port, message.tabId);
+    case "saveJob": return savePage(deps, port, message.tabId, message.job);
+    case "capturedJob": return captured(deps, message.tabId);
+    case "createCapturedDraft": return createCapturedDraft(deps, message.tabId);
     case "connect":
       await startConnect(deps);
       return { connected: Boolean(await currentConnection(deps)) };
@@ -102,7 +114,7 @@ chrome.runtime.onMessage.addListener((message: PopupMessage, sender, sendRespons
   handle(message)
     .then(sendResponse)
     .catch((error: unknown) =>
-      sendResponse({ connected: false, error: error instanceof Error && /Cannot access|cannot be scripted/i.test(error.message) ? "This page cannot be filled (a browser or store page)." : "JobWeaver could not be reached." }),
+      sendResponse({ connected: false, error: error instanceof Error && /Cannot access|cannot be scripted/i.test(error.message) ? "This page cannot be read or filled (a browser or store page)." : error instanceof Error ? error.message : "JobWeaver could not be reached." }),
     );
   return true;
 });
