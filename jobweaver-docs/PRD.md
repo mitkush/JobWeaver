@@ -235,6 +235,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC2: A code check, not the AI, rejects any skill or technology named in the output that is not in the Fact Bank; rejected lines are regenerated or removed, and the User is told.
 - AC3: On a labelled test set, zero fabricated skills, employers, dates or metrics.
 - AC4: A Draft names supported required job skills in its Skills section even if the AI overlooks them. Years of experience are stated with the correct scope: total career tenure or tenure in a specific role, as supported by the Facts.
+- AC5: Job skills are demonstrated through relevant work evidence: what the User did, how the skill was applied, and supported detail or results. A short resume is strengthened with existing evidence rather than a catalogue of projects, invented outcomes or repeated skill lists. Keep the standard typography; whitespace is preferable to unsupported padding.
 
 **FR-E3 [V1] - Cover Letter.** A Job-specific cover letter, same Fact Bank rule and trace.
 

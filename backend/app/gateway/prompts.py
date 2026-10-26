@@ -12,16 +12,24 @@ from app.gateway.schemas import (
 TAILOR_DRAFT_SYSTEM = """Build an honest application package from the supplied Facts only.
 Return JSON: {"content": {"resume": [line], "cover_letter": [line],
 "email_subject": "", "email_greeting": "", "email_body": [line]}, "message": ""}.
+Both resume and cover_letter must contain lines. Always write a job-specific Cover Letter,
+even when has_email is false. has_email controls only the Application Email: when false,
+return email_body as [] and email_subject and email_greeting as empty strings, never null.
 Each line: {"id": "unique line id", "text": "...", "fact_refs": ["F1"],
 "section": "Headline|Contact|Summary|Skills|Experience|Projects|Education|Links|Additional",
 "heading": false}.
 Use an actual section name, not the pipe-separated list. Copy short Fact refs exactly.
 Every line needs at least one source Fact. Select relevant Facts, including portfolio
 Facts, and order them by relevance.
-Write a focused, professional one-page resume. Use the available page when there is
-relevant evidence: include 2 to 4 substantial projects and the supported job skills;
-do not stop after a few generic bullets or leave a large empty area. Two pages are
-acceptable when the strongest evidence cannot fit legibly on one page.
+Write a focused, professional one-page resume that demonstrates the job's skills through
+work evidence, not a catalogue of projects. Give Experience most of the space: show what
+the User built or improved, how the relevant skill was applied, and the supported result.
+Use the page for distinct, relevant evidence when the Facts support it. Unsupported
+detail and filler are worse than whitespace. Two pages are acceptable only when strong
+relevant evidence needs it.
+If the resume is thin, develop its strongest work bullets with supported implementation
+details, scope and outcomes before adding another project. Never repeat a skill list or
+invent a metric, business benefit, ownership or responsibility to make a bullet longer.
 - Headline: one line under the name, the User's own role title from the Facts plus the
   job's main matching skills, e.g. "Senior Software Developer | Ruby on Rails, Python".
 - Contact: one line from contact Facts only (phone, profile links, location), parts
@@ -35,13 +43,18 @@ acceptable when the strongest evidence cannot fit legibly on one page.
   never present current-role tenure as total career experience or alter role dates.
 - Experience: per role, one heading line ("heading": true) "Job title | Employer | dates",
   with the title, employer and dates copied exactly from the Facts, never the job's own
-  title; then 2 to 6 bullets, strongest and most relevant first, each one achievement or
-  responsibility starting with a verb, metrics kept exactly. A short bold-style label
-  ("Performance: ...") is fine when it matches a job requirement.
+  title; then 2 to 6 evidence-backed bullets, strongest and most relevant first. Develop
+  the most relevant role rather than giving every role equal space. Each bullet starts
+  with an action and explains one piece of work with its supported technical detail or
+  outcome; combine related Facts from the same employer when useful, not unrelated tasks.
+  Mention technologies in the work they supported, not just as keywords. Keep metrics
+  exactly. A short label ("Performance: ...") is fine when it matches a job requirement.
 - Keep contract work under its own employer, never under a concurrent full-time role.
   A client project is not the employer; keep the contract employer in the heading.
-- Projects: per project, a heading line "Name | main technologies | link if a Fact has
-  one", then 1 to 3 bullets. Order projects by relevance to the job.
+- Projects: select no more than 2 strongest relevant projects, and only when they add
+  evidence not already demonstrated in Experience. Do not include every available project.
+  Per selected project, a heading "Name | main technologies | link if a Fact has one",
+  then 1 to 3 substantive bullets showing how the relevant skills were applied.
 - Skills: 2 to 4 lines grouped like the job's stack, "Category: skill, skill, ...".
   Include every major job skill that is supported by the Facts, especially the core
   language and framework. A skill line must cite its skill Facts.
@@ -78,6 +91,10 @@ REVISE_DRAFT_SYSTEM = (
     TAILOR_DRAFT_SYSTEM
     + """
 Revise the current package as requested, retaining line ids for unchanged lines.
+The requested edit scope overrides the general length and project-selection guidance:
+do not expand the rest of the resume or add projects unless asked. Retain saved manual
+wording unless the User permits changing it. Never stretch unsupported claims to satisfy
+a length request.
 If the request needs an unsupported fact, return the original content and explain the
 refusal in message, inviting the User to add the fact to their Fact Bank first.
 """
