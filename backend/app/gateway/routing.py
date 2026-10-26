@@ -49,10 +49,10 @@ TOKENS_PER_MINUTE: dict[tuple[str, str], int] = {
 
 ROUTING_TABLE: dict[str, list[Route]] = {
     "tailor_draft": [
-        Route("gemini", GEMINI_FLASH, timeout_seconds=20),
-        Route("groq", GROQ_LARGE, timeout_seconds=20),
-        Route("openrouter", OPENROUTER_FREE, timeout_seconds=20),
-        Route("mistral", MISTRAL_SMALL, timeout_seconds=20),
+        Route("gemini", GEMINI_FLASH, timeout_seconds=45),
+        Route("groq", GROQ_LARGE, timeout_seconds=30),
+        Route("openrouter", OPENROUTER_FREE, timeout_seconds=30),
+        Route("mistral", MISTRAL_SMALL, timeout_seconds=30),
     ],
     "revise_draft": [
         Route("gemini", GEMINI_FLASH, timeout_seconds=20),

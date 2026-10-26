@@ -62,7 +62,9 @@ from app.tailoring.skills import requested_missing_skills, user_skills
 
 logger = logging.getLogger(__name__)
 AI_BUSY = "The AI services are busy right now. Retry in a few minutes."
-DRAFT_GENERATION_TIMEOUT_SECONDS = 90
+DRAFT_GENERATION_TIMEOUT_SECONDS = 150
+DRAFT_CHAT_TIMEOUT_SECONDS = 90
+REQUIREMENTS_TIMEOUT_SECONDS = 90
 NOTHING_VERIFIED = (
     "No generated line could be traced to your Fact Bank, so nothing was kept. "
     "Check that your Fact Bank covers your experience, then retry."
@@ -387,7 +389,7 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             if draft.job_snapshot.get("page_skills_pending"):
                 draft.progress = "Reading requirements from your reviewed job description"
                 await session.commit()
-                async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
+                async with asyncio.timeout(REQUIREMENTS_TIMEOUT_SECONDS):
                     extracted = await gateway.extract_skills(
                         ExtractSkillsRequest(
                             user_id=user.id,
@@ -472,7 +474,11 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             await _fail(session, draft_id, user_id, NOTHING_VERIFIED)
         except (GatewayError, TimeoutError) as exc:
             # The User sees "busy"; the log keeps every provider's own reason.
-            reason = exc.message if isinstance(exc, GatewayError) else "timed out after 60s"
+            reason = (
+                exc.message
+                if isinstance(exc, GatewayError)
+                else "Draft AI phase exceeded its deadline"
+            )
             logger.warning("Draft %s generation failed: %s", draft_id, reason)
             await _fail(session, draft_id, user_id, AI_BUSY)
         except JobWeaverError as exc:
@@ -683,7 +689,7 @@ async def chat(
         **_request(draft, facts).model_dump(), content=content, message=message
     )
     try:
-        async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
+        async with asyncio.timeout(DRAFT_CHAT_TIMEOUT_SECONDS):
             response = await gateway.revise_draft(request)
     except TimeoutError as exc:
         raise GatewayError("Draft Chat timed out. Please retry.") from exc

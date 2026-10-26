@@ -43,6 +43,25 @@
 
 A provider that answers HTTP 503 ("high demand", common on Gemini's free models) is retried once after 2 seconds before the next provider is tried.
 
+**Draft request budgets (26 Oct 2026):** background generation allows Gemini 45 seconds
+and each subsequent text provider 30 seconds (135 seconds for all four configured routes),
+inside a 150-second generation phase. Page Description requirements extraction retains its
+separate 90-second phase; these are not a 150-second end-to-end deadline. Draft Chat remains
+synchronous with 20 seconds per provider and 90 seconds overall. Busy retries share their
+route's deadline. Parsing and other extraction routes keep their existing 90-second limits.
+
+Draft prompts target at most 24,000 serialized user-message characters, selecting whole
+Fact groups by job relevance. Employment, education, contact/link Facts and all Facts cited
+by an existing Draft (with their groups) are protected. Fact IDs/references and manual text
+are unchanged, and the full Fact snapshot remains available to validation and saved versions.
+For Groq, the input is reduced further to leave at least 3,072 estimated output tokens plus
+256 tokens of framing within its 8,000 TPM allowance. If protected evidence cannot fit, skip
+Groq. The 24,000-character target is soft for providers without this TPM cap: protected
+context that exceeds it uses the original prompt rather than disabling a previously usable
+route. These are conservative character estimates, not exact token counts or guarantees of
+complete output; existing response validation and fallback still apply. Quota exhaustion is
+not fixed by smaller prompts or longer timeouts.
+
 **Daily AI budget (design consequence):** the strongest free model (Gemini Flash) allows only about 20 requests a day, so it is reserved for Draft generation and Draft Chat. Everything high-volume runs on Flash-Lite first, with Groq as the bulk fallback. The AI Gateway tracks requests per provider and model per day and routes before a quota is hit, not after (FR-G4).
 
 **Keeping AI usage low by design:**
