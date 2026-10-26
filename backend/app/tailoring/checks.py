@@ -171,6 +171,7 @@ _OPENINGS = {
     "took", "sold", "kept", "met", "hired", "own", "owned", "build", "design", "develop",
     "create", "lead", "manage", "run", "write", "ship", "deliver", "improve", "reduce",
     "increase", "migrate", "launch", "automate", "maintain", "support", "drive", "scale",
+    "brings", "offers",
     "experienced", "skilled", "passionate", "results", "hands-on", "backend", "frontend",
     "full-stack", "fullstack", "software", "data", "platform", "product", "engineer",
     "developer", "team", "teams", "worked", "work", "contributed", "responsible", "key",

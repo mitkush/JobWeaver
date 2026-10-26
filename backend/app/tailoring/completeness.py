@@ -37,3 +37,21 @@ def include_supported_skills(
         )
     )
     return result
+
+
+def resume_words(content: DraftContent) -> int:
+    return sum(len(line.text.split()) for line in content.resume)
+
+
+def needs_development(content: DraftContent, facts: list[FactSnapshot]) -> bool:
+    """Only rich evidence banks justify a second call; sparse resumes stay honest.
+
+    This is an internal generation heuristic, never a quality score or a hard minimum.
+    A checked result has already lost any unsupported lines, so assess that result.
+    """
+    work = {(f.group, f.text) for f in facts if f.kind in {"experience", "project", "achievement"}}
+    return (
+        resume_words(content) < 380
+        and len(work) >= 8
+        and sum(len(text.split()) for _, text in work) >= 450
+    )

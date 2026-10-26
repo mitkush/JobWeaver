@@ -123,6 +123,11 @@ class TailorDraftRequest(BaseModel):
     experience_years: float | None = None
 
 
+class DraftDevelopmentRequest(TailorDraftRequest):
+    previous_content: DraftContent
+    feedback: str = Field(min_length=1, max_length=2000)
+
+
 class ReviseDraftRequest(TailorDraftRequest):
     content: DraftContent
     message: str = Field(min_length=1, max_length=2000)

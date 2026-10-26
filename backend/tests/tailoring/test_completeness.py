@@ -30,3 +30,22 @@ def test_missing_supported_job_skills_are_added_once_with_trace():
     )
     assert checked.warnings == []
     assert checked.content.resume[-1].text == "Skills: Ruby on Rails"
+
+
+def test_development_is_only_for_short_results_with_substantial_distinct_work():
+    from app.tailoring.completeness import needs_development
+
+    content = DraftContent(
+        resume=[DraftLine(text="Python", fact_refs=["F1"])],
+        cover_letter=[DraftLine(text="Python", fact_refs=["F1"])],
+    )
+    work = [
+        fact(f"F{i}", f"Built workflow {i} " + "supported work detail " * 24, "experience")
+        for i in range(8)
+    ]
+    assert needs_development(content, work)
+    assert not needs_development(content, work[:2])
+    assert not needs_development(content, [work[0]] * 8)
+    full = content.model_copy(deep=True)
+    full.resume[0].text = "Python " * 400
+    assert not needs_development(full, work)

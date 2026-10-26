@@ -354,3 +354,19 @@ def test_years_are_allowed_up_to_the_counted_total(text, years, truthful):
     line = DraftLine(text=text, fact_refs=["F2"], section="Summary")
     reasons = Checker(FACTS, experience_years=years).problems(line, "resume")
     assert (not reasons) is truthful, reasons
+
+
+@pytest.mark.parametrize("opening", ["Brings", "Offers"])
+def test_summary_opening_verbs_are_not_invented_names(opening):
+    line = DraftLine(
+        text=f"{opening} experience building the billing API used by 40 merchant teams",
+        fact_refs=["F2"],
+        section="Summary",
+    )
+    assert line_problem(line, FACTS) is None
+
+
+@pytest.mark.parametrize("text", ["Brings expertise in Kubernetes", "Offers experience at Google"])
+def test_summary_opening_verbs_do_not_bypass_claim_skill_or_employer_checks(text):
+    line = DraftLine(text=text, fact_refs=["F1", "F2"], section="Summary")
+    assert line_problem(line, FACTS) is not None

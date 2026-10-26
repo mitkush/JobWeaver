@@ -3,7 +3,7 @@
 import re
 
 from app.gateway import prompts
-from app.gateway.schemas import ReviseDraftRequest, TailorDraftRequest
+from app.gateway.schemas import DraftDevelopmentRequest, ReviseDraftRequest, TailorDraftRequest
 from app.tailoring.content import FactSnapshot
 
 MAX_DRAFT_PROMPT_CHARS = 24_000
@@ -53,9 +53,12 @@ def draft_prompt(request: TailorDraftRequest, max_chars: int) -> str | None:
         groups.setdefault(key, []).append(fact)
 
     cited: set[str] = set()
-    if isinstance(request, ReviseDraftRequest):
+    if isinstance(request, (ReviseDraftRequest, DraftDevelopmentRequest)):
+        previous = (
+            request.content if isinstance(request, ReviseDraftRequest) else request.previous_content
+        )
         for part in ("resume", "cover_letter", "email_body"):
-            for line in getattr(request.content, part):
+            for line in getattr(previous, part):
                 cited.update(line.fact_refs)
 
     protected = {
