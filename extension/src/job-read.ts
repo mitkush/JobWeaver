@@ -10,6 +10,13 @@ export type PageJob = {
 };
 
 export const MAX_DESCRIPTION = 50_000;
+export function isPageJob(value: unknown): value is PageJob {
+  if (!value || typeof value !== "object") return false;
+  const job = value as Partial<PageJob>;
+  return [job.title, job.company, job.description, job.url].every((v) => typeof v === "string")
+    && ["structured data", "selected text", "page text"].includes(job.method ?? "")
+    && typeof job.truncated === "boolean";
+}
 const JOB_PARAMS = new Set(["gh_jid", "jobid", "job_id", "reqid", "requisitionid", "jid", "id"]);
 
 export function pageUrl(value: string): string {

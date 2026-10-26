@@ -4,7 +4,7 @@ import type { FillResult, ScanResult } from "./fill/session";
 import type { FillReport } from "./fill/types";
 import { fromNow } from "./time";
 import type { Captured } from "./capture";
-import type { PageJob } from "./job-read";
+import { isPageJob, type PageJob } from "./job-read";
 
 type Status = { connected: false; error?: string } | { connected: true; email: string; expiresAt: string };
 
@@ -13,8 +13,26 @@ const content = document.querySelector<HTMLDivElement>("#content")!;
 const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
 const disconnectButton = document.querySelector<HTMLButtonElement>("#disconnect")!;
 
-function ask<T>(message: PopupMessage): Promise<T> {
-  return chrome.runtime.sendMessage(message);
+const RELOAD_HELP = "Reload JobWeaver in brave://extensions (or chrome://extensions), refresh this careers page, then try again.";
+
+async function ask<T>(message: PopupMessage, timeoutMs?: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const pending = chrome.runtime.sendMessage(message);
+    const response = timeoutMs ? await Promise.race([
+      pending,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Reading the page timed out. ${RELOAD_HELP}`)), timeoutMs); }),
+    ]) : await pending;
+    if (response === undefined) throw new Error(`The extension did not reply. ${RELOAD_HELP}`);
+    return response as T;
+  } catch (error) {
+    if (error instanceof Error && /context invalidated|receiving end|message port|establish connection/i.test(error.message)) {
+      throw new Error(`The extension needs to reconnect to this page. ${RELOAD_HELP}`);
+    }
+    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /** Builds elements with text only: titles and company names come from job adverts. */
@@ -25,16 +43,22 @@ function h(tag: string, attrs: Record<string, string> = {}, ...children: (Node |
   return el;
 }
 
-function button(label: string, onClick: () => void, variant = ""): HTMLButtonElement {
+function button(label: string, onClick: () => unknown, variant = ""): HTMLButtonElement {
   const el = h("button", { type: "button", class: variant }, label) as HTMLButtonElement;
-  el.addEventListener("click", onClick);
+  el.addEventListener("click", () => {
+    const section = el.closest("section") ?? content;
+    section.querySelector("[data-action-error]")?.remove();
+    void Promise.resolve().then(onClick).catch((error: unknown) => {
+      section.append(h("p", { class: "warn-text", role: "alert", "data-action-error": "true" }, error instanceof Error ? error.message : "The action failed. Try again."));
+    });
+  });
   return el;
 }
 
 /** Children for replaceChildren, without the parts a condition left out. */
 const parts = (...items: (Node | string | null)[]) => items.filter((i): i is Node | string => i !== null);
 
-const open = (path: string) => void ask({ type: "open", path });
+const open = (path: string) => ask({ type: "open", path });
 
 /** The tab the User is looking at: the active tab of the last focused browser window,
  * which is the one the toolbar button belongs to. */
@@ -65,11 +89,16 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
   const body = h("div");
   const read = button("Read this job", async () => {
     read.disabled = true;
+    read.textContent = "Reading…";
+    body.replaceChildren(h("p", { role: "status" }, "Reading the job description on this page…"));
     try {
-      const result = await ask<PageJob & { error?: string }>({ type: "readJob", tabId });
-      if (result.error) { body.replaceChildren(h("p", { class: "warn-text" }, result.error)); return; }
+      const result = await ask<unknown>({ type: "readJob", tabId }, 15_000);
+      if (result && typeof result === "object" && "error" in result && typeof result.error === "string") throw new Error(result.error);
+      if (!isPageJob(result)) throw new Error(`The page reader returned an incomplete response. ${RELOAD_HELP}`);
       showReview(result);
-    } finally { read.disabled = false; }
+    } catch (error) {
+      body.replaceChildren(h("p", { class: "warn-text", role: "alert" }, error instanceof Error ? error.message : "The page could not be read. Try again."));
+    } finally { read.disabled = false; read.textContent = "Read this job"; }
   });
   section.append(h("p", { class: "muted" }, "Start here even if this Job is not in JobWeaver. Read its JD, review it, then create a Draft from your Fact Bank."), body, h("div", { class: "actions" }, read));
   void ask<(Captured & { error?: string }) | null>({ type: "capturedJob", tabId }).then((saved) => {
@@ -91,7 +120,7 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
       } finally { save.disabled = false; }
     });
     body.replaceChildren(
-      h("p", { class: "muted" }, `Read from ${job.method}. Nothing has been sent yet.`),
+      h("p", { class: "muted" }, `Read from ${job.method}. The JD has not been sent yet.`),
       h("p", { class: "muted" }, job.url),
       h("label", { for: "capture-title" }, "Job title"), title,
       h("label", { for: "capture-company" }, "Company"), company,
@@ -106,10 +135,12 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
     const error = h("p", { class: "warn-text", role: "status" });
     const create = button("Create Draft from this JD", async () => {
       create.disabled = true;
-      const result = await ask<Captured & { error?: string }>({ type: "createCapturedDraft", tabId });
-      if (result.error) { error.textContent = result.error; create.disabled = false; return; }
-      showSaved(result);
-      if (result.draft_id) open(`/drafts/${result.draft_id}`);
+      try {
+        const result = await ask<Captured & { error?: string }>({ type: "createCapturedDraft", tabId });
+        if (result.error) { error.textContent = result.error; return; }
+        showSaved(result);
+        if (result.draft_id) await open(`/drafts/${result.draft_id}`);
+      } finally { create.disabled = false; }
     });
     const use = button("Use this Draft", async () => {
       const chosen = await ask<(DraftVersion & { error?: string }) | null>({ type: "select", tabId, draftId: saved.draft_id! });
@@ -193,7 +224,7 @@ const SOURCES = { profile: "Profile", draft: "Draft PDF" } as const;
 function fillSection(tabId: number): HTMLElement {
   const section = h("section", { class: "panel" }, h("p", { class: "label" }, "Fill this form"));
   const body = h("div");
-  const scanButton = button("Scan this form", () => void runScan());
+  const scanButton = button("Scan this form", () => runScan());
   section.append(body, h("div", { class: "actions" }, scanButton));
   // Reopened after checking the page: show the last fill with its Undo and downloads.
   void ask<FillResult | null>({ type: "lastFill", tabId }).then((last) => {
@@ -202,13 +233,14 @@ function fillSection(tabId: number): HTMLElement {
 
   async function runScan() {
     scanButton.disabled = true;
-    const result = await ask<ScanResult & { error?: string }>({ type: "scan", tabId });
-    scanButton.disabled = false;
-    if (result.error || !result.proposals) {
-      body.replaceChildren(h("p", { class: "warn-text" }, result.error ?? "This page could not be scanned."));
-      return;
-    }
-    showPreview(result);
+    try {
+      const result = await ask<ScanResult & { error?: string }>({ type: "scan", tabId });
+      if (result.error || !result.proposals) {
+        body.replaceChildren(h("p", { class: "warn-text" }, result.error ?? "This page could not be scanned."));
+        return;
+      }
+      showPreview(result);
+    } finally { scanButton.disabled = false; }
   }
 
   function showPreview(result: ScanResult) {
