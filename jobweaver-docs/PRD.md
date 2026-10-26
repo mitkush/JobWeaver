@@ -253,7 +253,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume: a headline and contact line under the name, uppercase section headings with a rule, "Title | Employer | dates" and "Project | stack | link" title lines over bulleted work, grouped skill lines, and clickable links. The page opens on whichever of Standard or Compact fits on one page. Choosing or uploading another template is optional per User.
 - AC1: The PDF's text is selectable and parses back to the same content (ATS check).
-- AC2: The file name follows `<Name>_<Company>_<Title>.pdf`.
+- AC2: Attachment names follow `<Name>_Resume.pdf` and `<Name>_Cover_Letter.pdf`. The extension can save copies under `Downloads/<Company>/` through an explicit action with optional browser Downloads permission; browser download preferences may still ask for a location.
 
 **FR-E10 [V1] - Email check.** Before Gmail Hand-off, the recipient is checked: valid format, the domain can receive mail (MX record), and not a no-reply address.
 - AC1: A failing check is shown inline in the Draft with what to do; the User can still continue after confirming.
