@@ -3,7 +3,7 @@
 import { apiFetch, type Deps } from "./connection";
 import { clear } from "./drafts";
 import { forgetTab, type TabPort } from "./fill/session";
-import { pageUrl, type PageJob } from "./job-read";
+import { isPageJob, pageUrl, type PageJob } from "./job-read";
 
 export type Captured = { job_id: string; title: string; company: string; matched_existing: boolean; draft_id?: string; at: number };
 const key = (id: number) => `captured:${id}`;
@@ -20,7 +20,8 @@ async function json<T>(deps: Deps, path: string, body: unknown): Promise<T> {
 export async function readPage(deps: Deps, port: TabPort, tabId: number): Promise<PageJob> {
   await port.inject(tabId);
   const result = await port.send<PageJob & { error?: string }>(tabId, { type: "jw.read-job" });
-  if (result.error) throw new Error(result.error);
+  if (result?.error) throw new Error(result.error);
+  if (!isPageJob(result)) throw new Error("The page reader did not answer. Reload the extension, refresh this page and try again.");
   await deps.store.set(readKey(tabId), { url: result.url, at: deps.now() });
   return result;
 }

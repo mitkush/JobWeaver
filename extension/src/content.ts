@@ -7,20 +7,24 @@ import type { FillItem, Scan } from "./fill/types";
 import { readJob } from "./job-read";
 
 type Message = { type: "jw.scan" | "jw.read-job" | "jw.page-url" } | { type: "jw.fill"; scanId: string; items: FillItem[] } | { type: "jw.undo" };
+type Listener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];
+const HELPER_VERSION = 2;
 
 declare global {
   interface Window {
-    __jobweaver?: boolean;
+    __jobweaver?: boolean | { version: number; listener: Listener };
   }
 }
 
-if (!window.__jobweaver) {
-  window.__jobweaver = true;
+const previous = window.__jobweaver;
+if (!previous || typeof previous === "boolean" || previous.version !== HELPER_VERSION) {
+  // An earlier form-only helper used `true`. It must not suppress the newer JD reader.
+  if (previous && typeof previous === "object") chrome.runtime.onMessage.removeListener(previous.listener);
   const filler = new Filler(document);
   let scan: { id: string; url: string } | null = null;
   let counter = 0;
 
-  chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) => {
+  const listener: Listener = (message: Message, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return false;
     if (message.type === "jw.read-job") {
       try { sendResponse(readJob(document, location.href, window.getSelection()?.toString() ?? "")); }
@@ -44,5 +48,7 @@ if (!window.__jobweaver) {
       sendResponse(filler.undo());
     }
     return false;
-  });
+  };
+  window.__jobweaver = { version: HELPER_VERSION, listener };
+  chrome.runtime.onMessage.addListener(listener);
 }
