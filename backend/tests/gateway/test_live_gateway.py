@@ -19,16 +19,21 @@ GOOD = json.dumps(
 )
 
 
-def test_provider_timeouts_are_short_only_for_interactive_draft_tasks():
-    from app.services.drafting import DRAFT_GENERATION_TIMEOUT_SECONDS
+def test_generation_has_more_time_without_extending_chat_or_extraction():
+    from app.services.drafting import (
+        DRAFT_CHAT_TIMEOUT_SECONDS,
+        DRAFT_GENERATION_TIMEOUT_SECONDS,
+        REQUIREMENTS_TIMEOUT_SECONDS,
+    )
 
-    assert {route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]} == {20}
+    assert [route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]] == [45, 30, 30, 30]
+    assert DRAFT_CHAT_TIMEOUT_SECONDS == REQUIREMENTS_TIMEOUT_SECONDS == 90
     assert {route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]} == {20}
     assert sum(route.timeout_seconds for route in ROUTING_TABLE["tailor_draft"]) <= (
         DRAFT_GENERATION_TIMEOUT_SECONDS
     )
     assert sum(route.timeout_seconds for route in ROUTING_TABLE["revise_draft"]) <= (
-        DRAFT_GENERATION_TIMEOUT_SECONDS
+        DRAFT_CHAT_TIMEOUT_SECONDS
     )
     for task in ("parse_documents", "extract_skills", "extract_adverts"):
         assert {route.timeout_seconds for route in ROUTING_TABLE[task]} == {90}
@@ -40,10 +45,12 @@ class FakeClient:
         self.outputs = outputs
         self.calls: list[str] = []
         self.output_budgets: list[int] = []
+        self.user_prompts: list[str] = []
 
     async def complete_json(self, model, system, user, max_output_tokens):
         self.calls.append(model)
         self.output_budgets.append(max_output_tokens)
+        self.user_prompts.append(user)
         output = self.outputs.pop(0)
         if isinstance(output, Exception):
             raise output

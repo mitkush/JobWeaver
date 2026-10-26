@@ -82,7 +82,7 @@ async def test_groq_draft_requests_fit_its_tokens_per_minute_limit(alice):
     gateway = LiveAIGateway({"groq": groq}, UsageLedger(get_sessionmaker()))
     body = request(user.id)
     await gateway.tailor_draft(body)
-    prompt = (len(prompts.TAILOR_DRAFT_SYSTEM) + len(prompts.draft_user(body))) // CHARS_PER_TOKEN
+    prompt = (len(prompts.TAILOR_DRAFT_SYSTEM) + len(groq.user_prompts[0])) // CHARS_PER_TOKEN
     [budget] = groq.output_budgets
     assert 1024 <= budget < 8192
     assert prompt + budget + TOKEN_MARGIN <= 8000

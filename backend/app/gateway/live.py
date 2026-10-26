@@ -11,6 +11,11 @@ from pydantic import BaseModel
 from app.core.errors import GatewayError, ProviderBusy
 from app.gateway import prompts
 from app.gateway.base import BaseAIGateway
+from app.gateway.draft_prompt import (
+    DRAFT_OUTPUT_RESERVE,
+    MAX_DRAFT_PROMPT_CHARS,
+    draft_prompt,
+)
 from app.gateway.parsing import parse_output
 from app.gateway.providers import GeminiClient, ProviderClient
 from app.gateway.quota import UsageLedger
@@ -118,6 +123,7 @@ class LiveAIGateway(BaseAIGateway):
             prompts.TAILOR_DRAFT_SYSTEM,
             prompts.draft_user(request),
             DraftResult,
+            prepare=lambda route: self._draft_prompt(request, route, prompts.TAILOR_DRAFT_SYSTEM),
         )
 
     async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
@@ -127,7 +133,22 @@ class LiveAIGateway(BaseAIGateway):
             prompts.REVISE_DRAFT_SYSTEM,
             prompts.draft_user(request),
             DraftResult,
+            prepare=lambda route: self._draft_prompt(request, route, prompts.REVISE_DRAFT_SYSTEM),
         )
+
+    @staticmethod
+    def _draft_prompt(request: TailorDraftRequest, route: Route, system: str) -> str | None:
+        limit = TOKENS_PER_MINUTE.get(route_of(route))
+        chars = MAX_DRAFT_PROMPT_CHARS
+        if limit is not None:
+            reserve = min(route.max_output_tokens, DRAFT_OUTPUT_RESERVE)
+            chars = min(chars, (limit - reserve - TOKEN_MARGIN) * CHARS_PER_TOKEN - len(system))
+        selected = draft_prompt(request, chars)
+        # The soft target must not exclude existing large-context providers when the
+        # employment history alone exceeds it. Token-limited routes still skip safely.
+        if selected is None and limit is None:
+            return prompts.draft_user(request)
+        return selected
 
     async def parse_documents(
         self, request: ParseDocumentsRequest
@@ -194,7 +215,13 @@ class LiveAIGateway(BaseAIGateway):
         )
 
     async def _run(
-        self, task: str, user_id: uuid.UUID | None, system: str, user: str, result_type: type[T]
+        self,
+        task: str,
+        user_id: uuid.UUID | None,
+        system: str,
+        user: str,
+        result_type: type[T],
+        prepare: Callable[[Route], str | None] | None = None,
     ) -> GatewayResponse[T]:
         failures: list[str] = []
         for route in ROUTING_TABLE[task]:
@@ -207,7 +234,8 @@ class LiveAIGateway(BaseAIGateway):
             if quota is not None and used >= quota:
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
                 continue
-            budget = output_budget(route, system, user)
+            route_user = prepare(route) if prepare else user
+            budget = output_budget(route, system, route_user) if route_user is not None else None
             if budget is None:
                 # Sending it would only earn an HTTP 413; try the next provider at once.
                 logger.warning(
@@ -221,7 +249,7 @@ class LiveAIGateway(BaseAIGateway):
                         started = self.clock()
                         try:
                             completion = await client.complete_json(
-                                route.model, system, user, budget
+                                route.model, system, route_user, budget
                             )
                         except ProviderBusy as exc:
                             # Retry only a quick refusal, and keep the retry inside this
@@ -233,7 +261,7 @@ class LiveAIGateway(BaseAIGateway):
                             )
                             await self.sleep(self.busy_retry_delay)
                             completion = await client.complete_json(
-                                route.model, system, user, budget
+                                route.model, system, route_user, budget
                             )
                 except TimeoutError as exc:
                     raise GatewayError(
