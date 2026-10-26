@@ -24,7 +24,9 @@ from app.core.errors import (
     ValidationFailedError,
 )
 from app.documents.pdf import filename, page_count, render_pdf
+from app.gateway import personal
 from app.gateway.base import BaseAIGateway
+from app.gateway.progress import draft_progress
 from app.gateway.schemas import (
     ExtractSkillsRequest,
     JobAdvert,
@@ -426,8 +428,32 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
                 await session.commit()
             draft.progress = "Writing the Tailored Resume, Cover Letter and Application Email"
             await session.commit()
-            async with asyncio.timeout(DRAFT_GENERATION_TIMEOUT_SECONDS):
-                result = await gateway.tailor_draft(_request(draft, facts))
+            generation_timeout = DRAFT_GENERATION_TIMEOUT_SECONDS
+            if personal.allowed(user_id):
+                generation_timeout += personal.CLAUDE_ROUTE.timeout_seconds
+            tried = False
+
+            async def provider_progress(provider: str) -> None:
+                nonlocal tried
+                current_user = await session.get(User, user_id, populate_existing=True)
+                if current_user is None:
+                    raise NotFoundError("User not found")
+                ensure_ai_allowed(current_user)
+                labels = {
+                    "claude-code": "Claude",
+                    "gemini": "Gemini",
+                    "groq": "Groq",
+                    "openrouter": "OpenRouter",
+                    "mistral": "Mistral",
+                }
+                action = "Falling back to" if tried else "Trying"
+                draft.progress = f"{action} {labels.get(provider, 'AI provider')}"
+                tried = True
+                await session.commit()
+
+            async with asyncio.timeout(generation_timeout):
+                with draft_progress(provider_progress):
+                    result = await gateway.tailor_draft(_request(draft, facts))
             # Recheck ownership and notice before persisting provider output.
             user = await session.get(User, user_id, populate_existing=True)
             if user is None:

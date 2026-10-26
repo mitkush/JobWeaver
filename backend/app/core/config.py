@@ -3,6 +3,7 @@
 from datetime import datetime
 from functools import lru_cache
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -40,6 +41,13 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     openrouter_api_key: str = ""
     mistral_api_key: str = Field(default="", repr=False)
+    # Personal Claude route: explicit owner-only consent, never subscription credentials.
+    claude_code_enabled: bool = False
+    claude_code_owner_id: UUID | None = None
+    claude_code_worker_url: str = "http://jobweaver-claude:8080"
+    claude_code_worker_key: str = Field(default="", repr=False)
+    claude_code_consent_version: str = ""
+    claude_code_consent_accepted_at: datetime | None = None
     # While on Gemini's free tier, users in the EEA, CH and UK cannot be served (ADR-0012).
     gemini_free_tier: bool = True
 

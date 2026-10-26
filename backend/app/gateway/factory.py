@@ -5,6 +5,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.gateway.base import BaseAIGateway
+from app.gateway.claude_code import ClaudeCodeClient
 from app.gateway.live import LiveAIGateway
 from app.gateway.providers import GeminiClient, OpenAICompatibleClient, ProviderClient
 from app.gateway.quota import UsageLedger
@@ -31,5 +32,9 @@ def build_gateway() -> BaseAIGateway:
     if settings.mistral_api_key:
         clients["mistral"] = OpenAICompatibleClient(
             "mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, _http
+        )
+    if settings.claude_code_enabled and settings.claude_code_worker_key:
+        clients["claude-code"] = ClaudeCodeClient(
+            settings.claude_code_worker_url, settings.claude_code_worker_key, _http
         )
     return LiveAIGateway(clients, UsageLedger(get_sessionmaker()))

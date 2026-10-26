@@ -1,7 +1,10 @@
 # Personal production AI worker plan
 
-Status: proposed brief and implementation plan, 26 October 2026. Documentation only.
-No CLI is installed, credential collected, provider enabled, or production setting changed.
+Status: implementation follow-up, 26 October 2026. The plan PR itself was documentation only.
+Step 1 shipped in #61. The isolated VM spike passed at 256 MiB after failing at 192 MiB.
+The owner-only provider implementation and operating limits are in [Personal Claude](PERSONAL_CLAUDE.md).
+The production Generate route remains disabled until the implementation is deployed and
+explicitly configured. The spike did not change the app's provider routing.
 See [proposed ADR-0018](docs/adr/0018-personal-subscription-cli-worker.md).
 
 ## Goal and agreed scope

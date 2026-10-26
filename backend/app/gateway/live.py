@@ -9,7 +9,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from app.core.errors import GatewayError, ProviderBusy
-from app.gateway import prompts
+from app.gateway import personal, progress, prompts
 from app.gateway.base import BaseAIGateway
 from app.gateway.draft_prompt import (
     DRAFT_OUTPUT_RESERVE,
@@ -124,6 +124,7 @@ class LiveAIGateway(BaseAIGateway):
             prompts.draft_user(request),
             DraftResult,
             prepare=lambda route: self._draft_prompt(request, route, prompts.TAILOR_DRAFT_SYSTEM),
+            personal_route=True,
         )
 
     async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
@@ -222,9 +223,13 @@ class LiveAIGateway(BaseAIGateway):
         user: str,
         result_type: type[T],
         prepare: Callable[[Route], str | None] | None = None,
+        personal_route: bool = False,
     ) -> GatewayResponse[T]:
         failures: list[str] = []
-        for route in ROUTING_TABLE[task]:
+        routes = list(ROUTING_TABLE[task])
+        if personal_route and personal.allowed(user_id):
+            routes.insert(0, personal.CLAUDE_ROUTE)
+        for route in routes:
             client = self.clients.get(route.provider)
             if client is None:
                 failures.append(f"{route.provider}: not configured")
@@ -243,6 +248,7 @@ class LiveAIGateway(BaseAIGateway):
                 )
                 failures.append(f"{route.provider}/{route.model}: {TOO_LARGE}")
                 continue
+            await progress.trying(route.provider)
             try:
                 try:
                     async with asyncio.timeout(route.timeout_seconds):
@@ -289,7 +295,7 @@ class LiveAIGateway(BaseAIGateway):
                 user_id=user_id,
                 task=task,
                 provider=route.provider,
-                model=route.model,
+                model=completion.model or route.model,
                 outcome="ok",
                 input_tokens=completion.input_tokens,
                 output_tokens=completion.output_tokens,
@@ -297,7 +303,7 @@ class LiveAIGateway(BaseAIGateway):
             return GatewayResponse[result_type](  # type: ignore[valid-type]
                 result=result,
                 provider=route.provider,
-                model=route.model,
+                model=completion.model or route.model,
                 input_tokens=completion.input_tokens,
                 output_tokens=completion.output_tokens,
             )
