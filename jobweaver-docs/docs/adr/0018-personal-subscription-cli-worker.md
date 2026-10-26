@@ -1,6 +1,8 @@
 # Personal subscription CLI worker for Draft generation
 
-Status: proposed, 26 October 2026. No runtime behaviour changes in this PR.
+Status: accepted for the owner-only opt-in implementation, 26 October 2026.
+The separate capped container was selected after the synthetic VM spike; see
+[measured results and operation](../../PERSONAL_CLAUDE.md).
 
 ## Context
 
@@ -9,7 +11,7 @@ prompt, and remaining accounts are rate-limited. The owner wants the existing Ge
 button to use their personally authenticated Claude Code installation on the production
 server. Other Users must not consume that subscription. MCP is not needed for this flow.
 
-## Proposed decision
+## Decision
 
 Add a default-off personal Claude Code provider inside the AI Gateway, restricted to a single
 configured internal User ID. Execute the official unmodified CLI in an isolated production
@@ -45,3 +47,18 @@ server resource tests or provider rules prevent the personal production worker.
 
 Acceptance of this ADR does not certify compliance with every provider rule. Recheck the
 linked official sources and effective authentication before implementation and rollout.
+
+## Implementation boundary
+
+The existing background Draft task calls the worker through a gateway-owned authenticated
+HTTP adapter. No new lease table or durable queue is added. The operator records the owner
+UUID, consent version and acceptance timestamp in private app configuration; the personal
+route checks all three, the opt-in flag and service authentication before dispatch. This
+record is independent of the global AI notice and does not prompt unrelated Users. A private
+worker environment holds the subscription token. The web application holds only the separate
+service key. Synchronous Draft Chat does not use the personal route.
+
+The 192 MiB experiment timed out; a 256 MiB synthetic Draft and traced malicious-JD test
+passed. The capped container protects the app/DB from unbounded CLI memory and credential
+exposure, but does not create additional host memory. Long-term performance remains a
+rollout observation. CLI shutdown, failed auth, quota and invalid output retain fallback.

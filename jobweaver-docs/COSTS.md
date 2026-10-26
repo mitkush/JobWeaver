@@ -35,6 +35,7 @@
 
 | Order | Provider | Used for | Free allowance (checked 5 Oct 2026) | When it runs out |
 |---|---|---|---|---|
+| Personal, opt-in first | Official Claude Code CLI | Owner-only background Draft generation; current free routes stay as fallback | Uses the owner's existing subscription and its shared limits, not API credits. Requires recorded owner consent. Isolated worker capped at 256 MiB and 0.5 CPU, one invocation at a time; binary version 2.1.308. No invented daily quota or subscription-dollar balance | Authentication, quota, busy, invalid output and deadline failures fall back. Disabled by default; no other User can consume this credential |
 | 1 | Google Gemini | Flash-Lite: high-volume extraction (skills per Job, HN, document parsing). Flash: tailoring and Draft Chat. Embeddings: duplicate detection, the **only** embedding provider (ADR-0014) | Limits are per model and shown per project in Google AI Studio, not in a public table. Reported: newest Flash models about **20 requests/day**; Flash-Lite **500 to 1,000 requests/day** (about 15/minute); embedding models free. Free-tier prompts may be used to improve Google products | Text tasks fall through to Groq; embeddings queue until Gemini returns (ADR-0014) |
 | 2 | Groq | All text tasks | About **1,000 requests/day** and 30/minute per model on popular open models (lower token caps per minute and day); limits are per organization, extra keys do not help. `openai/gpt-oss-120b` allows **8,000 tokens per minute**, and Groq counts the prompt plus the requested output ceiling against it before running a request (HTTP 413 if over). The gateway lowers the output ceiling to fit and skips Groq when a prompt is too large for any useful reply (`TOKENS_PER_MINUTE` in `routing.py`). No embeddings | Falls through to OpenRouter |
 | 3 | OpenRouter `:free` models (currently `google/gemma-4-31b-it:free`) | All text tasks | **50 requests/day**, 20/minute (1,000/day only after a one-time $10 credit purchase, excluded by the zero budget). No embeddings used. Free models are withdrawn without notice (`openai/gpt-oss-20b:free` returned HTTP 404 on 7 Oct 2026); the logs then show `openrouter returned HTTP 404` and the model in `routing.py` must be replaced | Task queued and retried; the User sees "AI busy, retrying" |
@@ -91,7 +92,7 @@ not fixed by smaller prompts or longer timeouts.
 
 ## 4. Development tooling
 
-Claude Code usage for building JobWeaver comes from the founder's own plan and is outside the product budget.
+Claude Code usage for building JobWeaver comes from the founder's own plan and is outside the product budget. The optional personal Draft route also uses that owner's plan and shares its limits with other Claude use. It does not enable API billing or subscription access for other Users. See [Personal Claude](PERSONAL_CLAUDE.md) for measured resource costs, explicit consent and deployment.
 
 ## 5. Review triggers
 

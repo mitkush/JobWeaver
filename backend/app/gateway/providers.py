@@ -13,6 +13,7 @@ class Completion:
     text: str
     input_tokens: int
     output_tokens: int
+    model: str | None = None
 
 
 class ProviderClient(Protocol):
