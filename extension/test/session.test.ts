@@ -123,3 +123,16 @@ describe("scan and fill", () => {
     expect(sent).toEqual([]);
   });
 });
+
+it("requires an explicitly reviewed answer and fills the edited text", async () => {
+  const { deps, port, sent } = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+  await deps.store.set("fill:5", {
+    scan: { ...scan, fields: [{ ref: "q", kind: "textarea", key: "background_answer", maxLength: 40 }] },
+    proposals: [{ ref: "q", key: "background_answer", value: "Old letter text", reviewRequired: true }],
+    draft: { id: "d1", number: 2 },
+  });
+  expect((await fillTab(deps, port, 5, ["q"])).filled).toEqual([]);
+  expect((await fillTab(deps, port, 5, ["q"], { q: "My reviewed answer" })).filled).toEqual(["q"]);
+  expect((sent.at(-1) as { items: FillItem[] }).items).toEqual([{ ref: "q", kind: "textarea", value: "My reviewed answer" }]);
+  expect((await fillTab(deps, port, 5, ["q"], { q: "x".repeat(41) })).failed).toHaveLength(1);
+});

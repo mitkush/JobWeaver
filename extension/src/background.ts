@@ -1,6 +1,7 @@
 /** Service worker: holds the credential and is the only part that calls JobWeaver. */
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
+import { savePdfs } from "./downloads";
 import { clear, pageState, select } from "./drafts";
 import { captured, carryCapture, clearCapture, createCapturedDraft, readPage, savePage } from "./capture";
 import type { PageJob } from "./job-read";
@@ -63,8 +64,9 @@ export type PopupMessage =
   | { type: "clear"; tabId: number }
   | { type: "readJob" | "capturedJob" | "createCapturedDraft"; tabId: number }
   | { type: "saveJob"; tabId: number; job: PageJob }
+  | { type: "savePdfs"; tabId: number }
   | { type: "scan"; tabId: number }
-  | { type: "fill"; tabId: number; refs: string[] }
+  | { type: "fill"; tabId: number; refs: string[]; answers?: Record<string, string> }
   | { type: "undo"; tabId: number }
   | { type: "lastFill"; tabId: number }
   | { type: "open"; path: string };
@@ -90,10 +92,14 @@ async function handle(message: PopupMessage): Promise<unknown> {
     case "clear":
       await clear(deps, message.tabId);
       return null;
+    case "savePdfs":
+      if (!await chrome.permissions.contains({ permissions: ["downloads"] })) throw new Error("Allow downloads to save PDFs in a company folder");
+      await savePdfs(deps, message.tabId, (filename, url) => chrome.downloads.download({ filename, url, conflictAction: "uniquify", saveAs: false }));
+      return { ok: true };
     case "scan":
       return scanTab(deps, port, message.tabId);
     case "fill":
-      return fillTab(deps, port, message.tabId, message.refs);
+      return fillTab(deps, port, message.tabId, message.refs, message.answers);
     case "undo":
       return undoTab(deps, port, message.tabId);
     case "lastFill":

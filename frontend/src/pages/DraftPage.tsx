@@ -13,6 +13,7 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
 import { pdfHref, useDraft, useDraftActions, useDraftDiff, useVersions, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
 import { DraftChatPanel } from "@/features/drafts/DraftChatPanel";
+import { DraftManagement } from "@/features/drafts/DraftManagement";
 import { DraftEditor } from "@/features/drafts/DraftEditor";
 import { PdfPreview, type PdfFile } from "@/features/drafts/PdfPreview";
 import { statusLabel } from "@/features/applications/status";
@@ -31,7 +32,7 @@ export function DraftPage() {
   const actions = useDraftActions(draftId);
   if (draft.isPending) return <PageSpinner />;
   if (draft.isError) return <Alert tone="error" title="Draft could not load">{draft.error.message}</Alert>;
-  if (draft.data.state === "failed") return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Draft generation stopped</h1><Alert tone="warning">{draft.data.error}</Alert><Button loading={actions.retry.isPending} onClick={() => void actions.retry.mutate()}>Retry generation</Button>{actions.retry.isError && <Alert tone="error">{actions.retry.error.message}</Alert>}</Card>;
+  if (draft.data.state === "failed") return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Draft generation stopped</h1><Alert tone="warning">{draft.data.error}</Alert><DraftManagement jobId={draft.data.job_id} draftId={draft.data.id} version={draft.data.current_version} allowDelete /><Button loading={actions.retry.isPending} onClick={() => void actions.retry.mutate()}>Retry generation</Button>{actions.retry.isError && <Alert tone="error">{actions.retry.error.message}</Alert>}</Card>;
   if (!draft.data.version) return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Preparing your Draft</h1><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500 dark:text-slate-400">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
   return <DraftWorkspace draft={draft.data} key={draftId} />;
 }
@@ -216,6 +217,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
           <DraftChatPanel versions={versions.data ?? []} currentVersion={draft.current_version} busy={busy} dirty={dirty || stale} onChat={chat} onUndo={(number) => void restore(number)} error={chatError} />
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
+            <div className="flex flex-wrap gap-2"><DraftManagement jobId={draft.job_id} draftId={draft.id} version={current.number} disabled={dirty || stale || busy} allowDelete /></div>
             <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
             {!dirty && !stale ? <div className="flex flex-wrap gap-2">{(["resume", "cover_letter"] as const).map((kind) => { const label = kind === "resume" ? "Resume" : "Cover Letter"; return <span key={kind} className="flex flex-wrap gap-1"><Button variant="secondary" size="sm" loading={downloading === `preview-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "preview")}>Preview {label}</Button><Button variant="secondary" size="sm" loading={downloading === `download-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "download")} aria-label={`Download ${label} PDF`}>{label} PDF</Button></span>; })}</div> : <p className="text-xs text-slate-500 dark:text-slate-400">Save your edits to download PDFs.</p>}
             {downloadError && <Alert tone="error" title="The PDF could not be made">{downloadError}</Alert>}

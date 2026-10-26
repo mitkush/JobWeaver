@@ -74,6 +74,8 @@ it("saves edits locally without triggering Gmail and protects unsaved edits", as
   await user.type(line, "PYTHON");
   expect(screen.queryByRole("link", { name: "Resume PDF" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Apply chat change" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Generate new draft" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Delete draft" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Save draft" }));
   expect(await screen.findByText("Version 2")).toBeInTheDocument();
   const save = calls.find((r) => r.method === "PUT");
@@ -327,4 +329,23 @@ it("previews the exact PDF in the page and downloads it from the preview", async
   await user.click(within(dialog).getByRole("button", { name: "Close preview" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click.mockRestore();
+});
+
+it("asks before generating a fresh Draft and keeps the older one", async () => {
+  const calls = setup(makeDraft(), { "POST /api/drafts": () => json({ ...makeDraft(), id: "draft-2" }, 202) });
+  await userEvent.click(await screen.findByRole("button", { name: "Generate new draft" }));
+  expect(calls.some((r) => r.method === "POST" && new URL(r.url).pathname === "/api/drafts")).toBe(false);
+  expect(screen.getByRole("dialog")).toHaveTextContent("older Draft and edits are kept");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Generate new draft" }));
+  await waitFor(() => expect(calls.some((r) => r.method === "POST" && new URL(r.url).pathname === "/api/drafts")).toBe(true));
+  expect(calls.some((r) => r.method === "DELETE")).toBe(false);
+});
+
+it("confirms permanent deletion with the displayed version", async () => {
+  const calls = setup(makeDraft(), { "DELETE /api/drafts/draft-1": () => new Response(null, { status: 204 }) });
+  await userEvent.click(await screen.findByRole("button", { name: "Delete draft" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("all its saved versions and manual edits");
+  expect(calls.some((r) => r.method === "DELETE")).toBe(false);
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete draft" }));
+  await waitFor(() => expect(calls.some((r) => r.method === "DELETE" && new URL(r.url).searchParams.get("expected_version") === "1")).toBe(true));
 });

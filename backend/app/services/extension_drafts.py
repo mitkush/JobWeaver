@@ -16,6 +16,7 @@ from app.models.job import Job
 from app.models.user import User
 from app.schemas.extension import ExtDraftSummary, ExtDraftVersion
 from app.services import drafting
+from app.tailoring.content import DraftContent
 
 # Hosts that serve the same boards under different names.
 _HOST_ALIASES = {"job-boards.greenhouse.io": "boards.greenhouse.io"}
@@ -130,6 +131,16 @@ async def version_detail(
         saved_at=row.created_at,
         warnings=len(row.warnings),
         template=await drafting.fitting_template(draft, row),
+        background_answer="\n\n".join(
+            line.text
+            for line in DraftContent.model_validate(row.content).cover_letter
+            if not re.match(
+                r"^(dear\b|to whom|sincerely\b|regards\b|best regards\b|thank you\b)",
+                line.text.strip(),
+                re.I,
+            )
+            and line.text.strip() != str(job["name"]).strip()
+        ),
         resume_file=filename(*names),
         cover_letter_file=filename(*names, "cover_letter"),
         application_status=str(status) if status else None,

@@ -30,7 +30,7 @@ def test_pdf_round_trip_and_unicode(template):
 def test_filename_is_safe_and_predictable():
     assert (
         filename("Asha Rao", "Acme/Corp", "Backend Engineer")
-        == "Asha_Rao_Acme_Corp_Backend_Engineer.pdf"
+        == "Asha_Rao_Resume.pdf"
     )
     assert filename("Asha", "Acme", "Engineer", "cover_letter").endswith("_Cover_Letter.pdf")
 

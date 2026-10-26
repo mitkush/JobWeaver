@@ -748,3 +748,58 @@ async def test_moving_a_line_protects_it_like_an_edit(prepared):
     assert by_id[first["id"]]["manual"] is True
     assert by_id[content["resume"][1]["id"]]["manual"] is True
     assert all(not by_id[line["id"]]["manual"] for line in content["resume"][2:])
+
+
+async def test_delete_draft_keeps_application_and_removes_versions(prepared, db):
+    user, client, job_id, _ = prepared
+    draft = await generated(prepared)
+    marked = await client.post(f"/api/drafts/{draft['id']}/applied", json={"expected_version": 1})
+    assert marked.status_code == 204
+    deleted = await client.delete(f"/api/drafts/{draft['id']}?expected_version=1")
+    assert deleted.status_code == 204
+    assert (await client.get(f"/api/drafts/{draft['id']}")).status_code == 404
+    assert (
+        await db.scalar(
+            select(DraftVersion.id).where(DraftVersion.draft_id == uuid.UUID(draft["id"]))
+        )
+        is None
+    )
+    owner_id = user.id
+    db.expire_all()
+    application = await db.scalar(
+        select(Application).where(Application.user_id == owner_id, Application.job_id == job_id)
+    )
+    assert application.status == "applied"
+    assert application.draft_id is None
+
+
+async def test_delete_checks_owner_version_and_in_progress(prepared, bob, db):
+    _, client, _, _ = prepared
+    draft = await generated(prepared)
+    _, other = bob
+    path = f"/api/drafts/{draft['id']}"
+    assert (await other.delete(path + "?expected_version=1")).status_code == 404
+    assert (await client.delete(path + "?expected_version=2")).status_code == 409
+    await db.execute(
+        update(Draft).where(Draft.id == uuid.UUID(draft["id"])).values(state="generating")
+    )
+    await db.commit()
+    assert (await client.delete(path + "?expected_version=1")).status_code == 409
+
+
+async def test_new_generation_keeps_previous_draft_and_edits(prepared):
+    _, client, job_id, _ = prepared
+    old = await generated(prepared)
+    content = copy.deepcopy(old["version"]["content"])
+    content["resume"][0]["text"] += " My saved wording."
+    assert (
+        await client.put(
+            f"/api/drafts/{old['id']}", json={"expected_version": 1, "content": content}
+        )
+    ).status_code == 200
+    fresh = await client.post("/api/drafts", json={"job_id": job_id})
+    assert fresh.status_code == 202
+    assert fresh.json()["id"] != old["id"]
+    previous = (await client.get(f"/api/drafts/{old['id']}")).json()
+    assert previous["current_version"] == 2
+    assert previous["version"]["content"]["resume"][0]["text"].endswith("My saved wording.")

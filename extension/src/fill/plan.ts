@@ -1,5 +1,6 @@
 /** What JobWeaver would put in each field: the reviewed profile and the chosen Draft's
- * PDFs, nothing else (ADR-0017). Sensitive and free-text questions are left out here. */
+ * PDFs, plus reviewed letter text for the combined background/interest question.
+ * Other questions and sensitive answers stay manual (ADR-0017). */
 
 import type { Field, FieldKey } from "./types";
 
@@ -15,7 +16,7 @@ export type Profile = {
   education?: { school: string; degree?: string }[];
 };
 
-export type Files = { resume: string; cover_letter: string };
+export type Files = { resume: string; cover_letter: string; background_answer?: string };
 
 export type Proposal = {
   ref: string;
@@ -24,6 +25,8 @@ export type Proposal = {
   /** Shown in the preview; for files, the PDF's name. */
   value: string;
   source: "profile" | "draft";
+  reviewRequired?: boolean;
+  maxLength?: number;
   /** Fields that already hold something are only overwritten when the User ticks them. */
   overwrite: boolean;
 };
@@ -83,6 +86,8 @@ export function valueFor(key: FieldKey, profile: Profile, files: Files | null): 
       return profile.education?.[0]?.school ?? "";
     case "degree":
       return profile.education?.[0]?.degree ?? "";
+    case "background_answer":
+      return files?.background_answer ?? "";
     case "resume":
     case "cover_letter":
       return files?.[key] ?? "";
@@ -106,17 +111,19 @@ export function propose(fields: Field[], profile: Profile | null, files: Files |
     if (!field.key) continue;
     const isFile = field.key === "resume" || field.key === "cover_letter";
     if (isFile !== (field.kind === "file")) continue;
-    let value = isFile ? valueFor(field.key, {}, files) : profile ? valueFor(field.key, profile, null) : "";
+    const isAnswer = field.key === "background_answer";
+    let value = isFile || isAnswer ? valueFor(field.key, {}, files) : profile ? valueFor(field.key, profile, null) : "";
     if (field.kind === "select") {
       value = optionFor(field.options ?? [], value, field.key === "country" ? profile?.country : null) ?? "";
     }
-    if (!value) continue;
+    if (!value || (field.maxLength && value.length > field.maxLength)) continue;
     proposals.push({
       ref: field.ref,
       label: field.label,
       key: field.key,
       value,
-      source: isFile ? "draft" : "profile",
+      source: isFile || isAnswer ? "draft" : "profile",
+      ...(isAnswer ? { reviewRequired: true, maxLength: field.maxLength } : {}),
       overwrite: field.hasValue,
     });
   }

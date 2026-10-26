@@ -490,3 +490,7 @@ postings, drafts and applications are retained. The exclusion matches company
 identity, not mentions in descriptions, and does not label every posting fraudulent.
 Disabling a provider stops future fetches; it does not delete its historical jobs.
 Migration rollback preserves enabled/disabled choices rather than re-enabling sources.
+
+### Draft management and application files
+
+Users can generate a fresh Draft from a Feed card or the Draft page while retaining the previous package and its manual edits. Deleting a Draft requires confirmation, checks its displayed version, and removes its saved versions while keeping the Application status and history. Active generation cannot be deleted. Attachment names identify the person and document type, with explicit extension downloads grouped by Company. The combined background-and-interest field can reuse reviewed Cover Letter text as described in ADR-0017.

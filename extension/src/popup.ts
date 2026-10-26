@@ -176,6 +176,12 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void): H
         refresh();
       }) : null,
       button("Open Draft", () => open(`/drafts/${d.draft_id}`), "ghost"),
+      button("Save PDFs in company folder", async () => {
+        const granted = await chrome.permissions.request({ permissions: ["downloads"] });
+        if (!granted) throw new Error("Downloads permission was not granted");
+        const saved = await ask<{ error?: string }>({ type: "savePdfs", tabId });
+        if (saved.error) throw new Error(saved.error);
+      }, "ghost"),
       button("Change", async () => {
         await ask({ type: "clear", tabId });
         refresh();
@@ -247,7 +253,7 @@ function fillSection(tabId: number): HTMLElement {
     const rows = result.proposals.map((p) => {
       const box = h("input", { type: "checkbox", value: p.ref, id: `f-${p.ref}` }) as HTMLInputElement;
       // A field that already holds something is overwritten only when ticked here.
-      box.checked = !p.overwrite;
+      box.checked = !p.overwrite && !p.reviewRequired;
       return h(
         "li",
         {},
@@ -256,7 +262,10 @@ function fillSection(tabId: number): HTMLElement {
           "label",
           { for: `f-${p.ref}` },
           h("span", { class: "title" }, p.label),
-          h("span", { class: "value" }, p.value),
+          p.reviewRequired
+            ? h("textarea", { "data-answer-ref": p.ref, rows: "8", "aria-label": `Review answer: ${p.label}`, ...(p.maxLength ? { maxlength: String(p.maxLength) } : {}) }, p.value)
+            : h("span", { class: "value" }, p.value),
+          p.reviewRequired ? h("span", { class: "source" }, "From this Draft's cover letter. Review or edit, then tick to use.") : null,
           h("span", { class: "source" }, p.overwrite ? `${SOURCES[p.source]} - replaces what is there` : SOURCES[p.source]),
         ),
       );
@@ -264,7 +273,8 @@ function fillSection(tabId: number): HTMLElement {
     const fillButton = button("Fill ticked fields", async () => {
       const refs = Array.from(body.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked"), (b) => b.value);
       fillButton.disabled = true;
-      showReport(await ask<FillResult>({ type: "fill", tabId, refs }));
+      const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), (el) => [el.dataset.answerRef!, el.value]));
+      showReport(await ask<FillResult>({ type: "fill", tabId, refs, answers }));
     });
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),

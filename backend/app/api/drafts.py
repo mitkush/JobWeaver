@@ -74,6 +74,22 @@ async def retry(
     return result
 
 
+@router.delete("/{draft_id}", status_code=204)
+async def delete(
+    db: DbSession,
+    user: CurrentUser,
+    draft_id: uuid.UUID,
+    expected_version: Annotated[int, Query(ge=0)],
+) -> None:
+    draft = await drafting.owned_draft(db, user, draft_id, lock=True)
+    if draft.state in ("queued", "generating"):
+        raise ConflictError("Wait for generation to finish before deleting this Draft")
+    if draft.current_version != expected_version:
+        raise ConflictError("The Draft changed. Reload it before deleting.")
+    await db.delete(draft)
+    await db.commit()
+
+
 @router.put("/{draft_id}")
 async def save(
     db: DbSession,

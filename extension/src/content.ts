@@ -8,7 +8,7 @@ import { readJob } from "./job-read";
 
 type Message = { type: "jw.scan" | "jw.read-job" | "jw.page-url" } | { type: "jw.fill"; scanId: string; items: FillItem[] } | { type: "jw.undo" };
 type Listener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];
-const HELPER_VERSION = 2;
+const HELPER_VERSION = 3;
 
 declare global {
   interface Window {

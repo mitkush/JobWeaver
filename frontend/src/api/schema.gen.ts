@@ -677,7 +677,8 @@ export interface paths {
         /** Save */
         put: operations["save_api_drafts__draft_id__put"];
         post?: never;
-        delete?: never;
+        /** Delete */
+        delete: operations["delete_api_drafts__draft_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1806,6 +1807,11 @@ export interface components {
              * @enum {string}
              */
             template: "standard" | "compact";
+            /**
+             * Background Answer
+             * @default
+             */
+            background_answer?: string;
             /** Resume File */
             resume_file: string;
             /** Cover Letter File */
@@ -4292,6 +4298,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DraftOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_drafts__draft_id__delete: {
+        parameters: {
+            query: {
+                expected_version: number;
+            };
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

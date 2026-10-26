@@ -19,7 +19,8 @@ export type FieldKey =
   | "school"
   | "degree"
   | "resume"
-  | "cover_letter";
+  | "cover_letter"
+  | "background_answer";
 
 export type FieldKind = "text" | "textarea" | "select" | "file";
 
@@ -33,6 +34,7 @@ export type Field = {
   /** The User or the page already filled it; overwriting needs an explicit choice. */
   hasValue: boolean;
   options?: string[];
+  maxLength?: number;
 };
 
 export type Scan = { scanId: string; url: string; adapter: string; fields: Field[] };
