@@ -28,6 +28,7 @@ from app.gateway import personal
 from app.gateway.base import BaseAIGateway
 from app.gateway.progress import draft_progress
 from app.gateway.schemas import (
+    DraftDevelopmentRequest,
     ExtractSkillsRequest,
     JobAdvert,
     ReviseDraftRequest,
@@ -54,7 +55,7 @@ from app.services.email_check import check_recipient
 from app.services.gmail import access_token
 from app.services.google_oauth import GoogleOAuthClient
 from app.tailoring.checks import CheckResult, check
-from app.tailoring.completeness import include_supported_skills
+from app.tailoring.completeness import include_supported_skills, needs_development, resume_words
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import moved
 from app.tailoring.email import body_html, body_text, greeting_name, signature, subject
@@ -375,6 +376,21 @@ async def _save_version(
     return row
 
 
+def _checked_generation(
+    draft: Draft, content: DraftContent, facts: list[FactSnapshot]
+) -> tuple[DraftContent, list[str]]:
+    content = content.model_copy(deep=True)
+    for part in ("resume", "cover_letter", "email_body"):
+        for line in getattr(content, part):
+            line.manual = False  # only the User's own edits are protected
+    first = _check(draft, content, facts)
+    content = include_supported_skills(
+        first.content, facts, [str(s) for s in draft.job_snapshot.get("required_skills") or []]
+    )
+    second = _check(draft, content, facts)
+    return second.content, [*first.warnings, *second.warnings]
+
+
 async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGateway) -> None:
     async with get_sessionmaker()() as session:
         user = await session.get(User, user_id)
@@ -431,7 +447,9 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             generation_timeout = DRAFT_GENERATION_TIMEOUT_SECONDS
             if personal.allowed(user_id):
                 generation_timeout += personal.CLAUDE_ROUTE.timeout_seconds
+            deadline = asyncio.get_running_loop().time() + generation_timeout
             tried = False
+            developing = False
 
             async def provider_progress(provider: str) -> None:
                 nonlocal tried
@@ -446,12 +464,18 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
                     "openrouter": "OpenRouter",
                     "mistral": "Mistral",
                 }
-                action = "Falling back to" if tried else "Trying"
+                action = (
+                    "Developing evidence with"
+                    if developing
+                    else "Falling back to"
+                    if tried
+                    else "Trying"
+                )
                 draft.progress = f"{action} {labels.get(provider, 'AI provider')}"
                 tried = True
                 await session.commit()
 
-            async with asyncio.timeout(generation_timeout):
+            async with asyncio.timeout_at(deadline):
                 with draft_progress(provider_progress):
                     result = await gateway.tailor_draft(_request(draft, facts))
             # Recheck ownership and notice before persisting provider output.
@@ -461,19 +485,60 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
             ensure_ai_allowed(user)
             draft = await owned_draft(session, user, draft_id, lock=True)
             draft.progress = "Checking Facts and Tailoring Trace"
-            generated = result.result.content
-            for part in ("resume", "cover_letter", "email_body"):
-                for line in getattr(generated, part):
-                    line.manual = False  # only the User's own edits are protected
-            checked = _check(draft, generated, facts)
-            content, warnings = checked.content, checked.warnings
-            content = include_supported_skills(
-                content, facts, [str(s) for s in draft.job_snapshot.get("required_skills") or []]
-            )
-            checked = _check(draft, content, facts)
-            content, warnings = checked.content, [*warnings, *checked.warnings]
+            content, warnings = _checked_generation(draft, result.result.content, facts)
             if not content.resume or not content.cover_letter:
                 raise _Unverified()
+            if needs_development(content, facts):
+                developing = True
+                draft.progress = "Developing the relevant work evidence"
+                await session.commit()
+                feedback = (
+                    f"The checked first attempt has {resume_words(content)} resume words despite "
+                    "substantial work evidence. Develop it toward 420 to 550 words on one Standard "
+                    "page, using distinct implementation details, scope and supported outcomes. "
+                    "Do not repeat claims or add unrelated projects. Preserve relevant roles and "
+                    "include a supported Summary. Each line must cite all its claims and only "
+                    "one employer/project group. Do not claim expertise in the job's technologies "
+                    "that are absent from the Facts. Rejected lines: " + "; ".join(warnings)
+                )[:2000]
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        with draft_progress(provider_progress):
+                            developed = await gateway.tailor_draft(
+                                DraftDevelopmentRequest(
+                                    **_request(draft, facts).model_dump(),
+                                    previous_content=content,
+                                    feedback=feedback,
+                                )
+                            )
+                    candidate, candidate_warnings = _checked_generation(
+                        draft, developed.result.content, facts
+                    )
+                    if (
+                        candidate.resume
+                        and candidate.cover_letter
+                        and (not draft.job_snapshot.get("contact_email") or candidate.email_body)
+                        and resume_words(candidate) > resume_words(content)
+                        and await asyncio.to_thread(
+                            page_count,
+                            candidate,
+                            str(draft.job_snapshot["name"]),
+                            str(draft.job_snapshot["email"]),
+                            "standard",
+                            facts,
+                        )
+                        == 1
+                    ):
+                        content, warnings, result = candidate, candidate_warnings, developed
+                except (GatewayError, TimeoutError, ValidationFailedError):
+                    # A usable first result survives a failed optional development pass.
+                    await session.rollback()
+                    logger.info("Kept the first checked Draft after development was unavailable")
+                user = await session.get(User, user_id, populate_existing=True)
+                if user is None:
+                    return
+                ensure_ai_allowed(user)
+                draft = await owned_draft(session, user, draft_id, lock=True)
             _email_header(draft, content)
             if draft.job_snapshot.get("contact_email") and not content.email_body:
                 raise _Unverified()

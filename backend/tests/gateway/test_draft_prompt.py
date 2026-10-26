@@ -212,3 +212,28 @@ async def test_generation_accepts_a_slow_primary_and_falls_back_within_route_dea
     primary.delay = 1
     assert (await gateway.tailor_draft(request(user.id))).provider == "groq"
     assert primary.cancelled
+
+
+def test_development_keeps_cited_project_groups_with_the_checked_previous_content():
+    from app.gateway.schemas import DraftDevelopmentRequest
+    from app.tailoring.content import DraftContent, DraftLine
+
+    body = package(
+        [
+            fact("F1", "project", "Cited", "Ruby delivery tooling " * 30),
+            fact("F2", "project", "Unrelated", "Python " * 1000),
+        ]
+    )
+    previous = DraftContent(
+        resume=[DraftLine(text="Ruby", fact_refs=["F1"])],
+        cover_letter=[DraftLine(text="Ruby", fact_refs=["F1"])],
+    )
+    request = DraftDevelopmentRequest(
+        **body.model_dump(), previous_content=previous, feedback="Develop the checked evidence"
+    )
+    minimal = request.model_copy(update={"facts": body.facts[:1]})
+    prompt = draft_prompt(request, len(prompts.draft_user(minimal)))
+    assert prompt is not None
+    assert refs(prompt) == {"F1"}
+    assert json.loads(prompt)["previous_content"] == previous.model_dump()
+    assert draft_prompt(request, len(prompts.draft_user(minimal)) - 1) is None

@@ -72,6 +72,12 @@ not fixed by smaller prompts or longer timeouts.
 - Tailoring sends only the relevant Facts plus the Job description, never every document in full.
 - Tests and CI use recorded responses: **0 live AI calls** during development.
 
+A short checked Draft backed by substantial work Facts may make one additional tailoring
+call to develop the relevant evidence. That call uses the same gateway routing, consent,
+quotas and usage accounting, and shares the existing generation deadline. It can consume
+additional provider quota and time. Sparse Fact Banks and already developed resumes skip
+it; failure preserves the first usable package. Draft Chat does not run this pass.
+
 ## 3. Platform
 
 | Item | Choice | Free allowance (checked 5 Oct 2026) | Notes |

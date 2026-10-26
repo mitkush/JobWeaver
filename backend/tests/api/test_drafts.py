@@ -803,3 +803,61 @@ async def test_new_generation_keeps_previous_draft_and_edits(prepared):
     previous = (await client.get(f"/api/drafts/{old['id']}")).json()
     assert previous["current_version"] == 2
     assert previous["version"]["content"]["resume"][0]["text"].endswith("My saved wording.")
+
+
+@pytest.mark.parametrize("outcome", ["richer", "unavailable", "timeout", "unsafe", "overflow"])
+async def test_one_development_pass_is_checked_and_keeps_first_result_on_failure(
+    prepared, monkeypatch, outcome
+):
+    from app.gateway.schemas import DraftDevelopmentRequest
+
+    _, client, job_id, gateway = prepared
+    original = gateway.tailor_draft
+    calls = []
+    deadlines = []
+    timeout_at = drafting.asyncio.timeout_at
+
+    def observe_deadline(deadline):
+        deadlines.append(deadline)
+        return timeout_at(deadline)
+
+    async def tailor(request):
+        calls.append(request)
+        if isinstance(request, DraftDevelopmentRequest):
+            assert "Kubernetes" not in " ".join(
+                line.text for line in request.previous_content.resume
+            )
+            if outcome == "unavailable":
+                raise GatewayError("Temporarily unavailable")
+            if outcome == "timeout":
+                raise TimeoutError
+            response = await original(request)
+            response.result.content = request.previous_content.model_copy(deep=True)
+            response.result.content.resume.append(
+                DraftLine(
+                    id="developed",
+                    text="Ran Kubernetes clusters"
+                    if outcome == "unsafe"
+                    else "Cut report generation time from 10 minutes to 30 seconds",
+                    fact_refs=["F4"] if outcome == "unsafe" else ["F5"],
+                    section="Experience",
+                    manual=True,
+                )
+            )
+            return response
+        return await original(request)
+
+    monkeypatch.setattr(drafting, "needs_development", lambda *_: True)
+    monkeypatch.setattr(drafting, "page_count", lambda *_: 2 if outcome == "overflow" else 1)
+    monkeypatch.setattr(drafting.asyncio, "timeout_at", observe_deadline)
+    monkeypatch.setattr(gateway, "tailor_draft", tailor)
+    created = await client.post("/api/drafts", json={"job_id": job_id})
+    saved = (await client.get(f"/api/drafts/{created.json()['id']}")).json()
+    assert saved["state"] == "ready"
+    assert len(calls) == 2
+    assert len(deadlines) == 2 and deadlines[0] == deadlines[1]
+    assert saved["current_version"] == 1
+    lines = saved["version"]["content"]["resume"]
+    assert any(line["id"] == "developed" for line in lines) is (outcome == "richer")
+    assert not any(line["manual"] for line in lines)
+    assert "Kubernetes" not in " ".join(line["text"] for line in lines)
