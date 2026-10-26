@@ -296,6 +296,12 @@ async def test_the_extension_lists_matches_and_the_exact_version(prepared, db): 
         detail = (await ext.get(f"/api/ext/drafts/{draft['id']}")).json()
         assert detail["number"] == detail["current_version"] == draft["current_version"]
         assert detail["resume_file"] == draft["attachment_name"]
+        assert detail["background_answer"]
+        assert all(
+            line["text"] in detail["background_answer"]
+            for line in draft["version"]["content"]["cover_letter"]
+            if not line["text"].lower().startswith("dear")
+        )
         assert detail["cover_letter_file"].endswith("_Cover_Letter.pdf")
         assert detail["warnings"] == len(draft["version"]["warnings"])
 

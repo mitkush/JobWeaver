@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-context";
 
+import { DraftManagement } from "./DraftManagement";
 import { useCreateDraft } from "./api";
 
 export function CreateDraftButton({ jobId, draftId, disabled = false }: { jobId: string; draftId?: string | null; disabled?: boolean }) {
@@ -10,7 +11,7 @@ export function CreateDraftButton({ jobId, draftId, disabled = false }: { jobId:
   const navigate = useNavigate();
   const toast = useToast();
   return (
-    <Button disabled={disabled} loading={create.isPending} onClick={async () => {
+    <div className="flex flex-wrap gap-2"><Button disabled={disabled} loading={create.isPending} onClick={async () => {
       if (draftId) {
         navigate(`/drafts/${draftId}`);
         return;
@@ -23,7 +24,7 @@ export function CreateDraftButton({ jobId, draftId, disabled = false }: { jobId:
       }
     }}>
       {draftId ? "Open draft" : "Create draft"}
-    </Button>
+    </Button>{draftId && <DraftManagement jobId={jobId} draftId={draftId} disabled={disabled} />}</div>
   );
 }
 

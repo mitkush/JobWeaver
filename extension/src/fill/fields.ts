@@ -121,7 +121,13 @@ export function classify(el: Control, kind: FieldKind, label: string): FieldKey 
     if (/\b(resume|résumé|cv|curriculum)\b/.test(text)) return "resume";
     return null;
   }
-  if (kind === "textarea") return null; // Questions: stage 5, with the User's review.
+  if (kind === "textarea") {
+    // Reuse the chosen job-specific letter only for this combined question.
+    const formText = el.closest("form")?.textContent ?? el.ownerDocument.body.textContent ?? "";
+    if (/\b(no (?:use of )?ai|(?:do not|don.t|must not) use (?:ai|artificial intelligence)|not (?:written|generated) by ai|without (?:using )?(?:ai|artificial intelligence))\b/i.test(formText)) return null;
+    return /\bbackground\b/.test(text) && /\b(why|interest|interested|motivation)\b/.test(text)
+      ? "background_answer" : null;
+  }
   const autocomplete = (el.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/).pop() ?? "";
   if (AUTOCOMPLETE[autocomplete]) return AUTOCOMPLETE[autocomplete];
   for (const [key, pattern] of LABEL_RULES) if (pattern.test(text)) return key;
@@ -212,6 +218,7 @@ export function scanFields(doc: Document, adapter: Adapter, newRef: () => string
       key,
       required: el.required || el.getAttribute("aria-required") === "true",
       hasValue: hasValue(el, kind),
+      ...("maxLength" in el && el.maxLength > 0 ? { maxLength: el.maxLength } : {}),
       ...(kind === "select"
         ? { options: Array.from((el as HTMLSelectElement).options, (o) => o.text.trim()).slice(0, 400) }
         : {}),

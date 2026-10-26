@@ -67,7 +67,7 @@ Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the A
 
 ## Application Extension (FR-E14, in progress)
 
-A Chrome/Brave extension that fills application forms from your reviewed profile and a chosen Draft; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). On a form, open the extension, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in; questions, salary, visa and referrer fields stay for you. **Undo** restores what JobWeaver changed. It never submits.
+A Chrome/Brave extension that fills application forms from your reviewed profile and a chosen Draft; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). On a form, open the extension, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in. The combined background-and-interest question offers editable text from that Draft's Cover Letter; review it and tick it to use. Other questions, salary, visa and referrer fields stay for you. **Undo** restores what JobWeaver changed. It never submits.
 
 You can also start directly on a company's careers-page advert, without a Job or Draft in
 JobWeaver: click **Read this job**, review the title, Company and public JD, and choose
@@ -96,6 +96,10 @@ separate Apply click before there are form fields to scan.
 2. Build it for your server: `cd extension && npm ci && JOBWEAVER_ORIGIN=https://your-host npm run build` (defaults to the production host; use `http://localhost:5173` locally).
 3. In Chrome or Brave open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select `extension/dist`.
 4. Click the extension, then **Connect**, and approve on the JobWeaver page that opens.
+
+Attachments use `Name_Resume.pdf` and `Name_Cover_Letter.pdf`. **Save PDFs in company folder** requests optional Downloads permission and saves both selected-version files under `Downloads/<company>/`; the browser's download settings can still prompt for a location. Filling a form does not save local copies automatically.
+
+On JobWeaver, **Generate new draft** creates a fresh package and keeps the older one. **Delete draft** on the Draft page permanently removes that package and its saved versions after confirmation, while keeping Application status and history. Unsaved edits must be saved first.
 
 The connection lasts `EXTENSION_CREDENTIAL_HOURS` (default 12) or until the browser closes, and **Settings > Browser extension** revokes it at once.
 

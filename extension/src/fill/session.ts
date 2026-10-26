@@ -48,7 +48,7 @@ export async function scanTab(deps: Deps, port: TabPort, tabId: number): Promise
   const profile = profileResponse?.ok ? ((await profileResponse.json()) as { reviewed: boolean; content: Profile | null }) : null;
   const selection = await currentSelection(deps, tabId);
   const chosen = selection ? await version(deps, selection.draftId, selection.number) : null;
-  const files = chosen ? { resume: chosen.resume_file, cover_letter: chosen.cover_letter_file } : null;
+  const files = chosen ? { resume: chosen.resume_file, cover_letter: chosen.cover_letter_file, background_answer: chosen.background_answer } : null;
   const proposals = propose(scan.fields, profile?.reviewed ? profile.content : null, files);
   const proposed = new Set(proposals.map((p) => p.ref));
   await deps.store.set(key(tabId), {
@@ -72,7 +72,7 @@ async function pdf(deps: Deps, draft: { id: string; number: number }, kind: "res
 }
 
 /** Fills only the ticked proposals from the last scan of this tab. */
-export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: string[]): Promise<FillResult> {
+export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: string[], answers: Record<string, string> = {}): Promise<FillResult> {
   const stored = await deps.store.get<Stored>(key(tabId));
   if (!stored) return { filled: [], failed: [{ ref: "", reason: "Scan the form first" }], downloads: [], labels: {} };
   const wanted = new Set(refs);
@@ -94,7 +94,12 @@ export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: st
         failed.push({ ref: field.ref, reason: (error as Error).message });
       }
     } else {
-      items.push({ ref: field.ref, kind: field.kind, value: proposal.value });
+      const value = proposal.reviewRequired ? answers[field.ref]?.trim() : proposal.value;
+      if (!value || (field.maxLength && value.length > field.maxLength)) {
+        failed.push({ ref: field.ref, reason: "Review the answer and its length before filling" });
+        continue;
+      }
+      items.push({ ref: field.ref, kind: field.kind, value });
     }
   }
   const report = await port.send<FillReport>(tabId, { type: "jw.fill", scanId: stored.scan.scanId, items });

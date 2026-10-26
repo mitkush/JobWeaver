@@ -91,12 +91,9 @@ def _check_printable(labelled: list[tuple[str, str]]) -> None:
 
 
 def filename(name: str, company: str, title: str, kind: str = "resume") -> str:
-    parts = [
-        re.sub(r"[^\w-]+", "_", value).strip("_")[:60] or "Draft"
-        for value in (name, company, title)
-    ]
-    suffix = "_Cover_Letter" if kind == "cover_letter" else ""
-    return "_".join(parts) + suffix + ".pdf"
+    person = re.sub(r"[^\w-]+", "_", name).strip("_")[:60] or "Applicant"
+    suffix = "Cover_Letter" if kind == "cover_letter" else "Resume"
+    return f"{person}_{suffix}.pdf"
 
 
 # Web addresses and emails in a line, printed as clickable links.

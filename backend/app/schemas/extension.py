@@ -85,6 +85,7 @@ class ExtDraftVersion(BaseModel):
     saved_at: datetime
     warnings: int
     template: Literal["standard", "compact"]
+    background_answer: str = ""
     resume_file: str
     cover_letter_file: str
     application_status: str | None

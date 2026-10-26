@@ -27,6 +27,7 @@ export function buildManifest(origin: string, version: string) {
     // activeTab: on the User's click, read the tab's address to suggest a Draft, and
     // (scripting) scan and fill that tab's form. No access to any other site.
     permissions: ["storage", "activeTab", "scripting"],
+    optional_permissions: ["downloads"],
     host_permissions: [pattern],
     externally_connectable: { matches: [pattern] },
   };

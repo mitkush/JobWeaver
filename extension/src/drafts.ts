@@ -25,6 +25,7 @@ export type DraftVersion = {
   saved_at: string;
   warnings: number;
   template: "standard" | "compact";
+  background_answer?: string;
   resume_file: string;
   cover_letter_file: string;
   application_status: string | null;

@@ -230,3 +230,27 @@ describe("filling", () => {
     });
   });
 });
+
+it("offers reviewed draft text only for a background-and-interest question", () => {
+  document.body.innerHTML = `<form><label for="intro">Please tell us a little about your background and why you're interested in this role.*</label><textarea id="intro"></textarea><label for="salary">Background and salary interest</label><textarea id="salary"></textarea></form>`;
+  const fields = scan();
+  expect(fields[0]?.key).toBe("background_answer");
+  expect(fields[1]?.key).toBeNull();
+  const proposed = propose(fields, profile, { ...files, background_answer: "I built Python APIs and would like to apply that experience here." });
+  expect(proposed).toHaveLength(1);
+  expect(proposed[0]).toMatchObject({ source: "draft", reviewRequired: true });
+  const filler = new Filler(document);
+  filler.fill([{ ref: fields[0]!.ref, kind: "textarea", value: proposed[0]!.value }]);
+  expect(document.querySelector("textarea")?.value).toContain("Python APIs");
+  filler.undo();
+  expect(document.querySelector("textarea")?.value).toBe("");
+});
+
+it("leaves no-AI forms and too-short fields for manual answers", () => {
+  document.body.innerHTML = `<form><p>Do not use AI to answer.</p><label for="a">Your background and why you're interested</label><textarea id="a"></textarea></form>`;
+  expect(scan()[0]?.key).toBeNull();
+  document.querySelector("p")!.remove();
+  document.querySelector("textarea")!.maxLength = 5;
+  const fields = scan();
+  expect(propose(fields, profile, { ...files, background_answer: "A longer answer" })).toEqual([]);
+});

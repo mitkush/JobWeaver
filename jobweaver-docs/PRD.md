@@ -253,7 +253,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 
 **FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume: a headline and contact line under the name, uppercase section headings with a rule, "Title | Employer | dates" and "Project | stack | link" title lines over bulleted work, grouped skill lines, and clickable links. The page opens on whichever of Standard or Compact fits on one page. Choosing or uploading another template is optional per User.
 - AC1: The PDF's text is selectable and parses back to the same content (ATS check).
-- AC2: The file name follows `<Name>_<Company>_<Title>.pdf`.
+- AC2: Attachment names follow `<Name>_Resume.pdf` and `<Name>_Cover_Letter.pdf`. The extension can save copies under `Downloads/<Company>/` through an explicit action with optional browser Downloads permission; browser download preferences may still ask for a location.
 
 **FR-E10 [V1] - Email check.** Before Gmail Hand-off, the recipient is checked: valid format, the domain can receive mail (MX record), and not a no-reply address.
 - AC1: A failing check is shown inline in the Draft with what to do; the User can still continue after confirming.
@@ -490,3 +490,7 @@ postings, drafts and applications are retained. The exclusion matches company
 identity, not mentions in descriptions, and does not label every posting fraudulent.
 Disabling a provider stops future fetches; it does not delete its historical jobs.
 Migration rollback preserves enabled/disabled choices rather than re-enabling sources.
+
+### Draft management and application files
+
+Users can generate a fresh Draft from a Feed card or the Draft page while retaining the previous package and its manual edits. Deleting a Draft requires confirmation, checks its displayed version, and removes its saved versions while keeping the Application status and history. Active generation cannot be deleted. Attachment names identify the person and document type, with explicit extension downloads grouped by Company. The combined background-and-interest field can reuse reviewed Cover Letter text as described in ADR-0017.
