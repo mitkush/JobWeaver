@@ -1315,7 +1315,10 @@ async def test_brightdata_key_chain_uses_provider_errors_only(db, fetcher, monke
         assert starts == expected.get(failure, ["one"])
         assert await db.scalar(select(func.count()).select_from(QueryWatermark)) == 0
     if failure == "all-inactive":
-        assert outcome.message == "LinkedIn (Bright Data) account is not active"
+        assert outcome.message == (
+            "All 3 available credentials were rejected. "
+            "Last: LinkedIn (Bright Data) account is not active"
+        )
         assert await db.scalar(select(FetchRun.error)) == outcome.message
     if failure in ("all-limits", "all-inactive"):
         monkeypatch.setattr("app.services.fetching.budget_for", budget_for)
