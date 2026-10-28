@@ -19,6 +19,7 @@ from app.core.errors import JobWeaverError, NotFoundError
 from app.models.job import UserJob
 from app.schemas.application_profile import SavedAnswerOut
 from app.schemas.capture import CapturedDraftOut, CapturedJobOut, CaptureIn
+from app.schemas.drafts import AppliedIn
 from app.schemas.extension import (
     ExtDraftMatch,
     ExtDraftSummary,
@@ -184,6 +185,16 @@ async def ext_draft(
     result = await extension_drafts.version_detail(db, user, draft_id, number)
     await db.commit()
     return result
+
+
+@router.post("/api/ext/drafts/{draft_id}/applied", status_code=204)
+async def ext_mark_applied(
+    db: DbSession, caller: ExtensionCaller, draft_id: uuid.UUID, body: AppliedIn
+) -> None:
+    """Only after the User confirms in the extension that they submitted the form."""
+    _, user = caller
+    await drafting.mark_applied_with_version(db, user, draft_id, body.expected_version)
+    await db.commit()
 
 
 @router.get("/api/ext/drafts/{draft_id}/pdf")

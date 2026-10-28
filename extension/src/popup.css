@@ -19,7 +19,9 @@
 }
 body {
   margin: 0;
-  width: 320px;
+  width: 100%;
+  min-width: 280px;
+  overflow-wrap: anywhere;
   background: var(--bg);
   color: var(--fg);
   font: 14px/1.5 system-ui, sans-serif;
@@ -43,6 +45,7 @@ h1 {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
 }
@@ -138,6 +141,7 @@ select {
 }
 .fields li {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 0;
   border-top: 1px solid var(--line);

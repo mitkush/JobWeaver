@@ -216,3 +216,39 @@ async def test_every_version_keeps_the_job_context_it_was_made_with(prepared, db
     assert [r.number for r in rows] == [1, 2]
     assert rows[0].job_context and rows[0].job_context == rows[1].job_context
     assert rows[0].job_context["title"] == draft["job"]["title"]
+
+
+async def test_the_extension_marks_applied_with_the_pinned_version(prepared, db, bob, monkeypatch):  # noqa: F811
+    from app.core.config import get_settings
+    from app.models import Application
+    from tests.api.test_extension import EXT, connect, ext_client
+
+    monkeypatch.setenv("EXTENSION_IDS", EXT)
+    get_settings.cache_clear()
+    user, client, job_id, _ = prepared
+    draft = await generated(prepared)
+    # A newer version is saved after the User attached version 1 on the form.
+    content = draft["version"]["content"]
+    content["resume"][0]["text"] += " Edited."
+    await client.put(f"/api/drafts/{draft['id']}", json={"expected_version": 1, "content": content})
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        path = f"/api/ext/drafts/{draft['id']}/applied"
+        assert (await ext.post(path, json={"expected_version": 1})).status_code == 204
+        assert (await ext.post(path, json={"expected_version": 1})).status_code == 204
+        assert (await ext.post(path, json={"expected_version": 9})).status_code == 404
+    application = await db.scalar(
+        select(Application).where(Application.user_id == user.id, Application.job_id == job_id)
+    )
+    assert (application.status, application.draft_version) == ("applied", 1)
+    # The cookie session cannot use it, and another User cannot mark this Draft.
+    assert (
+        await client.post(f"/api/ext/drafts/{draft['id']}/applied", json={"expected_version": 1})
+    ).status_code == 401
+    _, other = bob
+    other_token = await connect(other)
+    async with ext_client(token=other_token) as ext:
+        refused = await ext.post(
+            f"/api/ext/drafts/{draft['id']}/applied", json={"expected_version": 1}
+        )
+    assert refused.status_code == 404

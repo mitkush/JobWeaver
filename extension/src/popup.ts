@@ -1,3 +1,4 @@
+import type { ReviewState } from "./review-state";
 import type { PopupMessage } from "./background";
 import type { DraftSummary, DraftVersion, PageState } from "./drafts";
 import type { FillResult, ScanResult } from "./fill/session";
@@ -26,7 +27,7 @@ async function ask<T>(message: PopupMessage, timeoutMs?: number): Promise<T> {
     const disconnectedStatus = message.type === "status" && response && typeof response === "object" && "connected" in response && response.connected === false;
     if (!disconnectedStatus && response && typeof response === "object" && "error" in response && typeof response.error === "string") throw new Error(response.error);
     if (response === undefined) throw new Error(`The extension did not reply. ${RELOAD_HELP}`);
-    if (response === null && !["lastFill", "capturedJob", "select", "clear", "open"].includes(message.type)) throw new Error(`The extension returned an incomplete reply. ${RELOAD_HELP}`);
+    if (response === null && !["lastFill", "lastScan", "capturedJob", "select", "clear", "open"].includes(message.type)) throw new Error(`The extension returned an incomplete reply. ${RELOAD_HELP}`);
     return response as T;
   } catch (error) {
     if (error instanceof Error && /context invalidated|receiving end|message port|establish connection/i.test(error.message)) {
@@ -83,7 +84,7 @@ function profileSection(state: PageState): HTMLElement {
   if (profile.needs_review) {
     return h("section", { class: "panel warn" }, h("p", {}, "Some profile entries cite Facts you changed. They are left out until you check them."), button("Check profile", () => open("/settings/profile"), "ghost"));
   }
-  return h("section", { class: "panel" }, h("p", { class: "ok" }, `Profile reviewed (version ${profile.version}).`));
+  return h("section", { class: "panel" }, h("p", { class: "ok" }, "Profile ready for this application."));
 }
 
 /** Read before any Draft exists, then review before storing public advert text. */
@@ -110,6 +111,10 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
     if (!body.childElementCount) body.append(h("p", { class: "warn-text", role: "alert" }, error instanceof Error ? error.message : "The saved Job could not load."));
   });
 
+  void ask<ReviewState>({ type: "reviewState", tabId }).then(review => {
+    if (review?.capture && !body.childElementCount) showReview(review.capture);
+  }).catch(() => undefined);
+
   function showReview(job: PageJob) {
     const title = h("input", { type: "text", value: job.title, maxlength: "500", id: "capture-title" }) as HTMLInputElement;
     const company = h("input", { type: "text", value: job.company, maxlength: "255", id: "capture-company" }) as HTMLInputElement;
@@ -121,9 +126,12 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
       try {
         const result = await ask<Captured & { error?: string }>({ type: "saveJob", tabId, job: { ...job, title: title.value, company: company.value, description: description.value } });
         if (result.error) { error.textContent = result.error; return; }
+        await ask({ type: "reviewState", tabId, patch: { capture: null } });
         showSaved(result);
       } finally { save.disabled = false; }
     });
+    const persist = () => { void ask({ type: "reviewState", tabId, patch: { capture: { ...job, title: title.value, company: company.value, description: description.value } } }).catch(() => undefined); };
+    title.addEventListener("input", persist); company.addEventListener("input", persist); description.addEventListener("input", persist);
     body.replaceChildren(
       h("p", { class: "muted" }, `Read from ${job.method}. The JD has not been sent yet.`),
       h("p", { class: "muted" }, job.url),
@@ -167,17 +175,17 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
   return h(
     "section",
     { class: "panel" },
-    h("p", { class: "label" }, "Draft for this page"),
+    h("p", { class: "label" }, "Application documents"),
     h("p", { class: "title" }, draftLabel(d)),
-    needsConfirmation ? h("div", {}, h("p", { class: "warn-text" }, "The page changed. Confirm this is still the Job you are applying for."), button("Use this Draft on this page", async () => { await chooseDraft(tabId, d.draft_id, d.number); refresh(); })) : null,
-    h("p", {}, `Version ${d.number}, saved ${fromNow(d.saved_at)}.`),
+    needsConfirmation ? h("div", {}, h("p", { class: "warn-text" }, "Confirm the Job and document before continuing on this page."), button("Continue with this reviewed document", async () => { await chooseDraft(tabId, d.draft_id, d.number); refresh(); })) : null,
+    h("p", {}, `Saved ${fromNow(d.saved_at)}.`),
     h("ul", { class: "files" }, h("li", {}, d.resume_file), h("li", {}, d.cover_letter_file)),
     d.warnings ? h("p", { class: "warn-text" }, `${d.warnings} ${d.warnings === 1 ? "warning" : "warnings"} to check in the Draft.`) : null,
-    newer ? h("p", { class: "warn-text" }, `A newer version (${d.current_version}) was saved. This page still uses version ${d.number}.`) : null,
+    newer ? h("p", { class: "warn-text" }, "An updated document is available. This application still uses the copy you reviewed.") : null,
     h(
       "div",
       { class: "actions" },
-      newer ? button(`Use version ${d.current_version}`, async () => {
+      newer ? button("Use updated document", async () => {
         await chooseDraft(tabId, d.draft_id, d.current_version);
         refresh();
       }) : null,
@@ -187,6 +195,13 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
         if (!granted) throw new Error("Downloads permission was not granted");
         const saved = await ask<{ error?: string }>({ type: "savePdfs", tabId });
         if (saved.error) throw new Error(saved.error);
+        content.append(h("p", { role: "status", class: "ok" }, "PDFs saved under Downloads in the company folder."));
+      }, "ghost"),
+      button("Mark as applied", async () => {
+        const actions = h("div", { class: "actions" }, button("Yes, I submitted this application", async () => {
+          await ask({ type: "markApplied", tabId }); refresh();
+        }), button("Cancel", () => actions.remove(), "ghost"));
+        content.append(h("section", { class: "panel" }, h("p", {}, "Have you submitted the application yourself? Filling or downloading does not submit it."), actions));
       }, "ghost"),
       button("Change", async () => {
         await ask({ type: "clear", tabId });
@@ -203,7 +218,7 @@ function chooseSection(tabId: number, state: PageState, refresh: () => void): HT
     return h("section", { class: "panel" }, h("p", {}, "No ready Drafts yet. Create one from a Job in JobWeaver."), button("Open Feed", () => open("/feed"), "ghost"));
   }
   const select = h("select", { id: "draft", "aria-label": "Draft to use" }) as HTMLSelectElement;
-  for (const d of options) select.append(h("option", { value: d.draft_id }, `${draftLabel(d)} (version ${d.current_version})`));
+  for (const d of options) select.append(h("option", { value: d.draft_id }, draftLabel(d)));
   const intro =
     suggested.length === 1
       ? "This page looks like the apply link of:"
@@ -237,10 +252,19 @@ function fillSection(tabId: number): HTMLElement {
   const section = h("section", { class: "panel" }, h("p", { class: "label" }, "Fill this form"));
   const body = h("div");
   const scanButton = button("Scan this form", () => runScan());
-  section.append(body, h("div", { class: "actions" }, scanButton));
+  const embedded = button("Find embedded forms", async () => {
+    if (!await chrome.permissions.request({ permissions: ["webNavigation"] })) throw new Error("Frame discovery was not allowed. You can still scan the main page.");
+    const origins = await ask<string[]>({ type: "frameSites", tabId });
+    body.replaceChildren(h("p", {}, origins.length ? "Allow each embedded form site you want to scan:" : "No embedded form sites were found."), ...origins.map(origin => button(`Allow ${new URL(origin).hostname}`, async () => {
+      if (!await chrome.permissions.request({ origins: [`${origin}/*`] })) throw new Error("Site access was not granted");
+      await runScan();
+    }, "ghost")));
+  }, "ghost");
+  section.append(body, h("div", { class: "actions" }, scanButton, embedded));
   // Reopened after checking the page: show the last fill with its Undo and downloads.
   void ask<FillResult | null>({ type: "lastFill", tabId }).then((last) => {
     if (last && !body.childElementCount) showReport(last);
+    else if (!last && !body.childElementCount) void ask<ScanResult | null>({ type: "lastScan", tabId }).then(scan => { if (scan && !body.childElementCount) showPreview(scan); }).catch(() => undefined);
   }).catch((error: unknown) => {
     if (!body.childElementCount) body.append(h("p", { class: "warn-text", role: "alert" }, error instanceof Error ? error.message : "The previous fill could not load."));
   });
@@ -258,6 +282,7 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   function showPreview(result: ScanResult) {
+    if (result.unavailableFrames) section.append(h("p", { class: "warn-text" }, `${result.unavailableFrames} embedded frame(s) need site access. Use Find embedded forms, or open the hosted application.`));
     const rows = result.proposals.map((p) => {
       const box = h("input", { type: "checkbox", value: p.ref, id: `f-${p.ref}` }) as HTMLInputElement;
       // A field that already holds something is overwritten only when ticked here.
@@ -288,6 +313,13 @@ function fillSection(tabId: number): HTMLElement {
         showReport(report);
       } finally { fillButton.disabled = false; }
     });
+    void ask<ReviewState>({ type: "reviewState", tabId }).then(review => {
+      for (const el of body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]")) {
+        const kept = review?.answers?.[el.dataset.answerRef!];
+        if (kept) el.value = kept;
+        el.addEventListener("input", () => { const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.value])); void ask({ type: "reviewState", tabId, patch: { answers } }).catch(() => undefined); });
+      }
+    }).catch(() => undefined);
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
       result.profileReviewed ? null : h("p", { class: "warn-text" }, "Review your profile to fill your details."),
@@ -312,7 +344,7 @@ function fillSection(tabId: number): HTMLElement {
       } finally { undoButton.disabled = false; }
     }, "ghost");
     body.replaceChildren(
-      h("p", { class: "ok" }, `Filled ${report.filled.length} ${report.filled.length === 1 ? "field" : "fields"}. Check them on the page, then submit yourself.`),
+      h("p", { class: report.filled.length ? "ok" : "warn-text" }, `Filled ${report.filled.length} ${report.filled.length === 1 ? "field" : "fields"}. Check them on the page, then submit yourself.`),
       ...report.failed.map((f) => h("p", { class: "warn-text" }, `${label(f.ref)}: ${f.reason}`)),
       ...report.downloads.map((d) => button(`Download ${d.name} to attach it yourself`, () => download(d.name, d.base64), "ghost")),
       h("div", { class: "actions" }, undoButton),
@@ -337,10 +369,19 @@ async function render() {
   const tabId = tab.id;
   const state = await ask<PageState>({ type: "page", tabId, url: tab.url });
   const refresh = () => void renderSafely();
+  // Offered only when this site is not yet allowed; a toolbar click also grants this tab.
+  const siteAllowed = tab.url && /^https?:/.test(tab.url) && chrome.permissions?.contains
+    ? await chrome.permissions.contains({ origins: [`${new URL(tab.url).origin}/*`] }).catch(() => false)
+    : false;
   content.replaceChildren(...parts(
-    profileSection(state),
-    !tab.url || /^https?:/.test(tab.url) ? captureSection(tabId, refresh) : null,
-    state.selected ? selectedSection(tabId, state.selected, refresh, state.needsConfirmation) : chooseSection(tabId, state, refresh),
+    siteAllowed ? null : tab.url && /^https?:/.test(tab.url) ? button(`Allow access to ${new URL(tab.url).hostname}`, async () => {
+      const origin = new URL(tab.url!).origin;
+      if (!await chrome.permissions.request({ origins: [`${origin}/*`] })) throw new Error("Site access was not granted. Use the toolbar on this tab for temporary access.");
+      refresh();
+    }, "ghost") : h("p", { class: "warn-text" }, "Click JobWeaver in the toolbar on the application tab to allow access to this page."),
+    state.profile?.reviewed && !state.profile.needs_review ? h("p", { class: "muted" }, "Profile ready") : profileSection(state),
+    !tab.url || /^https?:/.test(tab.url) ? (state.selected || state.matches.length ? h("details", {}, h("summary", {}, "Read or update the job description"), captureSection(tabId, refresh)) : captureSection(tabId, refresh)) : null,
+    state.selected ? selectedSection(tabId, state.selected, refresh, state.needsConfirmation) : state.matches.length ? chooseSection(tabId, state, refresh) : h("details", {}, h("summary", {}, "Choose a saved Draft manually"), chooseSection(tabId, state, refresh)),
     // Browser pages cannot be filled; without activeTab the address is unknown, so offer it.
     (!tab.url || /^https?:/.test(tab.url)) && !state.needsConfirmation ? fillSection(tabId) : null,
   ));
@@ -374,3 +415,8 @@ async function renderSafely() {
     content.replaceChildren(h("p", { role: "alert", class: "warn-text" }, error instanceof Error ? error.message : "Try again."), button("Retry", () => renderSafely()));
   }
 }
+
+chrome.tabs.onActivated?.addListener(() => void renderSafely());
+chrome.runtime.onMessage?.addListener((message: { type?: string }) => {
+  if (message.type === "panelTabChanged") void renderSafely();
+});

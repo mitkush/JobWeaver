@@ -37,6 +37,7 @@ def upgrade():
         unique=True,
         postgresql_where=sa.text("active"),
     )
+    op.add_column("applications", sa.Column("draft_version", sa.Integer()))
     op.add_column("users", sa.Column("writing_style", sa.Text(), nullable=False, server_default=""))
     op.create_table(
         "draft_proposals",
@@ -71,6 +72,7 @@ def upgrade():
 def downgrade():
     op.drop_table("draft_proposals")
     op.drop_column("users", "writing_style")
+    op.drop_column("applications", "draft_version")
     op.drop_column("draft_versions", "job_context")
     op.drop_index("uq_drafts_active_user_job", "drafts")
     op.drop_column("drafts", "active")

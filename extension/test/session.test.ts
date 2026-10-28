@@ -145,3 +145,56 @@ it("refuses scan and prepared fill after navigation until the Draft is reconfirm
   await expect(scanTab(deps, port, 5)).rejects.toThrow(/Confirm/);
   await expect(fillTab(deps, port, 5, ["r3"])).rejects.toThrow(/Confirm/);
 });
+
+describe("embedded forms and updated documents", () => {
+  function framed() {
+    const made = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    const frameScans: Record<number, Scan> = {
+      0: { ...scan, scanId: "top", fields: [scan.fields[0]!] },
+      7: { ...scan, scanId: "frame", fields: [scan.fields[2]!] },
+    };
+    const routed: { frameId: number; message: { type: string; items?: FillItem[]; scanId?: string } }[] = [];
+    made.port.frames = async () => [{ frameId: 0 }, { frameId: 7 }, { frameId: 9 }];
+    made.port.inject = vi.fn(async (_tab: number, frameId?: number) => {
+      if (frameId === 9) throw new Error("Cannot access contents of the page");
+    });
+    made.port.send = async <T,>(_tab: number, message: unknown, frameId = 0) => {
+      const m = message as { type: string; items?: FillItem[]; scanId?: string };
+      routed.push({ frameId, message: m });
+      if (m.type === "jw.scan") return frameScans[frameId] as T;
+      return { filled: (m.items ?? []).map((i) => i.ref), failed: [] } as T;
+    };
+    return { ...made, routed };
+  }
+
+  it("scans each reachable frame and reports the ones that need site access", async () => {
+    const { deps, port } = framed();
+    const result = await scanTab(deps, port, 5);
+    expect(result.unavailableFrames).toBe(1);
+    expect(result.proposals.map((p) => p.ref)).toEqual(["frame0:r1", "frame7:r3"]);
+  });
+
+  it("fills and undoes each field in its own frame, with that frame's scan", async () => {
+    const { deps, port, routed } = framed();
+    await scanTab(deps, port, 5);
+    const report = await fillTab(deps, port, 5, ["frame0:r1", "frame7:r3"]);
+    expect(report.filled).toEqual(["frame0:r1", "frame7:r3"]);
+    const fills = routed.filter((r) => r.message.type === "jw.fill");
+    expect(fills.map((f) => [f.frameId, f.message.scanId, f.message.items!.map((i) => i.ref)])).toEqual([
+      [0, "top", ["r1"]],
+      [7, "frame", ["r3"]],
+    ]);
+    const undone = await undoTab(deps, port, 5);
+    expect(routed.filter((r) => r.message.type === "jw.undo").map((r) => r.frameId)).toEqual([0, 7]);
+    expect(undone.failed).toEqual([]);
+  });
+
+  it("refuses to fill after the document was updated since the scan", async () => {
+    const { deps, port } = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    await scanTab(deps, port, 5);
+    // The scan saw current version 3; an accepted replacement makes it 4.
+    const stored = await deps.store.get<{ draft: { currentVersion: number } }>("fill:5");
+    await deps.store.set("fill:5", { ...stored, draft: { ...stored!.draft, currentVersion: 2 } });
+    await expect(fillTab(deps, port, 5, ["r1"])).rejects.toThrow("The resume was updated");
+  });
+});

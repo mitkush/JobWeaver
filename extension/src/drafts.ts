@@ -41,7 +41,7 @@ export type PageState = {
   needsConfirmation: boolean;
 };
 
-type Selection = { draftId: string; number: number };
+type Selection = { draftId: string; number: number; acknowledgedCurrent?: number };
 
 const selectionKey = (tabId: number) => `selection:${tabId}`;
 
@@ -69,6 +69,7 @@ export async function pageState(deps: Deps, tabId: number, url: string | undefin
   const chosen = await deps.store.get<Selection>(selectionKey(tabId));
   const selected = chosen ? await version(deps, chosen.draftId, chosen.number) : null;
   if (chosen && !selected) await deps.store.remove(selectionKey(tabId));
+  if (chosen && selected && (chosen.acknowledgedCurrent ?? chosen.number) !== selected.current_version) await requireConfirmation(deps, tabId);
   return { profile, matches: matched?.drafts ?? [], recent: recent ?? [], selected, needsConfirmation: Boolean(selected && await deps.store.get(`confirm-job:${tabId}`)) };
 }
 
@@ -77,7 +78,7 @@ export async function select(deps: Deps, tabId: number, draftId: string, number?
   const chosen = await version(deps, draftId, number);
   if (!chosen) return null;
   await deps.store.remove(`confirm-job:${tabId}`);
-  await deps.store.set(selectionKey(tabId), { draftId: chosen.draft_id, number: chosen.number } satisfies Selection);
+  await deps.store.set(selectionKey(tabId), { draftId: chosen.draft_id, number: chosen.number, acknowledgedCurrent: chosen.current_version } satisfies Selection);
   return chosen;
 }
 

@@ -10,6 +10,7 @@ async function popup(read: () => unknown, options: {
   needsConfirmation?: boolean;
   recent?: unknown[];
   saveResult?: { error?: string; ok?: boolean };
+  siteAllowed?: boolean;
 } = {}) {
   const send = vi.fn(async (message: { type: string }) => {
     const override = options.reply?.(message.type);
@@ -22,7 +23,7 @@ async function popup(read: () => unknown, options: {
   });
   vi.stubGlobal("chrome", {
     runtime: { sendMessage: send },
-    permissions: { request: options.permission ?? (async () => true) },
+    permissions: { request: options.permission ?? (async () => true), contains: async () => options.siteAllowed ?? false },
     windows: { getLastFocused: async () => ({ id: 1 }) },
     tabs: { query: async () => [{ id: 42, url: pageJob.url }] },
   });
@@ -142,7 +143,7 @@ it("shows the provider error and reenables Fill and Undo after failed replies", 
 });
 it("does not offer scanning until a retained Draft is confirmed on the new page", async () => {
   await popup(() => pageJob, { selected: selectedDraft, needsConfirmation: true });
-  expect(document.body.textContent).toContain("Use this Draft on this page");
+  expect(document.body.textContent).toContain("Continue with this reviewed document");
   expect(document.body.textContent).not.toContain("Scan this form");
 });
 
@@ -164,4 +165,30 @@ it.each([
   expect(document.querySelector<HTMLButtonElement>("#disconnect")!.hidden).toBe(true);
   expect(document.querySelector('[role="alert"]')).toBeNull();
   expect(send.mock.calls.some(([m]) => m.type === "page")).toBe(false);
+});
+
+const pinned = { draft_id: "d1", job_id: "j1", title: "Engineer", company: "Example", apply_url: null, number: 2, current_version: 2, saved_at: new Date().toISOString(), warnings: 0, template: "standard", resume_file: "Asha_Resume.pdf", cover_letter_file: "Asha_Cover_Letter.pdf", application_status: null };
+
+function buttonNamed(name: string) {
+  return [...document.querySelectorAll("button")].find((b) => b.textContent === name);
+}
+
+it("marks Applied only after the User confirms they submitted the form", async () => {
+  const send = await popup(() => pageJob, { selected: pinned });
+  await vi.waitFor(() => expect(buttonNamed("Mark as applied")).toBeTruthy());
+  buttonNamed("Mark as applied")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Yes, I submitted this application")).toBeTruthy());
+  expect(document.body.textContent).toContain("Filling or downloading does not submit it");
+  expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "markApplied")).toBe(false);
+  buttonNamed("Yes, I submitted this application")!.click();
+  await vi.waitFor(() => expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "markApplied")).toBe(true));
+});
+
+it("offers site access only when this site is not allowed yet", async () => {
+  await popup(() => pageJob, { siteAllowed: true });
+  expect(buttonNamed("Allow access to example.com")).toBeUndefined();
+  vi.resetModules();
+  document.body.innerHTML = '<p id="status"></p><div id="content"></div><button id="connect" hidden></button><button id="disconnect" hidden></button>';
+  await popup(() => pageJob, { siteAllowed: false });
+  expect(buttonNamed("Allow access to example.com")).toBeTruthy();
 });

@@ -88,7 +88,7 @@ describe("choosing a Draft for a tab", () => {
     });
     const chosen = await select(deps, 7, "d1");
     expect(chosen?.number).toBe(3);
-    expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 3 });
+    expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 3, acknowledgedCurrent: 3 });
 
     current = 4;
     const state = await pageState(deps, 7, "https://example.com/apply");
@@ -113,7 +113,7 @@ it("keeps a pinned selection when its server request fails temporarily", async (
   const { deps, data } = makeDeps({ ...base, "/api/ext/drafts/match": () => json({ drafts: [] }), "/api/ext/drafts/d1": () => json({}, 503) });
   data.set("selection:7", { draftId: "d1", number: 2 });
   await expect(pageState(deps, 7, "https://example.com")).rejects.toThrow(/unavailable/);
-  expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 2 });
+  expect(data.get("selection:7")).toMatchObject({ draftId: "d1", number: 2 });
 });
 it("requires confirmation after navigation and keeps the chosen version when confirmed", async () => {
   const { deps, data } = makeDeps({ ...base, "/api/ext/drafts/match": () => json({ drafts: [] }), "/api/ext/drafts/d1": (url) => json(versionOf(Number(url.searchParams.get("number") ?? 3))) });
@@ -123,7 +123,7 @@ it("requires confirmation after navigation and keeps the chosen version when con
   await expect(assertConfirmed(deps, 7)).rejects.toThrow(/page changed/);
   await select(deps, 7, "d1", 2);
   await expect(assertConfirmed(deps, 7)).resolves.toBeUndefined();
-  expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 2 });
+  expect(data.get("selection:7")).toMatchObject({ draftId: "d1", number: 2 });
 });
 it("does not show missing profile or empty drafts when their server requests fail", async () => {
   const { deps } = makeDeps({ ...base, "/api/ext/profile": () => json({}, 500) });

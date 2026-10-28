@@ -1006,4 +1006,16 @@ async def mark_applied(
 ) -> None:
     draft = await owned_draft(session, user, draft_id, lock=True)
     ready(draft, expected)
-    await applications.mark_applied(session, user, draft.job_id, draft.id)
+    await applications.mark_applied(session, user, draft.job_id, draft.id, expected)
+
+
+async def mark_applied_with_version(
+    session: AsyncSession, user: User, draft_id: uuid.UUID, number: int
+) -> None:
+    """From the extension: the User applied with this exact pinned version, which may be
+    older than the current one. Repeating it changes nothing (idempotent)."""
+    draft = await owned_draft(session, user, draft_id, lock=True)
+    if draft.state != "ready" or not draft.current_version:
+        raise ConflictError("This Draft is not ready")
+    await version(session, draft, number)  # 404 for a version that does not exist
+    await applications.mark_applied(session, user, draft.job_id, draft.id, number)

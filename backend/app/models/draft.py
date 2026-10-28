@@ -77,6 +77,9 @@ class Application(Base):
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="RESTRICT"))
     # The Draft last used for this Job.
     draft_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("drafts.id", ondelete="SET NULL"))
+    # The Draft version the User applied with; versions are immutable, so its PDFs stay
+    # exactly what was sent even after later edits or replacements.
+    draft_version: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default=ApplicationStatus.DRAFTED)
     # When the User first applied; stays set through later statuses (FR-D5).
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
