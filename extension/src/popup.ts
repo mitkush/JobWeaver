@@ -23,7 +23,8 @@ async function ask<T>(message: PopupMessage, timeoutMs?: number): Promise<T> {
       pending,
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Reading the page timed out. ${RELOAD_HELP}`)), timeoutMs); }),
     ]) : await pending;
-    if (response && typeof response === "object" && "error" in response && typeof response.error === "string") throw new Error(response.error);
+    const disconnectedStatus = message.type === "status" && response && typeof response === "object" && "connected" in response && response.connected === false;
+    if (!disconnectedStatus && response && typeof response === "object" && "error" in response && typeof response.error === "string") throw new Error(response.error);
     if (response === undefined) throw new Error(`The extension did not reply. ${RELOAD_HELP}`);
     if (response === null && !["lastFill", "capturedJob", "select", "clear", "open"].includes(message.type)) throw new Error(`The extension returned an incomplete reply. ${RELOAD_HELP}`);
     return response as T;

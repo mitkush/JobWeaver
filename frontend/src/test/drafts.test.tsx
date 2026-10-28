@@ -400,3 +400,17 @@ it("blocks browser history navigation while keeping the pending destination", as
   await user.click(screen.getByRole("button", { name: "Discard and leave" }));
   expect(await screen.findByRole("heading", { name: "Previous Job" })).toBeInTheDocument();
 });
+
+it("makes saving the primary footer action and discarding a secondary action", async () => {
+  setup();
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Draft line 1"), " and SQL");
+  await user.click(screen.getByRole("link", { name: /Back to Job/ }));
+  const dialog = screen.getByRole("dialog");
+  const save = within(dialog).getByRole("button", { name: "Save and leave" });
+  const discard = within(dialog).getByRole("button", { name: "Discard and leave" });
+  expect(dialog.lastElementChild).toContainElement(save);
+  expect(dialog.lastElementChild).toContainElement(discard);
+  expect(save).toHaveClass("bg-brand-600");
+  expect(discard).not.toHaveClass("bg-brand-600");
+});

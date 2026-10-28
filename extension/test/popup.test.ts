@@ -27,7 +27,7 @@ async function popup(read: () => unknown, options: {
     tabs: { query: async () => [{ id: 42, url: pageJob.url }] },
   });
   await import("../src/popup");
-  await vi.waitFor(() => expect(readButton() ?? document.querySelector('[role="alert"]')).toBeTruthy());
+  await vi.waitFor(() => expect(readButton() ?? document.querySelector('[role="alert"]') ?? document.querySelector('#connect:not([hidden])')).toBeTruthy());
   return send;
 }
 
@@ -37,7 +37,7 @@ function readButton() {
 
 beforeEach(() => {
   vi.resetModules();
-  document.body.innerHTML = '<p id="status"></p><div id="content"></div><button id="connect"></button><button id="disconnect"></button>';
+  document.body.innerHTML = '<p id="status"></p><div id="content"></div><button id="connect" hidden></button><button id="disconnect" hidden></button>';
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -151,4 +151,17 @@ it("renders a retry action for page-loading errors without presenting empty data
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("unavailable");
   expect([...document.querySelectorAll("button")].some(b => b.textContent === "Retry")).toBe(true);
   expect(document.body.textContent).not.toContain("No ready Drafts");
+});
+
+it.each([
+  "Your connection expired. Connect again.",
+  "JobWeaver revoked the connection. Connect again.",
+  "Connect it again to approve the new access.",
+])("shows Connect and the disconnected reason: %s", async (reason) => {
+  const send = await popup(() => pageJob, { reply: type => type === "status" ? { connected: false, error: reason } : undefined });
+  expect(document.querySelector("#status")?.textContent).toBe(reason);
+  expect(document.querySelector<HTMLButtonElement>("#connect")!.hidden).toBe(false);
+  expect(document.querySelector<HTMLButtonElement>("#disconnect")!.hidden).toBe(true);
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  expect(send.mock.calls.some(([m]) => m.type === "page")).toBe(false);
 });

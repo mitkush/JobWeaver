@@ -179,9 +179,9 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const movedLines = new Set([...movedIndexes(keptLines.map(([, old]) => old))].map((j) => keptLines[j]![0]));
   return (
     <div className="space-y-5">
-      <ConfirmDialog open={blocker.state === "blocked"} title="Save your edits before leaving?" confirmLabel="Discard and leave" loading={actions.save.isPending} onCancel={() => blocker.state === "blocked" && blocker.reset()} onConfirm={() => blocker.state === "blocked" && blocker.proceed()}>
+      <ConfirmDialog open={blocker.state === "blocked"} title="Save your edits before leaving?" confirmLabel="Save and leave" tone="primary" loading={actions.save.isPending} confirmDisabled={busy || stale} onCancel={() => blocker.state === "blocked" && blocker.reset()} onConfirm={() => void (async () => { if (await save()) { if (blocker.state === "blocked") blocker.proceed(); } })()}
+        secondaryAction={<Button variant="secondary" disabled={busy} onClick={() => blocker.state === "blocked" && blocker.proceed()}>Discard and leave</Button>}>
         <p>Your unsaved changes will be lost if you leave without saving. Cancel keeps you here.</p>
-        <Button disabled={busy || stale} onClick={async () => { if (await save()) { if (blocker.state === "blocked") blocker.proceed(); } }}>Save and leave</Button>
         {error && <Alert tone="error">{error}</Alert>}
       </ConfirmDialog>
       <Link to={`/jobs/${draft.job_id}`} className="text-sm text-brand-700 dark:text-brand-200">← Back to Job</Link>
