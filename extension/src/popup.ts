@@ -23,7 +23,9 @@ async function ask<T>(message: PopupMessage, timeoutMs?: number): Promise<T> {
       pending,
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Reading the page timed out. ${RELOAD_HELP}`)), timeoutMs); }),
     ]) : await pending;
+    if (response && typeof response === "object" && "error" in response && typeof response.error === "string") throw new Error(response.error);
     if (response === undefined) throw new Error(`The extension did not reply. ${RELOAD_HELP}`);
+    if (response === null && !["lastFill", "capturedJob", "select", "clear", "open"].includes(message.type)) throw new Error(`The extension returned an incomplete reply. ${RELOAD_HELP}`);
     return response as T;
   } catch (error) {
     if (error instanceof Error && /context invalidated|receiving end|message port|establish connection/i.test(error.message)) {
@@ -103,6 +105,8 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
   section.append(h("p", { class: "muted" }, "Start here even if this Job is not in JobWeaver. Read its JD, review it, then create a Draft from your Fact Bank."), body, h("div", { class: "actions" }, read));
   void ask<(Captured & { error?: string }) | null>({ type: "capturedJob", tabId }).then((saved) => {
     if (saved && !saved.error && !body.childElementCount) showSaved(saved);
+  }).catch((error: unknown) => {
+    if (!body.childElementCount) body.append(h("p", { class: "warn-text", role: "alert" }, error instanceof Error ? error.message : "The saved Job could not load."));
   });
 
   function showReview(job: PageJob) {
@@ -157,13 +161,14 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
   return section;
 }
 
-function selectedSection(tabId: number, d: DraftVersion, refresh: () => void): HTMLElement {
+function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, needsConfirmation = false): HTMLElement {
   const newer = d.current_version > d.number;
   return h(
     "section",
     { class: "panel" },
     h("p", { class: "label" }, "Draft for this page"),
     h("p", { class: "title" }, draftLabel(d)),
+    needsConfirmation ? h("div", {}, h("p", { class: "warn-text" }, "The page changed. Confirm this is still the Job you are applying for."), button("Use this Draft on this page", async () => { await chooseDraft(tabId, d.draft_id, d.number); refresh(); })) : null,
     h("p", {}, `Version ${d.number}, saved ${fromNow(d.saved_at)}.`),
     h("ul", { class: "files" }, h("li", {}, d.resume_file), h("li", {}, d.cover_letter_file)),
     d.warnings ? h("p", { class: "warn-text" }, `${d.warnings} ${d.warnings === 1 ? "warning" : "warnings"} to check in the Draft.`) : null,
@@ -172,7 +177,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void): H
       "div",
       { class: "actions" },
       newer ? button(`Use version ${d.current_version}`, async () => {
-        await ask({ type: "select", tabId, draftId: d.draft_id, number: d.current_version });
+        await chooseDraft(tabId, d.draft_id, d.current_version);
         refresh();
       }) : null,
       button("Open Draft", () => open(`/drafts/${d.draft_id}`), "ghost"),
@@ -210,7 +215,7 @@ function chooseSection(tabId: number, state: PageState, refresh: () => void): HT
     h("p", { class: "label" }, intro),
     select,
     h("div", { class: "actions" }, button("Use this Draft", async () => {
-      await ask({ type: "select", tabId, draftId: select.value });
+      await chooseDraft(tabId, select.value);
       refresh();
     })),
   );
@@ -235,6 +240,8 @@ function fillSection(tabId: number): HTMLElement {
   // Reopened after checking the page: show the last fill with its Undo and downloads.
   void ask<FillResult | null>({ type: "lastFill", tabId }).then((last) => {
     if (last && !body.childElementCount) showReport(last);
+  }).catch((error: unknown) => {
+    if (!body.childElementCount) body.append(h("p", { class: "warn-text", role: "alert" }, error instanceof Error ? error.message : "The previous fill could not load."));
   });
 
   async function runScan() {
@@ -274,7 +281,11 @@ function fillSection(tabId: number): HTMLElement {
       const refs = Array.from(body.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked"), (b) => b.value);
       fillButton.disabled = true;
       const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), (el) => [el.dataset.answerRef!, el.value]));
-      showReport(await ask<FillResult>({ type: "fill", tabId, refs, answers }));
+      try {
+        const report = await ask<FillResult>({ type: "fill", tabId, refs, answers });
+        if (!report || !Array.isArray(report.filled) || !Array.isArray(report.failed) || !Array.isArray(report.downloads) || !report.labels) throw new Error("The fill report was incomplete. Scan again before retrying.");
+        showReport(report);
+      } finally { fillButton.disabled = false; }
     });
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
@@ -290,11 +301,14 @@ function fillSection(tabId: number): HTMLElement {
     const label = (ref: string) => report.labels[ref] ?? "A field";
     const undoButton = button("Undo", async () => {
       undoButton.disabled = true;
-      const undone = await ask<FillReport>({ type: "undo", tabId });
-      body.replaceChildren(
-        h("p", {}, `Undid ${undone.filled.length} ${undone.filled.length === 1 ? "field" : "fields"}.`),
-        ...undone.failed.map((f) => h("p", { class: "muted" }, `${label(f.ref)}: ${f.reason}`)),
-      );
+      try {
+        const undone = await ask<FillReport>({ type: "undo", tabId });
+        if (!undone || !Array.isArray(undone.filled) || !Array.isArray(undone.failed)) throw new Error("Undo did not return a report. Check the form before retrying.");
+        body.replaceChildren(
+          h("p", {}, `Undid ${undone.filled.length} ${undone.filled.length === 1 ? "field" : "fields"}.`),
+          ...undone.failed.map((f) => h("p", { class: "muted" }, `${label(f.ref)}: ${f.reason}`)),
+        );
+      } finally { undoButton.disabled = false; }
     }, "ghost");
     body.replaceChildren(
       h("p", { class: "ok" }, `Filled ${report.filled.length} ${report.filled.length === 1 ? "field" : "fields"}. Check them on the page, then submit yourself.`),
@@ -321,27 +335,41 @@ async function render() {
   if (tab?.id === undefined) return;
   const tabId = tab.id;
   const state = await ask<PageState>({ type: "page", tabId, url: tab.url });
-  const refresh = () => void render();
+  const refresh = () => void renderSafely();
   content.replaceChildren(...parts(
     profileSection(state),
     !tab.url || /^https?:/.test(tab.url) ? captureSection(tabId, refresh) : null,
-    state.selected ? selectedSection(tabId, state.selected, refresh) : chooseSection(tabId, state, refresh),
+    state.selected ? selectedSection(tabId, state.selected, refresh, state.needsConfirmation) : chooseSection(tabId, state, refresh),
     // Browser pages cannot be filled; without activeTab the address is unknown, so offer it.
-    !tab.url || /^https?:/.test(tab.url) ? fillSection(tabId) : null,
+    (!tab.url || /^https?:/.test(tab.url)) && !state.needsConfirmation ? fillSection(tabId) : null,
   ));
 }
 
 connectButton.addEventListener("click", async () => {
   connectButton.disabled = true;
-  await ask({ type: "connect" });
-  window.close();
+  try { await ask({ type: "connect" }); window.close(); }
+  catch (error) { statusText.textContent = error instanceof Error ? error.message : "Connection failed. Try again."; }
+  finally { connectButton.disabled = false; }
 });
 
 disconnectButton.addEventListener("click", async () => {
   disconnectButton.disabled = true;
-  await ask({ type: "disconnect" });
-  disconnectButton.disabled = false;
-  void render();
+  try { await ask({ type: "disconnect" }); await renderSafely(); }
+  catch (error) { statusText.textContent = error instanceof Error ? error.message : "Disconnect failed. Try again."; }
+  finally { disconnectButton.disabled = false; }
 });
 
-void render();
+void renderSafely();
+
+async function chooseDraft(tabId: number, draftId: string, number?: number) {
+  const result = await ask<DraftVersion | null>({ type: "select", tabId, draftId, number });
+  if (!result?.draft_id) throw new Error("This Draft could not be selected. It may have been deleted or is still preparing. Try again or choose another Draft.");
+  return result;
+}
+
+async function renderSafely() {
+  try { await render(); } catch (error) {
+    statusText.textContent = "JobWeaver could not load.";
+    content.replaceChildren(h("p", { role: "alert", class: "warn-text" }, error instanceof Error ? error.message : "Try again."), button("Retry", () => renderSafely()));
+  }
+}

@@ -151,4 +151,10 @@ describe("using the connection", () => {
     expect(init?.method).toBe("DELETE");
     expect(data.has("connection")).toBe(false);
   });
+
+it("keeps the connection when the status endpoint is temporarily unavailable", async () => {
+  const { deps, data } = await connected(() => json({}, 503));
+  await expect(status(deps)).rejects.toThrow(/unavailable/);
+  expect(data.has("connection")).toBe(true);
+});
 });

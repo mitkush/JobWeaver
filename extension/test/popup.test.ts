@@ -6,11 +6,16 @@ const pageJob = { title: "Rails engineer", company: "Example", description: "Bui
 async function popup(read: () => unknown, options: {
   selected?: Record<string, unknown>;
   permission?: () => Promise<boolean>;
+  reply?: (type: string) => unknown;
+  needsConfirmation?: boolean;
+  recent?: unknown[];
   saveResult?: { error?: string; ok?: boolean };
 } = {}) {
   const send = vi.fn(async (message: { type: string }) => {
+    const override = options.reply?.(message.type);
+    if (override !== undefined) return override;
     if (message.type === "status") return { connected: true, email: "test@example.com" };
-    if (message.type === "page") return { profile: { reviewed: true, needs_review: false, version: 1 }, matches: [], recent: [], selected: options.selected ?? null };
+    if (message.type === "page") return { profile: { reviewed: true, needs_review: false, version: 1 }, matches: [], recent: options.recent ?? [], selected: options.selected ?? null, needsConfirmation: options.needsConfirmation ?? false };
     if (message.type === "readJob") return read();
     if (message.type === "savePdfs") return options.saveResult ?? { ok: true };
     return null;
@@ -22,7 +27,7 @@ async function popup(read: () => unknown, options: {
     tabs: { query: async () => [{ id: 42, url: pageJob.url }] },
   });
   await import("../src/popup");
-  await vi.waitFor(() => expect(readButton()).toBeDefined());
+  await vi.waitFor(() => expect(readButton() ?? document.querySelector('[role="alert"]')).toBeTruthy());
   return send;
 }
 
@@ -107,4 +112,43 @@ it("shows rejected permission requests in the popup", async () => {
   await popup(() => pageJob, { selected: selectedDraft, permission: async () => { throw new Error("Permission request failed"); } });
   [...document.querySelectorAll("button")].find((b) => b.textContent === "Save PDFs in company folder")!.click();
   await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe("Permission request failed"));
+});
+
+it("shows a failed Draft selection instead of silently refreshing", async () => {
+  await popup(() => pageJob, { recent: [{ ...selectedDraft, current_version: 1 }], reply: type => type === "select" ? null : undefined });
+  [...document.querySelectorAll("button")].find(b => b.textContent === "Use this Draft")!.click();
+  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toMatch(/could not be selected/));
+});
+it("shows the provider error and reenables Fill and Undo after failed replies", async () => {
+  let failedFill = true;
+  const report = { filled: ["r1"], failed: [], downloads: [], labels: { r1: "Name" } };
+  await popup(() => pageJob, { selected: selectedDraft, reply: type => {
+    if (type === "scan") return { proposals: [{ ref: "r1", label: "Name", value: "Asha", source: "profile" }], manual: [], profileReviewed: true, draft: {} };
+    if (type === "fill") return failedFill ? { error: "The form changed. Scan again." } : report;
+    if (type === "undo") return { error: "The page disconnected. Try again." };
+  } });
+  [...document.querySelectorAll("button")].find(b => b.textContent === "Scan this form")!.click();
+  await vi.waitFor(() => expect([...document.querySelectorAll("button")].some(b => b.textContent === "Fill ticked fields")).toBe(true));
+  const fill = [...document.querySelectorAll("button")].find(b => b.textContent === "Fill ticked fields")!;
+  fill.click();
+  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe("The form changed. Scan again."));
+  expect(fill.disabled).toBe(false);
+  failedFill = false; fill.click();
+  await vi.waitFor(() => expect([...document.querySelectorAll("button")].some(b => b.textContent === "Undo")).toBe(true));
+  const undo = [...document.querySelectorAll("button")].find(b => b.textContent === "Undo")!;
+  undo.click();
+  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe("The page disconnected. Try again."));
+  expect(undo.disabled).toBe(false);
+});
+it("does not offer scanning until a retained Draft is confirmed on the new page", async () => {
+  await popup(() => pageJob, { selected: selectedDraft, needsConfirmation: true });
+  expect(document.body.textContent).toContain("Use this Draft on this page");
+  expect(document.body.textContent).not.toContain("Scan this form");
+});
+
+it("renders a retry action for page-loading errors without presenting empty data", async () => {
+  await popup(() => pageJob, { reply: type => type === "page" ? { error: "JobWeaver is unavailable. Try again." } : undefined });
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("unavailable");
+  expect([...document.querySelectorAll("button")].some(b => b.textContent === "Retry")).toBe(true);
+  expect(document.body.textContent).not.toContain("No ready Drafts");
 });

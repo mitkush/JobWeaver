@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 
 import { DraftPage, DraftWorkspace } from "@/pages/DraftPage";
@@ -56,7 +56,7 @@ function setup(initial = makeDraft(), extra: Record<string, (r: Request) => Resp
     },
     ...extra,
   });
-  renderWithApp(<Routes><Route path="/drafts/:draftId" element={<DraftPage />} /></Routes>, { route: "/drafts/draft-1" });
+  renderWithApp(<Routes><Route path="/drafts/:draftId" element={<DraftPage />} /><Route path="/jobs/:jobId" element={<h1>Job destination</h1>} /></Routes>, { route: "/drafts/draft-1" });
   return calls;
 }
 
@@ -348,4 +348,55 @@ it("confirms permanent deletion with the displayed version", async () => {
   expect(calls.some((r) => r.method === "DELETE")).toBe(false);
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete draft" }));
   await waitFor(() => expect(calls.some((r) => r.method === "DELETE" && new URL(r.url).searchParams.get("expected_version") === "1")).toBe(true));
+});
+
+it("protects manual edits on internal navigation and supports discard or keep editing", async () => {
+  setup();
+  const user = userEvent.setup();
+  const line = await screen.findByLabelText("Draft line 1");
+  await user.type(line, " and SQL");
+  await user.click(screen.getByRole("link", { name: /Back to Job/ }));
+  expect(await screen.findByRole("dialog")).toHaveTextContent("Save your edits before leaving?");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByLabelText("Draft line 1")).toHaveValue("Python and SQL");
+  await user.click(screen.getByRole("link", { name: /Back to Job/ }));
+  await user.click(screen.getByRole("button", { name: "Discard and leave" }));
+  expect(await screen.findByRole("heading", { name: "Job destination" })).toBeInTheDocument();
+});
+it("saves successfully before following a blocked navigation", async () => {
+  const calls = setup();
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Draft line 1"), " and SQL");
+  await user.click(screen.getByRole("link", { name: /Back to Job/ }));
+  await user.click(screen.getByRole("button", { name: "Save and leave" }));
+  expect(await screen.findByRole("heading", { name: "Job destination" })).toBeInTheDocument();
+  const save = calls.find(r => r.method === "PUT")!;
+  expect((await save.json()).content.resume[0].text).toBe("Python and SQL");
+});
+it("retains edits and stays on the Draft when Save and leave fails", async () => {
+  setup(makeDraft(), { "PUT /api/drafts/draft-1": () => json({ error: { message: "Save unavailable", code: "unavailable" } }, 503) });
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Draft line 1"), " and SQL");
+  await user.click(screen.getByRole("link", { name: /Back to Job/ }));
+  await user.click(screen.getByRole("button", { name: "Save and leave" }));
+  await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("Save unavailable"));
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByLabelText("Draft line 1")).toHaveValue("Python and SQL");
+});
+
+it("blocks browser history navigation while keeping the pending destination", async () => {
+  const draft = makeDraft();
+  mockFetch({ "GET /api/drafts/draft-1/versions": () => json([draft.version]) });
+  function WorkspaceWithBack() {
+    const navigate = useNavigate();
+    return <><button onClick={() => navigate(-1)}>History back</button><DraftWorkspace draft={draft} /></>;
+  }
+  renderWithApp(<Routes><Route path="/jobs/:jobId" element={<h1>Previous Job</h1>} /><Route path="/drafts/:draftId" element={<WorkspaceWithBack />} /></Routes>, { initialEntries: ["/jobs/job-1", "/drafts/draft-1"] });
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("Draft line 1"), " and SQL");
+  await user.click(screen.getByRole("button", { name: "History back" }));
+  expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Previous Job" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Discard and leave" }));
+  expect(await screen.findByRole("heading", { name: "Previous Job" })).toBeInTheDocument();
 });

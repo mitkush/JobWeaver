@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import axe from "axe-core";
 import { expect, vi } from "vitest";
 
@@ -29,13 +29,11 @@ export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-export function renderWithApp(ui: ReactElement, { route = "/" }: { route?: string } = {}) {
+export function renderWithApp(ui: ReactElement, { route = "/", initialEntries = [route] }: { route?: string; initialEntries?: string[] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[route]}>
-        <ToastProvider>{ui}</ToastProvider>
-      </MemoryRouter>
+      <RouterProvider router={createMemoryRouter([{ path: "*", element: <ToastProvider>{ui}</ToastProvider> }], { initialEntries })} />
     </QueryClientProvider>,
   );
 }

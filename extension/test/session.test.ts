@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { requireConfirmation } from "../src/drafts";
 import type { Deps } from "../src/connection";
 import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "../src/fill/session";
 import type { FillItem, Scan } from "../src/fill/types";
@@ -135,4 +136,12 @@ it("requires an explicitly reviewed answer and fills the edited text", async () 
   expect((await fillTab(deps, port, 5, ["q"], { q: "My reviewed answer" })).filled).toEqual(["q"]);
   expect((sent.at(-1) as { items: FillItem[] }).items).toEqual([{ ref: "q", kind: "textarea", value: "My reviewed answer" }]);
   expect((await fillTab(deps, port, 5, ["q"], { q: "x".repeat(41) })).failed).toHaveLength(1);
+});
+
+it("refuses scan and prepared fill after navigation until the Draft is reconfirmed", async () => {
+  const { deps, port } = setup((items) => ({ filled: items.map(i => i.ref), failed: [] }));
+  await scanTab(deps, port, 5);
+  await requireConfirmation(deps, 5);
+  await expect(scanTab(deps, port, 5)).rejects.toThrow(/Confirm/);
+  await expect(fillTab(deps, port, 5, ["r3"])).rejects.toThrow(/Confirm/);
 });
