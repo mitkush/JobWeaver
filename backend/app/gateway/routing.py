@@ -83,3 +83,6 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("mistral", MISTRAL_SMALL, 8192),
     ],
 }
+
+# Background proposals have the full-Draft budgets; synchronous chat remains bounded.
+ROUTING_TABLE["propose_draft"] = list(ROUTING_TABLE["tailor_draft"])

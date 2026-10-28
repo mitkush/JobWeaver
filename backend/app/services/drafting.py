@@ -119,7 +119,7 @@ def version_out(row: DraftVersion) -> VersionOut:
 
 
 def ready(draft: Draft, expected: int) -> None:
-    if draft.state != "ready" or draft.current_version != expected:
+    if not draft.active or draft.state != "ready" or draft.current_version != expected:
         raise ConflictError("The Draft changed. Reload it before saving your changes.")
 
 
@@ -168,8 +168,10 @@ async def _updated_facts(
     return latest
 
 
-def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
-    job = draft.job_snapshot
+def _request(
+    draft: Draft, facts: list[FactSnapshot], job_context: dict | None = None
+) -> TailorDraftRequest:
+    job = job_context if job_context is not None else draft.job_snapshot
     return TailorDraftRequest(
         user_id=draft.user_id,
         job_title=str(job["title"]),
@@ -181,8 +183,10 @@ def _request(draft: Draft, facts: list[FactSnapshot]) -> TailorDraftRequest:
     )
 
 
-def _check(draft: Draft, content: DraftContent, facts: list[FactSnapshot]) -> CheckResult:
-    job = draft.job_snapshot
+def _check(
+    draft: Draft, content: DraftContent, facts: list[FactSnapshot], job_context: dict | None = None
+) -> CheckResult:
+    job = job_context if job_context is not None else draft.job_snapshot
     content = fill_placeholders(
         content,
         name=str(job.get("name") or ""),
@@ -284,7 +288,7 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
         .where(
             Draft.user_id == user.id,
             Draft.job_id == job_id,
-            Draft.state.in_(["queued", "generating"]),
+            Draft.active.is_(True),
         )
         .order_by(Draft.created_at.desc())
     )
@@ -293,7 +297,8 @@ async def create(session: AsyncSession, user: User, job_id: uuid.UUID) -> Draft:
             select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
         )
         if (
-            current_link
+            existing.state in ("queued", "generating")
+            and current_link
             and current_link.page_description
             and str(current_link.page_description["description"])
             != existing.job_snapshot.get("description")
@@ -359,13 +364,20 @@ async def _save_version(
     source: str,
     warnings: list[str] | None = None,
     message: str = "",
+    job_context: dict | None = None,
 ) -> DraftVersion:
+    if job_context is None:
+        previous = await version(session, draft) if draft.current_version else None
+        job_context = (
+            previous.job_context if previous and previous.job_context else draft.job_snapshot
+        )
     draft.current_version += 1
     row = DraftVersion(
         user_id=draft.user_id,
         draft_id=draft.id,
         number=draft.current_version,
         source=source,
+        job_context=dict(job_context),
         content=content.model_dump(mode="json"),
         facts=[fact.model_dump(mode="json") for fact in facts],
         warnings=warnings or [],
@@ -638,7 +650,8 @@ async def fitting_template(draft: Draft, row: DraftVersion) -> Literal["standard
     if key not in _TEMPLATE_FITS:
         content = DraftContent.model_validate(row.content)
         facts = [FactSnapshot.model_validate(fact) for fact in row.facts]
-        name, email = str(draft.job_snapshot["name"]), str(draft.job_snapshot["email"])
+        context = row.job_context or draft.job_snapshot
+        name, email = str(context["name"]), str(context["email"])
         try:
             pages = {
                 template: await asyncio.to_thread(page_count, content, name, email, template, facts)
@@ -663,10 +676,11 @@ async def detail(session: AsyncSession, user: User, draft_id: uuid.UUID) -> Draf
             Application.user_id == user.id, Application.job_id == draft.job_id
         )
     )
-    job = draft.job_snapshot
+    job = current.job_context if current and current.job_context else draft.job_snapshot
     return DraftOut(
         id=draft.id,
         job_id=draft.job_id,
+        active=draft.active,
         state=draft.state,
         progress=draft.progress,
         error=draft.error,
@@ -721,7 +735,7 @@ async def save(
             else:
                 line.manual = old[line.id].manual
     # The User's own words are flagged, never refused or deleted (FR-E6, ADR-0005).
-    checked = _check(draft, edited, facts)
+    checked = _check(draft, edited, facts, previous.job_context or draft.job_snapshot)
     await _save_version(session, draft, checked.content, facts, "manual", checked.warnings)
 
 
@@ -732,7 +746,12 @@ async def recheck(session: AsyncSession, user: User, draft_id: uuid.UUID, expect
     facts = await _updated_facts(
         session, user, [FactSnapshot.model_validate(fact) for fact in previous.facts]
     )
-    checked = _check(draft, DraftContent.model_validate(previous.content), facts)
+    checked = _check(
+        draft,
+        DraftContent.model_validate(previous.content),
+        facts,
+        previous.job_context or draft.job_snapshot,
+    )
     if not checked.content.resume or not checked.content.cover_letter:
         raise ValidationFailedError(
             "The current Fact Bank cannot support this Draft. Restore the missing Facts "
@@ -777,7 +796,9 @@ async def chat(
             "Not in your Fact Bank: " + ", ".join(missing) + ". Add the Facts there first."
         )
     request = ReviseDraftRequest(
-        **_request(draft, facts).model_dump(), content=content, message=message
+        **_request(draft, facts, current.job_context or draft.job_snapshot).model_dump(),
+        content=content,
+        message=message,
     )
     try:
         async with asyncio.timeout(DRAFT_CHAT_TIMEOUT_SECONDS):
@@ -787,7 +808,9 @@ async def chat(
     for part in ("resume", "cover_letter", "email_body"):
         for line in getattr(response.result.content, part):
             line.manual = False  # whatever the model claims, these lines are AI text
-    proposed = _check(draft, response.result.content, facts)
+    proposed = _check(
+        draft, response.result.content, facts, current.job_context or draft.job_snapshot
+    )
     proposal = proposed.content
     if not proposal.resume or not proposal.cover_letter:
         raise ValidationFailedError("This change needs Facts that are not in your Fact Bank.")
@@ -808,7 +831,7 @@ async def chat(
     proposal.email_subject = content.email_subject
     proposal.email_greeting = content.email_greeting
     # Your kept lines are checked again (a Fact may have changed) and flagged, not removed.
-    final = _check(draft, proposal, facts)
+    final = _check(draft, proposal, facts, current.job_context or draft.job_snapshot)
     await _save_version(
         session,
         draft,
@@ -838,6 +861,7 @@ async def restore(
         "restore",
         old.warnings,
         f"Restored version {number}",
+        job_context=old.job_context or draft.job_snapshot,
     )
 
 
@@ -851,7 +875,7 @@ async def pdf(
 ) -> tuple[bytes, str]:
     draft = await owned_draft(session, user, draft_id)
     row = await version(session, draft, number)
-    job = draft.job_snapshot
+    job = row.job_context or draft.job_snapshot
     content = DraftContent.model_validate(row.content)
     data = await asyncio.to_thread(
         render_pdf,
@@ -901,7 +925,7 @@ async def handoff(
     recipient = check.recipient
     row = await version(session, draft)
     content = DraftContent.model_validate(row.content)
-    job = draft.job_snapshot
+    job = row.job_context or draft.job_snapshot
     email_subject = " ".join(content.email_subject.split())
     sign = signature(
         content,

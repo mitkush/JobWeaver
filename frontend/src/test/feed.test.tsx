@@ -213,6 +213,11 @@ it("rejects a possible duplicate and splits a posting", async () => {
   expect(await screen.findByText("Kept as separate jobs")).toBeInTheDocument();
   const splitButtons = screen.getAllByRole("button", { name: "Not the same Job" }).filter((b) => !duplicates.contains(b));
   await userEvent.click(splitButtons[1]!);
+  // Splitting changes the shared grouping for everyone, so it is confirmed first.
+  const confirm = await screen.findByRole("dialog");
+  expect(confirm).toHaveTextContent("changes the shared Job grouping for everyone");
+  expect(calls.some((c) => c.url.endsWith("/postings/p2/split"))).toBe(false);
+  await userEvent.click(within(confirm).getByRole("button", { name: "Separate listing" }));
   expect(await screen.findByText("Moved to a separate job")).toBeInTheDocument();
   expect(calls.some((c) => c.url.endsWith("/postings/p2/split"))).toBe(true);
 });
@@ -334,4 +339,32 @@ it("keeps source health notices off the Feed and does not request them", async (
   await screen.findByRole("link", { name: "Backend Engineer" });
   expect(screen.queryByText("LinkedIn searches are delayed")).not.toBeInTheDocument();
   expect(calls.some((call) => call.url.includes("/sources/notices"))).toBe(false);
+});
+
+it("puts the description first and names where it came from", async () => {
+  mockFetch({
+    "GET /api/jobs/job-1": () =>
+      json(makeJob({
+        description: "Responsibilities\n- Build billing APIs",
+        description_origin: { kind: "page", url: "https://careers.acme.com/jobs/1", read_at: "2026-10-28T08:00:00Z" },
+        experience_requirement: "3-5 years",
+      })),
+  });
+  renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
+  expect(await screen.findByText("From your reviewed careers-page description")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open description source" })).toHaveAttribute("href", "https://careers.acme.com/jobs/1");
+  expect(screen.getByRole("heading", { name: "Responsibilities" })).toBeInTheDocument();
+  expect(screen.getByText("Experience: 3-5 years")).toBeInTheDocument();
+  // Listing details for everyone are collapsed below the description.
+  expect(screen.getByText(/Sources and listing details/)).toBeInTheDocument();
+});
+
+it("returns to the same Feed filters from a Job", async () => {
+  mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard()])),
+    "GET /api/jobs/job-1": () => json(makeJob()),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed?q=rails&section=email" });
+  await userEvent.click(await screen.findByRole("link", { name: "Backend Engineer" }));
+  expect(await screen.findByRole("link", { name: "Back to feed" })).toHaveAttribute("href", "/feed?q=rails&section=email");
 });

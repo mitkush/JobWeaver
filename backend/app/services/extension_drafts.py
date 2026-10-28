@@ -70,7 +70,12 @@ async def _ready(
                 Application,
                 (Application.user_id == Draft.user_id) & (Application.job_id == Draft.job_id),
             )
-            .where(Draft.user_id == user.id, Draft.state == "ready", Draft.current_version > 0)
+            .where(
+                Draft.user_id == user.id,
+                Draft.state == "ready",
+                Draft.active.is_(True),
+                Draft.current_version > 0,
+            )
             .order_by(DraftVersion.created_at.desc())
             .limit(MAX_DRAFTS)
         )
@@ -79,7 +84,7 @@ async def _ready(
 
 
 def _summary(draft: Draft, row: DraftVersion, status: str | None) -> ExtDraftSummary:
-    job = draft.job_snapshot
+    job = row.job_context or draft.job_snapshot
     return ExtDraftSummary(
         draft_id=draft.id,
         job_id=draft.job_id,
@@ -118,7 +123,7 @@ async def version_detail(
             Application.user_id == user.id, Application.job_id == draft.job_id
         )
     )
-    job = draft.job_snapshot
+    job = row.job_context or draft.job_snapshot
     names = [str(job["name"]), str(job["company"]), str(job["title"])]
     return ExtDraftVersion(
         draft_id=draft.id,

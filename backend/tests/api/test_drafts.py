@@ -750,19 +750,22 @@ async def test_moving_a_line_protects_it_like_an_edit(prepared):
     assert all(not by_id[line["id"]]["manual"] for line in content["resume"][2:])
 
 
-async def test_delete_draft_keeps_application_and_removes_versions(prepared, db):
+async def test_archiving_keeps_versions_and_the_application_link(prepared, db):
     user, client, job_id, _ = prepared
     draft = await generated(prepared)
     marked = await client.post(f"/api/drafts/{draft['id']}/applied", json={"expected_version": 1})
     assert marked.status_code == 204
-    deleted = await client.delete(f"/api/drafts/{draft['id']}?expected_version=1")
-    assert deleted.status_code == 204
-    assert (await client.get(f"/api/drafts/{draft['id']}")).status_code == 404
+    archived = await client.delete(f"/api/drafts/{draft['id']}?expected_version=1")
+    assert archived.status_code == 204
+    # The package used for the application stays readable, with its PDFs.
+    assert (await client.get(f"/api/drafts/{draft['id']}")).json()["active"] is False
+    pdf = await client.get(f"/api/drafts/{draft['id']}/pdf", params={"number": 1})
+    assert pdf.status_code == 200
     assert (
         await db.scalar(
             select(DraftVersion.id).where(DraftVersion.draft_id == uuid.UUID(draft["id"]))
         )
-        is None
+        is not None
     )
     owner_id = user.id
     db.expire_all()
@@ -770,7 +773,7 @@ async def test_delete_draft_keeps_application_and_removes_versions(prepared, db)
         select(Application).where(Application.user_id == owner_id, Application.job_id == job_id)
     )
     assert application.status == "applied"
-    assert application.draft_id is None
+    assert str(application.draft_id) == draft["id"]
 
 
 async def test_delete_checks_owner_version_and_in_progress(prepared, bob, db):
@@ -787,77 +790,29 @@ async def test_delete_checks_owner_version_and_in_progress(prepared, bob, db):
     assert (await client.delete(path + "?expected_version=1")).status_code == 409
 
 
-async def test_new_generation_keeps_previous_draft_and_edits(prepared):
+async def test_one_active_package_per_job_and_archiving_keeps_history(prepared, db):  # noqa: F811
     _, client, job_id, _ = prepared
     old = await generated(prepared)
     content = copy.deepcopy(old["version"]["content"])
     content["resume"][0]["text"] += " My saved wording."
-    assert (
-        await client.put(
-            f"/api/drafts/{old['id']}", json={"expected_version": 1, "content": content}
-        )
-    ).status_code == 200
+    saved = await client.put(
+        f"/api/drafts/{old['id']}", json={"expected_version": 1, "content": content}
+    )
+    assert saved.status_code == 200
+    # Creating again opens the active package instead of a second one.
+    again = await client.post("/api/drafts", json={"job_id": job_id})
+    assert again.status_code == 202
+    assert again.json()["id"] == old["id"]
+    assert again.json()["version"]["content"]["resume"][0]["text"].endswith("My saved wording.")
+
+    archived = await client.delete(f"/api/drafts/{old['id']}?expected_version=2")
+    assert archived.status_code == 204
+    kept = (await client.get(f"/api/drafts/{old['id']}")).json()
+    assert kept["active"] is False and kept["current_version"] == 2
+    # An archived package is read-only.
+    refused = await client.put(
+        f"/api/drafts/{old['id']}", json={"expected_version": 2, "content": content}
+    )
+    assert refused.status_code == 409
     fresh = await client.post("/api/drafts", json={"job_id": job_id})
-    assert fresh.status_code == 202
     assert fresh.json()["id"] != old["id"]
-    previous = (await client.get(f"/api/drafts/{old['id']}")).json()
-    assert previous["current_version"] == 2
-    assert previous["version"]["content"]["resume"][0]["text"].endswith("My saved wording.")
-
-
-@pytest.mark.parametrize("outcome", ["richer", "unavailable", "timeout", "unsafe", "overflow"])
-async def test_one_development_pass_is_checked_and_keeps_first_result_on_failure(
-    prepared, monkeypatch, outcome
-):
-    from app.gateway.schemas import DraftDevelopmentRequest
-
-    _, client, job_id, gateway = prepared
-    original = gateway.tailor_draft
-    calls = []
-    deadlines = []
-    timeout_at = drafting.asyncio.timeout_at
-
-    def observe_deadline(deadline):
-        deadlines.append(deadline)
-        return timeout_at(deadline)
-
-    async def tailor(request):
-        calls.append(request)
-        if isinstance(request, DraftDevelopmentRequest):
-            assert "Kubernetes" not in " ".join(
-                line.text for line in request.previous_content.resume
-            )
-            if outcome == "unavailable":
-                raise GatewayError("Temporarily unavailable")
-            if outcome == "timeout":
-                raise TimeoutError
-            response = await original(request)
-            response.result.content = request.previous_content.model_copy(deep=True)
-            response.result.content.resume.append(
-                DraftLine(
-                    id="developed",
-                    text="Ran Kubernetes clusters"
-                    if outcome == "unsafe"
-                    else "Cut report generation time from 10 minutes to 30 seconds",
-                    fact_refs=["F4"] if outcome == "unsafe" else ["F5"],
-                    section="Experience",
-                    manual=True,
-                )
-            )
-            return response
-        return await original(request)
-
-    monkeypatch.setattr(drafting, "needs_development", lambda *_: True)
-    monkeypatch.setattr(drafting, "page_count", lambda *_: 2 if outcome == "overflow" else 1)
-    monkeypatch.setattr(drafting.asyncio, "timeout_at", observe_deadline)
-    monkeypatch.setattr(gateway, "tailor_draft", tailor)
-    created = await client.post("/api/drafts", json={"job_id": job_id})
-    saved = (await client.get(f"/api/drafts/{created.json()['id']}")).json()
-    assert saved["state"] == "ready"
-    assert len(calls) == 2
-    assert len(deadlines) == 2 and deadlines[0] == deadlines[1]
-    assert saved["current_version"] == 1
-    lines = saved["version"]["content"]["resume"]
-    assert any(line["id"] == "developed" for line in lines) is (outcome == "richer")
-    assert not any(line["manual"] for line in lines)
-    assert "Kubernetes" not in " ".join(line["text"] for line in lines)

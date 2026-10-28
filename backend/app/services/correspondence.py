@@ -277,6 +277,14 @@ async def merge_jobs(
     if survivor.required_skills is None and gone.required_skills is not None:
         survivor.required_skills = gone.required_skills
         survivor.skills_extracted_at = gone.skills_extracted_at
+    survivor_owners = select(Draft.user_id).where(
+        Draft.job_id == survivor.id, Draft.active.is_(True)
+    )
+    await session.execute(
+        update(Draft)
+        .where(Draft.job_id == gone.id, Draft.user_id.in_(survivor_owners))
+        .values(active=False)
+    )
     await session.execute(update(Draft).where(Draft.job_id == gone.id).values(job_id=survivor.id))
     # One Application per User and Job: two become one, keeping both histories.
     await applications.move_to_job(session, gone.id, survivor.id)

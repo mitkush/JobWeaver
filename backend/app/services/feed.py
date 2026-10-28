@@ -612,7 +612,7 @@ async def package_states(
     company_ids = {job.company_id for job in jobs}
     drafts = await session.scalars(
         select(Draft)
-        .where(Draft.user_id == user.id, Draft.job_id.in_(job_ids))
+        .where(Draft.user_id == user.id, Draft.active.is_(True), Draft.job_id.in_(job_ids))
         .order_by(Draft.created_at.desc(), Draft.id.desc())
     )
     draft_ids: dict[uuid.UUID, uuid.UUID] = {}
@@ -830,6 +830,20 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         else primary.description
         if primary
         else "",
+        description_origin={
+            "kind": "page",
+            "url": link.page_description.get("url"),
+            "read_at": link.page_description.get("read_at"),
+        }
+        if link.page_description
+        else {
+            "kind": "source",
+            "label": labels.get(primary.source, (primary.source, None))[0]
+            if primary
+            else "Unknown source",
+            "url": primary.apply_url if primary else None,
+        },
+        experience_requirement=job.experience_requirement,
         locations=_locations(job),
         work_mode=job.work_mode,
         posted_at=job.posted_at,

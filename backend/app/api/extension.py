@@ -66,9 +66,11 @@ async def capture_draft(
         raise NotFoundError("Job not found")
     await drafting.ensure_link_open(db, user, job_id, link_http)
     draft = await drafting.create(db, user, job_id)
+    existing = draft.current_version > 0 or draft.state != "queued"
     await db.commit()
-    result = CapturedDraftOut(draft_id=draft.id, state=draft.state)
-    background.add_task(drafting.generate, draft.id, user.id, gateway)
+    result = CapturedDraftOut(draft_id=draft.id, state=draft.state, existing=existing)
+    if not existing:
+        background.add_task(drafting.generate, draft.id, user.id, gateway)
     return result
 
 

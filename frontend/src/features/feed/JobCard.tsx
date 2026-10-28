@@ -1,5 +1,5 @@
 import { Copy, Eye, EyeOff, MapPin } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import type { FeedCard } from "@/api/client";
 import { useSetHidden } from "@/api/hooks";
@@ -17,6 +17,7 @@ import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
 import { statusLabel } from "@/features/applications/status";
 
 export function JobCard({ job }: { job: FeedCard }) {
+  const location = useLocation();
   const setHidden = useSetHidden();
   const toast = useToast();
   const mode = workModeLabel(job.work_mode);
@@ -37,7 +38,7 @@ export function JobCard({ job }: { job: FeedCard }) {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">
             {/* Opening the Job is the Feed's one main action (UX rule 1). */}
-            <Link to={`/jobs/${job.job_id}`} className="hover:text-brand-700 focus-visible:underline dark:hover:text-brand-100">
+            <Link to={`/jobs/${job.job_id}`} state={{ from: location.pathname + location.search }} className="hover:text-brand-700 focus-visible:underline dark:hover:text-brand-100">
               {job.title}
             </Link>
           </h2>
@@ -67,7 +68,7 @@ export function JobCard({ job }: { job: FeedCard }) {
         {job.experience_requirement && <Badge>{job.experience_requirement} experience</Badge>}
         {job.posted_at && <span>Posted {fromNow(job.posted_at)}</span>}
         {job.possible_duplicate && (
-          <Link to={`/jobs/${job.job_id}#possible-duplicates`}>
+          <Link to={`/jobs/${job.job_id}#possible-duplicates`} state={{ from: location.pathname + location.search }}>
             <Badge tone="warning" className="gap-1">
               <Copy className="size-3" aria-hidden />
               Possible duplicate

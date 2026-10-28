@@ -1,6 +1,6 @@
 import { ArrowLeft, Building2, ExternalLink, Mail, MapPin, SearchX } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { useConfirmDuplicate, useJob, useRejectDuplicate, useSetHidden, useSplitPosting } from "@/api/hooks";
@@ -8,6 +8,8 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { JobDescription } from "@/features/feed/JobDescription";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
@@ -22,8 +24,11 @@ import { CreateDraftButton } from "@/features/drafts/CreateDraftButton";
 import { statusLabel } from "@/features/applications/status";
 
 function BackToFeed() {
+  const location = useLocation();
+  const from = location.state?.from;
+  const destination = typeof from === "string" && /^\/feed(?:[?#]|$)/.test(from) ? from : "/feed";
   return (
-    <Link to="/feed" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
+    <Link to={destination} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
       <ArrowLeft className="size-4" aria-hidden />
       Back to feed
     </Link>
@@ -40,6 +45,7 @@ export function JobPage() {
   const split = useSplitPosting();
   const setHidden = useSetHidden();
   const [busyPair, setBusyPair] = useState<{ id: string; action: "confirm" | "reject" } | null>(null);
+  const [splitCandidate, setSplitCandidate] = useState<string | null>(null);
   const [splitting, setSplitting] = useState<string | null>(null);
 
   if (job.isPending) return <PageSpinner label="Loading job" />;
@@ -119,6 +125,7 @@ export function JobPage() {
   return (
     <>
       <BackToFeed />
+      <ConfirmDialog open={splitCandidate !== null} title="Separate this listing?" confirmLabel="Separate listing" loading={splitting !== null} onCancel={() => setSplitCandidate(null)} onConfirm={() => { if (splitCandidate) void splitOut(splitCandidate).then(() => setSplitCandidate(null)); }}>This changes the shared Job grouping for everyone. Existing application history is kept. Only separate listings that describe different openings.</ConfirmDialog>
       {data.company_applied && (
         <Alert tone="warning" className="mb-4">
           Already applied to this Company (<Link to={`/companies/${data.company_id}`} className="underline">see your Applications there</Link>). You can still create a Draft for this Job.
@@ -126,7 +133,7 @@ export function JobPage() {
       )}
       {data.expired && (
         <Alert tone="warning" className="mb-4">
-          This job is no longer listed by any source.
+          This Job is closed or expired. Check the original advert before continuing.
         </Alert>
       )}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -144,6 +151,7 @@ export function JobPage() {
               <Badge key={place}>{place}</Badge>
             ))}
             {mode && <Badge>{mode}</Badge>}
+            {data.experience_requirement && <Badge>Experience: {data.experience_requirement}</Badge>}
             {data.application_status && <Badge>{statusLabel(data.application_status)}</Badge>}
             {data.posted_at && <span>Posted {fromNow(data.posted_at)}</span>}
           </div>
@@ -154,7 +162,7 @@ export function JobPage() {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
           <Button variant="ghost" onClick={toggleHidden} loading={setHidden.isPending}>
             {data.hidden ? "Show in feed" : "Hide"}
@@ -168,6 +176,16 @@ export function JobPage() {
         </div>
       </div>
 
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader title="Job description" description={data.description_origin?.kind === "page" ? "From your reviewed careers-page description" : primary ? `From ${primary.source.label}` : undefined} />
+            <CardBody>
+              {typeof data.description_origin?.url === "string" && <a className="mb-4 inline-block text-sm underline" href={data.description_origin.url} target="_blank" rel="noreferrer noopener">Open description source</a>}
+              <JobDescription text={data.description} />
+            </CardBody>
+          </Card>
       {data.possible_duplicates.length > 0 && (
         <section id="possible-duplicates" aria-label="Possible duplicates" className="mb-6 space-y-3">
           {data.possible_duplicates.map((duplicate) => (
@@ -182,8 +200,8 @@ export function JobPage() {
         </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-        <div className="space-y-6">
+          <details className="rounded border border-slate-200 p-4 dark:border-slate-700">
+            <summary className="cursor-pointer font-medium">Sources and listing details (Correspondence)</summary>
           <Card>
             <CardHeader
               title="Correspondence"
@@ -200,7 +218,7 @@ export function JobPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => splitOut(posting.id)}
+                          onClick={() => setSplitCandidate(posting.id)}
                           loading={splitting === posting.id}
                           disabled={splitting !== null}
                           title="Move this posting to a separate job, for everyone"
@@ -214,14 +232,8 @@ export function JobPage() {
               </ul>
             </CardBody>
           </Card>
-          <Card>
-            <CardHeader title="Job description" description={primary ? `From ${primary.source.label}` : undefined} />
-            <CardBody>
-              <div className="text-sm leading-relaxed whitespace-pre-line text-slate-700 dark:text-slate-300">
-                {data.description || "No description was provided."}
-              </div>
-            </CardBody>
-          </Card>
+          </details>
+
         </div>
         <aside>
           <Card>
@@ -229,21 +241,7 @@ export function JobPage() {
             <CardBody className="space-y-3">
               <MatchReason match={data.match} matched_keywords={data.matched_keywords} />
               <SkillGaps gaps={data.skill_gaps} matches={data.skill_matches} />
-              {data.required_skills && data.required_skills.length > 0 && (
-                <ul className="flex flex-wrap gap-1.5" aria-label="Required skills">
-                  {data.required_skills.map((skill) => {
-                    const missing = data.skill_gaps?.includes(skill);
-                    return (
-                      <li key={skill}>
-                        <Badge tone={missing ? "warning" : "success"}>
-                          {skill}
-                          <span className="sr-only">{missing ? " (missing)" : " (you have it)"}</span>
-                        </Badge>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+
             </CardBody>
           </Card>
         </aside>

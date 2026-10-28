@@ -123,6 +123,8 @@ class JobDetailOut(BaseModel):
     # For the User's history with this Company (FR-F3).
     company_id: uuid.UUID
     description: str
+    description_origin: dict[str, object] = Field(default_factory=dict)
+    experience_requirement: str | None = None
     locations: list[LocationOut]
     work_mode: str | None
     posted_at: datetime | None

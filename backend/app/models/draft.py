@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,7 +12,17 @@ from app.models.base import Base, user_fk
 
 class Draft(Base):
     __tablename__ = "drafts"
-    __table_args__ = (Index("idx_drafts_user_job", "user_id", "job_id"),)
+    __table_args__ = (
+        Index("idx_drafts_user_job", "user_id", "job_id"),
+        # One active package per User and Job; archived packages keep application history.
+        Index(
+            "uq_drafts_active_user_job",
+            "user_id",
+            "job_id",
+            unique=True,
+            postgresql_where=text("active"),
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = user_fk()
     # Merges explicitly move packages; missed paths must not silently delete them.
@@ -20,6 +30,7 @@ class Draft(Base):
     state: Mapped[str] = mapped_column(String(24), default="queued")
     progress: Mapped[str] = mapped_column(String(255), default="Reading the job")
     error: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     current_version: Mapped[int] = mapped_column(Integer, default=0)
     job_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     base_resume: Mapped[str] = mapped_column(Text, default="")
@@ -37,6 +48,7 @@ class DraftVersion(Base):
     number: Mapped[int] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(String(24))
     content: Mapped[dict[str, object]] = mapped_column(JSONB)
+    job_context: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     # Snapshots keep the original trace readable after Fact edits or deletion.
     facts: Mapped[list[dict[str, object]]] = mapped_column(JSONB)
     warnings: Mapped[list[str]] = mapped_column(JSONB, default=list)
@@ -102,3 +114,24 @@ class GmailHandoff(Base):
     version: Mapped[int | None] = mapped_column(Integer)
     recipient: Mapped[str] = mapped_column(String(320))
     gmail_draft_id: Mapped[str | None] = mapped_column(String(255))
+
+
+class DraftProposal(Base):
+    """Durable, scoped AI work; candidates never overwrite accepted versions."""
+
+    __tablename__ = "draft_proposals"
+    user_id: Mapped[uuid.UUID] = user_fk()
+    draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("drafts.id", ondelete="CASCADE"), index=True
+    )
+    base_version: Mapped[int] = mapped_column(Integer)
+    part: Mapped[str] = mapped_column(String(24))
+    section: Mapped[str | None] = mapped_column(String(40))
+    instruction: Mapped[str] = mapped_column(Text, default="")
+    state: Mapped[str] = mapped_column(String(24), default="queued")
+    progress: Mapped[str] = mapped_column(String(255), default="Queued")
+    error: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    facts: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list)
+    job_context: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, default=list)

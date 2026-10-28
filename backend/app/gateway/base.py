@@ -28,6 +28,10 @@ class BaseAIGateway(ABC):
     @abstractmethod
     async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]: ...
 
+    async def propose_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
+        """Background-only candidate route; recorded gateways reuse revision fixtures."""
+        return await self.revise_draft(request)
+
     @abstractmethod
     async def parse_documents(
         self, request: ParseDocumentsRequest

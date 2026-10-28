@@ -38,6 +38,9 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await recover_running_fetches(get_sessionmaker())
     await recover_queued(build_gateway())
+    from app.services.draft_workflow import recover
+
+    await recover(build_gateway())
     if get_settings().scheduler_enabled:
         start_scheduler()
     yield

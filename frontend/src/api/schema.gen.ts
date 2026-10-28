@@ -854,6 +854,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts/{draft_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proposals */
+        get: operations["proposals_api_drafts__draft_id__proposals_get"];
+        put?: never;
+        /** Propose */
+        post: operations["propose_api_drafts__draft_id__proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/proposals/{proposal_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Proposal */
+        post: operations["accept_proposal_api_drafts__draft_id__proposals__proposal_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Proposal */
+        delete: operations["discard_proposal_api_drafts__draft_id__proposals__proposal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -1476,6 +1528,11 @@ export interface components {
             draft_id: string;
             /** State */
             state: string;
+            /**
+             * Existing
+             * @default false
+             */
+            existing?: boolean;
         };
         /** CapturedJobOut */
         CapturedJobOut: {
@@ -1634,6 +1691,11 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /**
+             * Active
+             * @default true
+             */
+            active?: boolean;
             /** State */
             state: string;
             /** Progress */
@@ -2240,6 +2302,12 @@ export interface components {
             company_id: string;
             /** Description */
             description: string;
+            /** Description Origin */
+            description_origin?: {
+                [key: string]: unknown;
+            };
+            /** Experience Requirement */
+            experience_requirement?: string | null;
             /** Locations */
             locations: components["schemas"]["LocationOut"][];
             /** Work Mode */
@@ -2549,6 +2617,51 @@ export interface components {
             content: components["schemas"]["ProfileContent"];
             /** Expected Version */
             expected_version: number;
+        };
+        /** ProposalAccept */
+        ProposalAccept: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** ProposalIn */
+        ProposalIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Part
+             * @enum {string}
+             */
+            part: "resume" | "cover_letter";
+            /** Section */
+            section?: ("Headline" | "Contact" | "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional") | null;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction?: string;
+        };
+        /** ProposalOut */
+        ProposalOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Base Version */
+            base_version: number;
+            /** Part */
+            part: string;
+            /** Section */
+            section: string | null;
+            /** State */
+            state: string;
+            /** Progress */
+            progress: string;
+            /** Error */
+            error: string | null;
+            content: components["schemas"]["DraftContent"] | null;
+            /** Warnings */
+            warnings: string[];
         };
         /** QuerySpend */
         QuerySpend: {
@@ -4680,6 +4793,146 @@ export interface operations {
                 "application/json": components["schemas"]["AppliedIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    proposals_api_drafts__draft_id__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_api_drafts__draft_id__proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_proposal_api_drafts__draft_id__proposals__proposal_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_proposal_api_drafts__draft_id__proposals__proposal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {

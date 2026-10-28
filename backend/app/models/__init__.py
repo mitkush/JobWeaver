@@ -9,6 +9,7 @@ from app.models.draft import (
     ApplicationEvent,
     ApplicationStatus,
     Draft,
+    DraftProposal,
     DraftVersion,
     GmailHandoff,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "GmailHandoff",
     "Draft",
     "DraftVersion",
+    "DraftProposal",
     "AIUsage",
     "AtsBoard",
     "Band",

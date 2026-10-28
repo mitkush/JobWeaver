@@ -137,6 +137,17 @@ class LiveAIGateway(BaseAIGateway):
             prepare=lambda route: self._draft_prompt(request, route, prompts.REVISE_DRAFT_SYSTEM),
         )
 
+    async def propose_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
+        return await self._run(
+            "propose_draft",
+            request.user_id,
+            prompts.REVISE_DRAFT_SYSTEM,
+            prompts.draft_user(request),
+            DraftResult,
+            prepare=lambda route: self._draft_prompt(request, route, prompts.REVISE_DRAFT_SYSTEM),
+            personal_route=True,
+        )
+
     @staticmethod
     def _draft_prompt(request: TailorDraftRequest, route: Route, system: str) -> str | None:
         limit = TOKENS_PER_MINUTE.get(route_of(route))
