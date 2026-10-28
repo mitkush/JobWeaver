@@ -147,3 +147,145 @@ class TestLinkedInPiloterr:
         assert len(requests) == 2
         assert [request.url.params["page"] for request in requests] == ["1", "2"]
         assert result.credits_used == 2
+
+
+STUB = {key: value for key, value in RECORD.items() if key != "description"}
+DETAIL = {**STUB, "job_description": "<p>Build Ruby APIs and test PostgreSQL transactions.</p>"}
+
+
+async def test_missing_descriptions_are_bought_from_job_info_and_each_request_is_counted():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=[STUB] if request.url.path.endswith("/search") else DETAIL)
+
+    async with http(handler) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        result = await adapter.fetch_window(QUERY, DAY)
+    assert len(requests) == 2
+    assert requests[1].url.path == "/v2/linkedin/job/info"
+    assert requests[1].url.params["query"] == str(STUB["id"])
+    assert requests[1].headers["x-api-key"] == "key"
+    assert result.credits_used == 2 and result.complete
+    assert result.postings[0].description == "Build Ruby APIs and test PostgreSQL transactions."
+
+
+async def test_known_usable_jobs_and_duplicate_ids_do_not_buy_details_twice():
+    requests = []
+    other = STUB | {"id": "new-job"}
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=[STUB, other, other]
+            if request.url.path.endswith("/search")
+            else DETAIL | {"id": "new-job"},
+        )
+
+    async def known(ids):
+        assert ids == {str(STUB["id"]), "new-job"}
+        return {str(STUB["id"])}
+
+    async with http(handler) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        adapter.known_postings = known
+        result = await adapter.fetch_window(QUERY, DAY)
+    assert len(requests) == 2
+    assert result.credits_used == 2 and len(result.postings) == 1
+    assert result.postings[0].source_job_id == "new-job"
+
+
+async def test_detail_budget_cap_keeps_partial_jobs_and_requests_window_retry():
+    requests = []
+    other = STUB | {"id": "next-job"}
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json=[STUB, other] if request.url.path.endswith("/search") else DETAIL
+        )
+
+    async with http(handler) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        adapter.allowance_left = 2
+        result = await adapter.fetch_window(QUERY, DAY)
+    assert len(requests) == result.credits_used == 2
+    assert len(result.postings) == 1 and not result.complete
+    assert adapter.retry_incomplete_window
+
+
+@pytest.mark.parametrize("failure", [429, 500, "bad_json", "missing", "wrong_id", "timeout"])
+async def test_detail_failures_preserve_prior_jobs_and_actual_spend(failure):
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if request.url.path.endswith("/search"):
+            return httpx.Response(200, json=[STUB, STUB | {"id": "next-job"}])
+        if calls == 2:
+            return httpx.Response(200, json=DETAIL)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("timed out", request=request)
+        if failure == "bad_json":
+            return httpx.Response(200, text="not-json")
+        if failure == "missing":
+            return httpx.Response(200, json=STUB | {"id": "next-job"})
+        if failure == "wrong_id":
+            return httpx.Response(200, json=DETAIL | {"id": "different-job"})
+        return httpx.Response(failure, json={"error": "provider failed"})
+
+    async with http(handler) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        result = await adapter.fetch_window(QUERY, DAY)
+    assert len(result.postings) == 1 and not result.complete
+    assert result.credits_used == (3 if failure in {"bad_json", "missing", "wrong_id"} else 2)
+
+
+async def test_detail_error_before_any_job_records_search_credit_and_old_jobs_skip_details():
+    from app.adapters.errors import SourceUnavailable
+
+    async with http(
+        lambda request: (
+            httpx.Response(200, json=[STUB])
+            if request.url.path.endswith("/search")
+            else httpx.Response(500)
+        )
+    ) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        with pytest.raises(SourceUnavailable) as exc:
+            await adapter.fetch_window(QUERY, DAY)
+    assert exc.value.credits_used == 1
+
+    requests = []
+
+    def old(request):
+        requests.append(request)
+        return httpx.Response(200, json=[STUB | {"list_date": "2026-09-01"}])
+
+    async with http(old) as client:
+        result = await LinkedInPiloterrAdapter(
+            client, Settings(piloterr_api_key="key")
+        ).fetch_window(QUERY, DAY)
+    assert len(requests) == result.credits_used == 1
+    assert not result.postings and result.complete
+
+
+async def test_full_page_at_configured_cap_is_incomplete_even_when_all_ids_are_known():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=[STUB | {"id": str(i)} for i in range(1, 26)])
+
+    async def known(ids):
+        return ids
+
+    async with http(handler) as client:
+        adapter = LinkedInPiloterrAdapter(client, Settings(piloterr_api_key="key"))
+        adapter.known_postings = known
+        result = await adapter.fetch_window(QUERY, DAY)
+    assert len(requests) == result.credits_used == 1
+    assert not result.postings and not result.complete

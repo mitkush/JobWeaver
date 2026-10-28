@@ -765,7 +765,11 @@ class Fetcher:
                         try:
                             await self._check_budget(session, adapter)
                         except SourceErrorBudget as exhausted:
-                            # Preserve the provider's actual rejection in Recent runs.
+                            # Show that rotation completed, retaining the last provider reason.
+                            exc.message = (
+                                f"All {len(adapter.exhausted_credentials)} available credentials "
+                                f"were rejected. Last: {exc.message}"
+                            )
                             raise exc from exhausted
             except SourceError as exc:
                 run.status, run.error, run.finished_at = RunStatus.FAILED, exc.message, self.clock()
