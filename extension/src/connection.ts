@@ -111,7 +111,8 @@ export async function status(
 ): Promise<{ connected: false; error?: string } | { connected: true; email: string; expiresAt: string }> {
   const response = await apiFetch(deps, "/api/ext/me");
   const connection = await currentConnection(deps);
-  if (!response?.ok || !connection) {
+  if (response && !response.ok) throw new Error("JobWeaver is unavailable. Retry to reconnect to your saved selection.");
+  if (!response || !connection) {
     const notice = await deps.store.get<string>("notice");
     return notice ? { connected: false, error: notice } : { connected: false };
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { type Deps } from "../src/connection";
-import { clear, pageState, select } from "../src/drafts";
+import { clear, pageState, select, requireConfirmation, assertConfirmed } from "../src/drafts";
 
 const ORIGIN = "https://jobweaver.example";
 
@@ -107,4 +107,25 @@ describe("choosing a Draft for a tab", () => {
     await clear(deps, 9);
     expect(data.has("selection:9")).toBe(false);
   });
+});
+
+it("keeps a pinned selection when its server request fails temporarily", async () => {
+  const { deps, data } = makeDeps({ ...base, "/api/ext/drafts/match": () => json({ drafts: [] }), "/api/ext/drafts/d1": () => json({}, 503) });
+  data.set("selection:7", { draftId: "d1", number: 2 });
+  await expect(pageState(deps, 7, "https://example.com")).rejects.toThrow(/unavailable/);
+  expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 2 });
+});
+it("requires confirmation after navigation and keeps the chosen version when confirmed", async () => {
+  const { deps, data } = makeDeps({ ...base, "/api/ext/drafts/match": () => json({ drafts: [] }), "/api/ext/drafts/d1": (url) => json(versionOf(Number(url.searchParams.get("number") ?? 3))) });
+  await select(deps, 7, "d1", 2);
+  await requireConfirmation(deps, 7);
+  expect((await pageState(deps, 7, "https://other.example/jobs/2")).needsConfirmation).toBe(true);
+  await expect(assertConfirmed(deps, 7)).rejects.toThrow(/page changed/);
+  await select(deps, 7, "d1", 2);
+  await expect(assertConfirmed(deps, 7)).resolves.toBeUndefined();
+  expect(data.get("selection:7")).toEqual({ draftId: "d1", number: 2 });
+});
+it("does not show missing profile or empty drafts when their server requests fail", async () => {
+  const { deps } = makeDeps({ ...base, "/api/ext/profile": () => json({}, 500) });
+  await expect(pageState(deps, 7, undefined)).rejects.toThrow(/unavailable/);
 });

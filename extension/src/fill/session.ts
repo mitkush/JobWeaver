@@ -2,7 +2,7 @@
  * sees the credential; it receives only the values the User ticked. */
 
 import { apiFetch, type Deps } from "../connection";
-import { currentSelection, version } from "../drafts";
+import { assertConfirmed, currentSelection, version } from "../drafts";
 import { propose, type Profile, type Proposal } from "./plan";
 import type { FillItem, FillReport, Scan } from "./types";
 
@@ -42,6 +42,7 @@ function toBase64(buffer: ArrayBuffer): string {
 }
 
 export async function scanTab(deps: Deps, port: TabPort, tabId: number): Promise<ScanResult> {
+  await assertConfirmed(deps, tabId);
   await port.inject(tabId);
   const scan = await port.send<Scan>(tabId, { type: "jw.scan" });
   const profileResponse = await apiFetch(deps, "/api/ext/profile");
@@ -73,6 +74,7 @@ async function pdf(deps: Deps, draft: { id: string; number: number }, kind: "res
 
 /** Fills only the ticked proposals from the last scan of this tab. */
 export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: string[], answers: Record<string, string> = {}): Promise<FillResult> {
+  await assertConfirmed(deps, tabId);
   const stored = await deps.store.get<Stored>(key(tabId));
   if (!stored) return { filled: [], failed: [{ ref: "", reason: "Scan the form first" }], downloads: [], labels: {} };
   const wanted = new Set(refs);

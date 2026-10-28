@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams, useBlocker } from "react-router-dom";
 
 import { api, downloadFile, fetchFile, unwrap, type Schemas } from "@/api/client";
 import { Alert } from "@/components/ui/alert";
@@ -69,6 +69,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const actions = useDraftActions(draft.id);
   const toast = useToast();
   const dirty = JSON.stringify(content) !== JSON.stringify(current.content);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
   const busy = actions.save.isPending || actions.recheck.isPending || actions.chat.isPending || actions.restore.isPending || outwardBusy;
   const hasEmail = Boolean(draft.job.contact_email);
   // Applied or any later status: Mark as applied has nothing left to do.
@@ -93,7 +94,8 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
     try {
       accept(await actions.save.mutateAsync({ expected_version: current.number, content }));
       toast("success", "Draft saved");
-    } catch (failure) { setError((failure as Error).message); }
+      return true;
+    } catch (failure) { setError((failure as Error).message); return false; }
   }
   async function recheck() {
     setRecheckConfirm(false);
@@ -177,6 +179,11 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const movedLines = new Set([...movedIndexes(keptLines.map(([, old]) => old))].map((j) => keptLines[j]![0]));
   return (
     <div className="space-y-5">
+      <ConfirmDialog open={blocker.state === "blocked"} title="Save your edits before leaving?" confirmLabel="Save and leave" tone="primary" loading={actions.save.isPending} confirmDisabled={busy || stale} onCancel={() => blocker.state === "blocked" && blocker.reset()} onConfirm={() => void (async () => { if (await save()) { if (blocker.state === "blocked") blocker.proceed(); } })()}
+        secondaryAction={<Button variant="secondary" disabled={busy} onClick={() => blocker.state === "blocked" && blocker.proceed()}>Discard and leave</Button>}>
+        <p>Your unsaved changes will be lost if you leave without saving. Cancel keeps you here.</p>
+        {error && <Alert tone="error">{error}</Alert>}
+      </ConfirmDialog>
       <Link to={`/jobs/${draft.job_id}`} className="text-sm text-brand-700 dark:text-brand-200">← Back to Job</Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-semibold">Draft · {String(draft.job.company ?? "")}</h1><p className="mt-1 text-slate-600 dark:text-slate-400">{String(draft.job.title ?? "")}</p></div>

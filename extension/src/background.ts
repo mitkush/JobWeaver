@@ -2,7 +2,7 @@
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
 import { savePdfs } from "./downloads";
-import { clear, pageState, select } from "./drafts";
+import { clear, pageState, select, requireConfirmation } from "./drafts";
 import { captured, carryCapture, clearCapture, createCapturedDraft, readPage, savePage } from "./capture";
 import type { PageJob } from "./job-read";
 import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "./fill/session";
@@ -45,9 +45,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onCreated.addListener((tab) => {
   if (tab.id !== undefined && tab.openerTabId !== undefined) void carryCapture(deps, tab.openerTabId, tab.id);
 });
-// A new page in the tab means a new form: the last scan no longer applies.
+// Cross-origin navigation can hide change.url when activeTab is revoked. Loading
+// still invalidates the prepared form and requires confirming a retained Draft.
 chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.url) void forgetTab(deps, tabId);
+  if (change.url || change.status === "loading") void (async () => {
+    await requireConfirmation(deps, tabId);
+    await forgetTab(deps, tabId);
+  })();
 });
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {

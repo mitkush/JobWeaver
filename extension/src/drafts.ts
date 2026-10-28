@@ -38,6 +38,7 @@ export type PageState = {
   matches: DraftSummary[];
   recent: DraftSummary[];
   selected: DraftVersion | null;
+  needsConfirmation: boolean;
 };
 
 type Selection = { draftId: string; number: number };
@@ -46,7 +47,9 @@ const selectionKey = (tabId: number) => `selection:${tabId}`;
 
 async function getJson<T>(deps: Deps, path: string): Promise<T | null> {
   const response = await apiFetch(deps, path);
-  if (!response?.ok) return null;
+  if (!response) throw new Error("Reconnect JobWeaver to continue. Your Draft selection is kept.");
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("JobWeaver is unavailable. Try again; your Draft selection is kept.");
   return (await response.json()) as T;
 }
 
@@ -66,13 +69,14 @@ export async function pageState(deps: Deps, tabId: number, url: string | undefin
   const chosen = await deps.store.get<Selection>(selectionKey(tabId));
   const selected = chosen ? await version(deps, chosen.draftId, chosen.number) : null;
   if (chosen && !selected) await deps.store.remove(selectionKey(tabId));
-  return { profile, matches: matched?.drafts ?? [], recent: recent ?? [], selected };
+  return { profile, matches: matched?.drafts ?? [], recent: recent ?? [], selected, needsConfirmation: Boolean(selected && await deps.store.get(`confirm-job:${tabId}`)) };
 }
 
 /** Pins a version: a newer save of the Draft never replaces it silently. */
 export async function select(deps: Deps, tabId: number, draftId: string, number?: number): Promise<DraftVersion | null> {
   const chosen = await version(deps, draftId, number);
   if (!chosen) return null;
+  await deps.store.remove(`confirm-job:${tabId}`);
   await deps.store.set(selectionKey(tabId), { draftId: chosen.draft_id, number: chosen.number } satisfies Selection);
   return chosen;
 }
@@ -81,6 +85,15 @@ export async function currentSelection(deps: Deps, tabId: number): Promise<Selec
   return (await deps.store.get<Selection>(selectionKey(tabId))) ?? null;
 }
 
+export async function requireConfirmation(deps: Deps, tabId: number): Promise<void> {
+  await deps.store.set(`confirm-job:${tabId}`, true);
+}
+
+export async function assertConfirmed(deps: Deps, tabId: number): Promise<void> {
+  if (await currentSelection(deps, tabId) && await deps.store.get(`confirm-job:${tabId}`)) throw new Error("The page changed. Confirm the Job and Draft before scanning or filling.");
+}
+
 export async function clear(deps: Deps, tabId: number): Promise<void> {
   await deps.store.remove(selectionKey(tabId));
+  await deps.store.remove(`confirm-job:${tabId}`);
 }

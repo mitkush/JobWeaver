@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "JobWeaver permission spike (local fixtures only)",
+  "version": "0.0.1",
+  "permissions": ["activeTab", "scripting", "sidePanel"],
+  "optional_host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "action": { "default_title": "Open permission spike" },
+  "side_panel": { "default_path": "panel.html" },
+  "background": { "service_worker": "worker.js" },
+  "commands": { "_execute_action": { "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" } } }
+}
