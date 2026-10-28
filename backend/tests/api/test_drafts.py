@@ -767,6 +767,10 @@ async def test_archiving_keeps_versions_and_the_application_link(prepared, db):
         )
         is not None
     )
+    # The Job page lists it, so an archived package is never lost from view.
+    job = (await client.get(f"/api/jobs/{job_id}")).json()
+    assert job["draft_id"] is None
+    assert [d["id"] for d in job["archived_drafts"]] == [draft["id"]]
     owner_id = user.id
     db.expire_all()
     application = await db.scalar(

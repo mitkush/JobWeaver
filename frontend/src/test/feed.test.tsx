@@ -368,3 +368,13 @@ it("returns to the same Feed filters from a Job", async () => {
   await userEvent.click(await screen.findByRole("link", { name: "Backend Engineer" }));
   expect(await screen.findByRole("link", { name: "Back to feed" })).toHaveAttribute("href", "/feed?q=rails&section=email");
 });
+
+it("lists archived Drafts on the Job, so an earlier package stays reachable", async () => {
+  mockFetch({
+    "GET /api/jobs/job-1": () =>
+      json(makeJob({ archived_drafts: [{ id: "d-old", created_at: "2026-10-01T10:00:00Z", current_version: 3 }] })),
+  });
+  renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
+  await userEvent.click(await screen.findByText("Archived Drafts (1)"));
+  expect(screen.getByRole("link", { name: /version 3/ })).toHaveAttribute("href", "/drafts/d-old");
+});

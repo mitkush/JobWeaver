@@ -1558,6 +1558,24 @@ export interface components {
             /** Expected Version */
             expected_version: number;
         };
+        /**
+         * ArchivedDraftOut
+         * @description An earlier package for this Job, kept with its versions (ADR-0017).
+         */
+        ArchivedDraftOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Version */
+            current_version: number;
+        };
         /** AtsBoardIn */
         AtsBoardIn: {
             /** Url */
@@ -2476,6 +2494,8 @@ export interface components {
             possible_duplicates: components["schemas"]["PossibleDuplicateOut"][];
             /** Draft Id */
             draft_id?: string | null;
+            /** Archived Drafts */
+            archived_drafts?: components["schemas"]["ArchivedDraftOut"][];
             /** Application Status */
             application_status?: string | null;
             /**
@@ -2543,6 +2563,8 @@ export interface components {
             gmail: components["schemas"]["GmailStatus"];
             /** Follow Up Days */
             follow_up_days: number;
+            /** Extension Store Url */
+            extension_store_url?: string | null;
         };
         /** ModelUsage */
         ModelUsage: {

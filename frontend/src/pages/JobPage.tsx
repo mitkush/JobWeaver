@@ -200,6 +200,23 @@ export function JobPage() {
         </section>
       )}
 
+          {(data.archived_drafts ?? []).length > 0 && (
+            <details className="rounded border border-slate-200 p-4 dark:border-slate-700">
+              <summary className="cursor-pointer font-medium">Archived Drafts ({data.archived_drafts!.length})</summary>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                Earlier packages for this Job, kept with their versions and any application they were used for.
+              </p>
+              <ul className="mt-2 space-y-1 text-sm">
+                {data.archived_drafts!.map((draft) => (
+                  <li key={draft.id}>
+                    <Link to={`/drafts/${draft.id}`} className="underline">
+                      Draft from {new Date(draft.created_at).toLocaleDateString()}, version {draft.current_version}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           <details className="rounded border border-slate-200 p-4 dark:border-slate-700">
             <summary className="cursor-pointer font-medium">Sources and listing details (Correspondence)</summary>
           <Card>

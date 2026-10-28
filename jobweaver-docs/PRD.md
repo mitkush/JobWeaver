@@ -249,7 +249,11 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC1: "Lead with the Rails work and shorten the summary" produces a new version with those changes and no new facts.
 - AC2: A request that would need a fact not in the Fact Bank ("add Kubernetes") is refused with the reason and an offer to add the skill to the Fact Bank first.
 
-**FR-E8 [V1] - Versions.** Every generation, chat change and manual save is a version; the User can compare and restore versions.
+**FR-E8 [V1] - Versions.** Every generation, chat change, accepted replacement and save is a version; the User can compare and restore versions. A Job has one active Draft per User.
+- AC1: A new resume, cover letter or section from AI is prepared in the background as a replacement the User accepts or discards; the accepted document never changes until they accept it, and Undo restores the version before it.
+- AC2: A replacement prepared from an older version cannot be accepted after the Draft changed, or after a Fact it cites changed.
+- AC3: Each version keeps the job context (description, its origin, required skills) it was made with, so later replacements never change how an older version is checked or exported, and a version attached to an application is never edited in place.
+- AC4: Archiving a Draft hides it and keeps its versions and Application history; it does not delete them.
 
 **FR-E9 [V1] - PDF rendering and templates.** The Tailored Resume (and Cover Letter) render to PDF in an ATS-friendly single-column template modelled on the founder's current resume: a headline and contact line under the name, uppercase section headings with a rule, "Title | Employer | dates" and "Project | stack | link" title lines over bulleted work, grouped skill lines, and clickable links. The page opens on whichever of Standard or Compact fits on one page. Choosing or uploading another template is optional per User.
 - AC1: The PDF's text is selectable and parses back to the same content (ATS check).
@@ -258,7 +262,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 **FR-E10 [V1] - Email check.** Before Gmail Hand-off, the recipient is checked: valid format, the domain can receive mail (MX record), and not a no-reply address.
 - AC1: A failing check is shown inline in the Draft with what to do; the User can still continue after confirming.
 
-**FR-E11 [V1] - Save draft.** "Save draft" saves only. It is visually and textually distinct from Open in Gmail.
+**FR-E11 [V1] - Saving.** Edits save on their own after a short pause, with a visible status (Saving, Saved, Couldn't save, Unsaved changes), and "Save now" saves at once. Saving only saves: it has no effect in Gmail or on any employer site, and it is visually and textually distinct from Open in Gmail.
 
 **FR-E12 [V1] - Open in Gmail (Gmail Hand-off).** Creates a Gmail draft with recipient, subject, body and the Tailored Resume PDF attached, then opens it in Gmail (ADR-0006: the User sends from Gmail).
 - AC1: Confirmation before creating the Gmail draft names the recipient and the attachment.
@@ -273,6 +277,10 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC2: Profile fields are filled without AI; the selected Tailored Resume and Cover Letter are attached, or downloaded with a prompt when a site refuses the attachment.
 - AC3: Form questions get a Saved Answer, a Suggestion from Facts with a Tailoring Trace, Fact notes, or nothing. A Suggestion is a complete answer within the field's length limit, in the User's Writing Style; it is outlined for review and never accepted automatically.
 - AC4: Sensitive questions are filled only from Saved Answers; forms that ask for answers not written by AI get Fact notes only.
+- AC5: The extension opens in the browser's side panel from the toolbar. It reaches a site only on that click or after the User allows that site, and forms embedded from another site only after the User allows that site too.
+- AC6: Unfinished review survives closing and reopening the panel for 30 minutes in the same browser session; a fill prepared before the document changed is refused until the User reviews the new version.
+- AC7: "Mark as applied" asks the User to confirm they submitted the form and records which document version they attached; filling or downloading never marks an Application Applied.
+- AC8: A reviewed answer can be saved from the form as a Saved Answer for that Company, the Job's country or any job.
 - AC5: A job page JobWeaver has not fetched can be captured, reviewed and drafted like any Feed Job.
 - AC6: The User can keep any careers page's description as a Page Description that their Drafts use, each Draft version keeping the description and required skills it was made from, and the chosen Job carries over from the advert page to the form page or tab it opens.
 

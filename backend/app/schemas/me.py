@@ -42,6 +42,8 @@ class MeOut(BaseModel):
     gmail: GmailStatus
     # Days an Application may stay Applied before a Follow-up Reminder (FR-F2).
     follow_up_days: int
+    # Where to install the extension from, when it is published (ADR-0017).
+    extension_store_url: str | None = None
 
 
 class CountryIn(BaseModel):

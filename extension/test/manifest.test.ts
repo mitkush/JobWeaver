@@ -26,3 +26,16 @@ it("holds only the JobWeaver origin; other sites are asked for one at a time", (
 it("matches a local origin on its host, since match patterns cannot name a port", () => {
   expect(matchPattern("http://localhost:5173")).toBe("http://localhost/*");
 });
+
+it("leaves the pinned key out of the store build and ships icons that exist", async () => {
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const unpacked = buildManifest("https://jobweaver.duckdns.org", "0.2.0");
+  const store = buildManifest("https://jobweaver.duckdns.org", "0.2.0", { store: true });
+  expect(unpacked.key).toBe(PUBLIC_KEY);
+  expect("key" in store).toBe(false);
+  expect(store.permissions).toEqual(unpacked.permissions);
+  for (const path of Object.values(store.icons)) {
+    expect(existsSync(join(import.meta.dirname, "..", "public", path))).toBe(true);
+  }
+});

@@ -1,16 +1,18 @@
-import { Puzzle } from "lucide-react";
+import { ExternalLink, Puzzle } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import type { ExtensionConnection } from "@/api/client";
 import { useExtensionConnections, useRevokeExtensionConnection } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
+import { buttonClasses } from "@/components/ui/button-classes";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
 import { fromNow } from "@/lib/time";
 
 /** Browser extension connections, each revocable at once (ADR-0017). */
-export function ExtensionCard() {
+export function ExtensionCard({ storeUrl = null }: { storeUrl?: string | null }) {
   const connections = useExtensionConnections();
   const revoke = useRevokeExtensionConnection();
   const [pending, setPending] = useState<ExtensionConnection | null>(null);
@@ -24,9 +26,18 @@ export function ExtensionCard() {
       {connections.data.length === 0 ? (
         <div className="flex items-start gap-3">
           <Puzzle className="mt-0.5 size-5 text-slate-500 dark:text-slate-400" aria-hidden />
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            No extension is connected. Install the JobWeaver extension and click Connect in it.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              No extension is connected. Install the JobWeaver extension in Chrome or Brave, then click Connect in it.
+              {!storeUrl && " Until it is in the Chrome Web Store, load it unpacked as the README describes."}
+            </p>
+            {storeUrl && (
+              <a href={storeUrl} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
+                Get the extension
+                <ExternalLink className="size-4" aria-hidden />
+              </a>
+            )}
+          </div>
         </div>
       ) : (
         <ul className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -45,6 +56,11 @@ export function ExtensionCard() {
           ))}
         </ul>
       )}
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        <Link to="/privacy/extension" className="underline">
+          Extension privacy policy
+        </Link>
+      </p>
       <ConfirmDialog
         open={pending !== null}
         title="Revoke this extension connection?"

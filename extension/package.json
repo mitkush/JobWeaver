@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build && vite build --config vite.content.config.ts",
+    "build:store": "JOBWEAVER_STORE=1 npm run build && node scripts/package-store.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

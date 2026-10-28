@@ -1,6 +1,6 @@
 # JobWeaver application workflow improvement plan
 
-Status: approved 28 October 2026. Stage 1 is in implementation. Later stages remain planned.
+Status: approved 28 October 2026. Stages 1 to 8 are implemented in one PR; the Chrome Web Store submission itself is a separate release action (`EXTENSION_STORE_LISTING.md`). Earlier packages of a Job are archived by migration 0017, never deleted, and listed on the Job page.
 
 ## Agreed outcome
 

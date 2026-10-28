@@ -20,6 +20,7 @@ import { PreferencesPage } from "@/pages/PreferencesPage";
 import { SavedAnswersPage } from "@/pages/SavedAnswersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SignInPage } from "@/pages/SignInPage";
+import { ExtensionPrivacyPage } from "@/pages/ExtensionPrivacyPage";
 
 import { AppShell } from "./AppShell";
 
@@ -51,6 +52,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/sign-in" element={<SignInPage />} />
+      <Route path="/privacy/extension" element={<ExtensionPrivacyPage />} />
       <Route path="/" element={<Navigate to="/feed" replace />} />
       <Route path="/onboarding/:step?" element={<Authenticated>{(me) => <OnboardingPage me={me} />}</Authenticated>} />
       <Route path="/feed" element={<Authenticated>{() => <FeedPage />}</Authenticated>} />

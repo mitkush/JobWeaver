@@ -5,6 +5,7 @@ form forbids AI-written answers) a Suggestion written only from the User's Facts
 relevant Facts as notes. Two rules are code, not prompt: sensitive questions are answered
 only from Saved Answers, and a form that refuses AI answers gets notes, never prose."""
 
+import asyncio
 import re
 import uuid
 
@@ -40,6 +41,8 @@ STOCK = re.compile(
 )
 _WORD = re.compile(r"[a-z][a-z+#.]{2,}")
 MAX_NOTES = 5
+# The User waits in the side panel: past this, they get Fact notes instead.
+ANSWERS_TIMEOUT_SECONDS = 60
 NO_AI_NOTE = "This form asks for answers not written by AI. Write it from your Facts."
 
 
@@ -184,9 +187,10 @@ async def _suggest(
         ],
     )
     try:
-        response = await gateway.answer_questions(request)
+        async with asyncio.timeout(ANSWERS_TIMEOUT_SECONDS):
+            response = await gateway.answer_questions(request)
         drafted = {a.ref: a for a in response.result.answers if a.ref in by_ref}
-    except GatewayError:
+    except (GatewayError, TimeoutError):
         drafted = {}
     known = {f.ref for f in facts}
     years = experience_years(facts)

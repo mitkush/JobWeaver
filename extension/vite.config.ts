@@ -7,6 +7,9 @@ import { buildManifest, DEFAULT_ORIGIN } from "./manifest";
 
 // The JobWeaver server this build talks to, e.g. JOBWEAVER_ORIGIN=http://localhost:5173.
 const origin = new URL(process.env.JOBWEAVER_ORIGIN ?? DEFAULT_ORIGIN).origin;
+// JOBWEAVER_STORE=1: the Web Store upload (no pinned key; HTTPS server only).
+const store = process.env.JOBWEAVER_STORE === "1";
+if (store && !origin.startsWith("https://")) throw new Error("A store build must talk to an HTTPS JobWeaver server");
 
 function manifest(): Plugin {
   return {
@@ -15,7 +18,7 @@ function manifest(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "manifest.json",
-        source: JSON.stringify(buildManifest(origin, process.env.npm_package_version ?? "0.1.0"), null, 2),
+        source: JSON.stringify(buildManifest(origin, process.env.npm_package_version ?? "0.1.0", { store }), null, 2),
       });
     },
   };

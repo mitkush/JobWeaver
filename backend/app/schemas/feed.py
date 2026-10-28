@@ -116,6 +116,14 @@ class PossibleDuplicateOut(BaseModel):
     description_similarity: float | None
 
 
+class ArchivedDraftOut(BaseModel):
+    """An earlier package for this Job, kept with its versions (ADR-0017)."""
+
+    id: uuid.UUID
+    created_at: datetime
+    current_version: int
+
+
 class JobDetailOut(BaseModel):
     job_id: uuid.UUID
     title: str
@@ -139,6 +147,7 @@ class JobDetailOut(BaseModel):
     postings: list[PostingOut]
     possible_duplicates: list[PossibleDuplicateOut]
     draft_id: uuid.UUID | None = None
+    archived_drafts: list[ArchivedDraftOut] = Field(default_factory=list)
     application_status: str | None = None
     company_applied: bool = False
     # None when the Job is not in the User's Feed or no longer matches their Preferences.

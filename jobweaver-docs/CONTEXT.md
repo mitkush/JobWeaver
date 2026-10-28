@@ -94,7 +94,11 @@ A Job that is no longer open: its company board (snapshot Source) no longer list
 
 ## Draft
 
-The application package a User prepares for one Job: a **Tailored Resume** (PDF), a **Cover Letter**, and, when the Job has a contact email, an **Application Email**. Drafts are saved in versions and are never sent by JobWeaver (ADR-0006).
+The application package a User prepares for one Job: a **Tailored Resume** (PDF), a **Cover Letter**, and, when the Job has a contact email, an **Application Email**. A User has one active Draft per Job; an archived Draft keeps its history. Drafts are saved in versions, each with the job context it was made from, and are never sent by JobWeaver (ADR-0006).
+
+## Replacement
+
+A new resume, cover letter or resume section prepared in the background from one version of a Draft. It changes nothing until the User accepts it, and Undo after accepting restores the version before it (ADR-0017).
 
 ## Tailored Resume
 

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.core.config import get_settings
 from tests.conftest import onboard
 
 
@@ -79,3 +80,14 @@ async def test_delete_account_removes_user_data_and_signs_out(alice, bob):
     assert (await client.delete("/api/me")).status_code == 204
     assert (await client.get("/api/me")).status_code == 401
     assert (await bob_client.get("/api/me")).status_code == 200
+
+
+async def test_me_points_to_the_extension_store_listing_once_set(alice, monkeypatch):
+    _, client = alice
+    assert (await client.get("/api/me")).json()["extension_store_url"] is None
+    monkeypatch.setenv(
+        "EXTENSION_STORE_URL", "https://chromewebstore.google.com/detail/jobweaver/abc"
+    )
+    get_settings.cache_clear()
+    me = (await client.get("/api/me")).json()
+    assert me["extension_store_url"] == "https://chromewebstore.google.com/detail/jobweaver/abc"

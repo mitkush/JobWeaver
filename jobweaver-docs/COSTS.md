@@ -63,6 +63,15 @@ route. These are conservative character estimates, not exact token counts or gua
 complete output; existing response validation and fallback still apply. Quota exhaustion is
 not fixed by smaller prompts or longer timeouts.
 
+**Application workflow tasks (28 Oct 2026):** background Replacements (`propose_draft`) use
+the same routes and budgets as Draft generation, so each one costs one Flash request when
+Gemini answers. Form answers (`answer_questions`) and Writing Style
+(`describe_writing_style`) run on Flash-Lite first, then Groq, OpenRouter and Mistral. One
+"Suggest answers" click is one request for up to 12 questions; the User waits in the side
+panel, so each route has 20 seconds and the whole request 60 seconds before the panel shows
+Fact notes instead. Saved Answers, sensitive questions and forms that refuse AI make no AI
+call. Writing Style is rebuilt only when the User asks.
+
 **Daily AI budget (design consequence):** the strongest free model (Gemini Flash) allows only about 20 requests a day, so it is reserved for Draft generation and Draft Chat. Everything high-volume runs on Flash-Lite first, with Groq as the bulk fallback. The AI Gateway tracks requests per provider and model per day and routes before a quota is hit, not after (FR-G4).
 
 **Keeping AI usage low by design:**

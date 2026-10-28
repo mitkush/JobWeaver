@@ -1,9 +1,9 @@
 # Application form extension plan
 
-Status: proposed, for review in a draft PR. Decisions are recorded in ADR-0017 and FR-E14.
-This document adds no extension, endpoint, permission, migration or deployment change. The
-stages below are implementation proposals, not promises that a particular third-party form
-already works.
+Status: implemented through form answers and Writing Style (Oct 2026); see the latest
+increment in ADR-0017 and FR-E14. `APPLICATION_UX_PLAN.md` supersedes this plan's multiple
+Draft packages and popup flow with one active Draft per Job and a side panel. Third-party
+forms still vary: check each new site in the browser rather than assuming it works.
 
 ## Goal and first release
 

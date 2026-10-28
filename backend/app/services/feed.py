@@ -28,6 +28,7 @@ from app.models.posting import Company, Posting
 from app.models.preference import Preference
 from app.models.user import User
 from app.schemas.feed import (
+    ArchivedDraftOut,
     FeedCard,
     FeedCounts,
     FeedOut,
@@ -865,6 +866,14 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         postings=[_posting_out(p, labels, job.primary_posting_id) for p in postings],
         possible_duplicates=duplicates,
         draft_id=draft_ids.get(job.id),
+        archived_drafts=[
+            ArchivedDraftOut(id=d.id, created_at=d.created_at, current_version=d.current_version)
+            for d in await session.scalars(
+                select(Draft)
+                .where(Draft.user_id == user.id, Draft.job_id == job.id, Draft.active.is_(False))
+                .order_by(Draft.created_at.desc())
+            )
+        ],
         application_status=application_states.get(job.id),
         company_applied=job.id in applied_companies,
         match=link.match_kind,
