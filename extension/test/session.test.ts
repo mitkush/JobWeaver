@@ -241,6 +241,8 @@ describe("answers to the form's own questions", () => {
     expect(bodies[0]).toEqual({
       path: "/api/ext/answers",
       job_id: "j1",
+      draft_id: "d1",
+      number: 2,
       no_ai: false,
       questions: [
         { ref: "q1", question: "Why do you want to join us?", max_chars: 500 },
@@ -265,7 +267,7 @@ describe("answers to the form's own questions", () => {
   it("saves a reviewed answer for the selected Job's scope", async () => {
     const { deps, port, bodies } = withQuestions();
     await scanTab(deps, port, 5);
-    await saveAnswer(deps, 5, { question: "Why us?", answer: "Reworked", scope: "company", origin: "suggestion" });
+    expect(await saveAnswer(deps, 5, { question: "Why us?", answer: "Reworked", scope: "company", origin: "suggestion" })).toEqual({});
     expect(bodies.at(-1)).toEqual({ path: "/api/ext/saved-answers", question: "Why us?", answer: "Reworked", scope: "company", origin: "suggestion", job_id: "j1" });
   });
 });

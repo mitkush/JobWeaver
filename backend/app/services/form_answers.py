@@ -9,6 +9,7 @@ import asyncio
 import re
 import uuid
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,9 +90,21 @@ async def _job(session: AsyncSession, user: User, job_id: uuid.UUID) -> Job:
     return job
 
 
-async def _description(session: AsyncSession, user: User, job: Job) -> str:
+async def _description(
+    session: AsyncSession,
+    user: User,
+    job: Job,
+    draft_id: uuid.UUID | None = None,
+    number: int | None = None,
+) -> str:
     """The description the User's active Draft was made with, else the User's own page
     text, else the Job's primary advert."""
+    if draft_id is not None:
+        draft = await drafting.owned_draft(session, user, draft_id)
+        if draft.job_id != job.id or number is None:
+            raise NotFoundError("Selected document not found for this Job")
+        pinned = await drafting.version(session, draft, number)
+        return str((pinned.job_context or draft.job_snapshot).get("description") or "")
     version = await session.scalar(
         select(DraftVersion)
         .join(Draft, Draft.id == DraftVersion.draft_id)
@@ -127,16 +140,26 @@ async def answer(
     questions: list[QuestionIn],
     no_ai: bool,
     gateway: BaseAIGateway,
+    *,
+    draft_id: uuid.UUID | None = None,
+    number: int | None = None,
 ) -> list[AnswerOut]:
     job = await _job(session, user, job_id)
+    pinned_context = (
+        await _description(session, user, job, draft_id, number) if draft_id is not None else None
+    )
     applicable = await saved_answers.applicable(session, user, job.id)
     results: dict[str, AnswerOut] = {}
     pending: list[QuestionIn] = []
     for q in questions:
         saved = _saved_for(q.question, applicable)
-        if saved is not None:
+        if saved is not None and not (no_ai and saved.origin == "suggestion"):
             results[q.ref] = AnswerOut(
-                ref=q.ref, kind="saved", text=saved.answer, saved_answer_id=saved.id
+                ref=q.ref,
+                kind="saved",
+                text=saved.answer,
+                saved_answer_id=saved.id,
+                origin=saved.origin,
             )
         elif is_sensitive(q.question):
             results[q.ref] = AnswerOut(
@@ -150,7 +173,9 @@ async def answer(
         if user.fact_bank_reviewed_at is None:
             raise PreconditionError("Review your Fact Bank first")
         facts = await drafting._facts(session, user)
-        context = await _description(session, user, job)
+        context = (
+            pinned_context if pinned_context is not None else await _description(session, user, job)
+        )
         if no_ai:
             for q in pending:
                 results[q.ref] = AnswerOut(
@@ -201,18 +226,23 @@ async def _suggest(
         text = fit(got.text, q.max_chars) if got and got.text.strip() else None
         refs = [r for r in (got.fact_refs if got else []) if r in known]
         problem = None
-        if text:
-            # The same code checks as a Draft line: tools, numbers and claims must be in
-            # the cited Facts (ADR-0005). A failing suggestion becomes notes.
-            problem = answer_problem(
-                DraftLine(id=q.ref, text=text, fact_refs=refs),
-                facts,
-                job_title=job.title,
-                company=job.company_name,
-                job_text=context,
-                user_name=user.name,
-                experience_years=years,
-            )
+        if text and refs:
+            # Provider output may be valid for the answer task but invalid as a Draft
+            # line (missing refs, long text, too many citations). Degrade to notes.
+            try:
+                line = DraftLine(id=q.ref, text=text, fact_refs=refs)
+            except ValidationError:
+                problem = "The suggestion could not be validated"
+            else:
+                problem = answer_problem(
+                    line,
+                    facts,
+                    job_title=job.title,
+                    company=job.company_name,
+                    job_text=context,
+                    user_name=user.name,
+                    experience_years=years,
+                )
         if not text or not refs or problem:
             out[q.ref] = AnswerOut(
                 ref=q.ref,
@@ -226,6 +256,7 @@ async def _suggest(
         out[q.ref] = AnswerOut(
             ref=q.ref,
             kind="suggestion",
+            origin="suggestion",
             text=text,
             fact_refs=refs,
             notes=notes,
@@ -244,6 +275,7 @@ async def save_from_extension(
     answer_text: str,
     scope: str,
     origin: str,
+    answer_id: uuid.UUID | None = None,
 ) -> SavedAnswer:
     """An answer the User reviewed on a form, kept for reuse within its scope."""
     from app.schemas.application_profile import SavedAnswerIn
@@ -263,7 +295,23 @@ async def save_from_extension(
         if len(countries) != 1:
             raise PreconditionError("This Job is in several countries. Save it as General.")
         body["country"] = countries[0]
-    row = await saved_answers.create(session, user, SavedAnswerIn.model_validate(body))
+    validated = SavedAnswerIn.model_validate(body)
+    existing = await saved_answers._owned(session, user, answer_id) if answer_id else None
+    if existing and existing.question_key != saved_answers.question_key(question):
+        raise PreconditionError("The saved answer belongs to a different question. Reload it.")
+    same_scope = (
+        existing
+        and existing.scope == scope
+        and existing.company_id == validated.company_id
+        and existing.country == validated.country
+        and existing.currency == validated.currency
+        and existing.period == validated.period
+    )
+    row = (
+        await saved_answers.update(session, user, existing.id, validated)
+        if same_scope
+        else await saved_answers.create(session, user, validated)
+    )
     row.origin, row.job_id = origin, job.id
     await session.flush()
     return row

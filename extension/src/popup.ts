@@ -172,6 +172,7 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
 
 function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, needsConfirmation = false): HTMLElement {
   const newer = d.current_version > d.number;
+  const applied = Boolean(d.application_status && d.application_status !== "drafted");
   return h(
     "section",
     { class: "panel" },
@@ -179,6 +180,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
     h("p", { class: "title" }, draftLabel(d)),
     needsConfirmation ? h("div", {}, h("p", { class: "warn-text" }, "Confirm the Job and document before continuing on this page."), button("Continue with this reviewed document", async () => { await chooseDraft(tabId, d.draft_id, d.number); refresh(); })) : null,
     h("p", {}, `Saved ${fromNow(d.saved_at)}.`),
+    applied ? h("p", { class: "ok" }, `Application status: ${d.application_status}`) : null,
     h("ul", { class: "files" }, h("li", {}, d.resume_file), h("li", {}, d.cover_letter_file)),
     d.warnings ? h("p", { class: "warn-text" }, `${d.warnings} ${d.warnings === 1 ? "warning" : "warnings"} to check in the Draft.`) : null,
     newer ? h("p", { class: "warn-text" }, "An updated document is available. This application still uses the copy you reviewed.") : null,
@@ -197,7 +199,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
         if (saved.error) throw new Error(saved.error);
         content.append(h("p", { role: "status", class: "ok" }, "PDFs saved under Downloads in the company folder."));
       }, "ghost"),
-      button("Mark as applied", async () => {
+      applied ? h("button", { type: "button", class: "ghost", disabled: "true" }, "Applied recorded") : button("Mark as applied", async () => {
         const actions = h("div", { class: "actions" }, button("Yes, I submitted this application", async () => {
           await ask({ type: "markApplied", tabId }); refresh();
         }), button("Cancel", () => actions.remove(), "ghost"));
@@ -282,6 +284,8 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   function showPreview(result: ScanResult) {
+    scanButton.classList.add("ghost");
+    scanButton.textContent = "Scan again";
     if (result.unavailableFrames) section.append(h("p", { class: "warn-text" }, `${result.unavailableFrames} embedded frame(s) need site access. Use Find embedded forms, or open the hosted application.`));
     const rows = result.proposals.map((p) => {
       const box = h("input", { type: "checkbox", value: p.ref, id: `f-${p.ref}` }) as HTMLInputElement;
@@ -316,8 +320,12 @@ function fillSection(tabId: number): HTMLElement {
     void ask<ReviewState>({ type: "reviewState", tabId }).then(review => {
       for (const el of body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]")) {
         const kept = review?.answers?.[el.dataset.answerRef!];
-        if (kept) el.value = kept;
-        el.addEventListener("input", () => { const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.value])); void ask({ type: "reviewState", tabId, patch: { answers } }).catch(() => undefined); });
+        const origin = review?.answerOrigins?.[el.dataset.answerRef!] ?? "user";
+        const suppress = result.questions?.some(q => q.noAi) && origin === "suggestion";
+        if (kept && !suppress) el.value = kept;
+        el.dataset.origin = suppress ? "user" : origin;
+        if (!suppress && review?.answerIds?.[el.dataset.answerRef!]) el.dataset.savedAnswerId = review.answerIds[el.dataset.answerRef!];
+        el.addEventListener("input", () => { const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.value])); void ask({ type: "reviewState", tabId, patch: { answers, answerIds: Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.dataset.savedAnswerId ?? ""]).filter(([, id]) => id)), answerOrigins: Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.dataset.origin === "suggestion" ? "suggestion" as const : "user" as const])) } }).catch(() => undefined); });
       }
     }).catch(() => undefined);
     const questions = result.questions ?? [];
@@ -334,6 +342,8 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   function showReport(report: FillResult) {
+    scanButton.classList.add("ghost");
+    scanButton.textContent = "Scan again";
     const label = (ref: string) => report.labels[ref] ?? "A field";
     const undoButton = button("Undo", async () => {
       undoButton.disabled = true;
@@ -382,14 +392,17 @@ function questionsBlock(tabId: number, questions: Question[], hasDraft: boolean)
       const text = answer.value.trim();
       if (!text) throw new Error("Write or review the answer first.");
       const scope = (save.parentElement!.querySelector("select") as HTMLSelectElement).value as "company" | "country" | "general";
-      await ask({ type: "saveAnswer", tabId, question: q.label, answer: text, scope, origin: answer.dataset.origin === "suggestion" ? "suggestion" : "user" });
+      const saved = await ask<{ id?: string }>({ type: "saveAnswer", tabId, ...(answer.dataset.savedAnswerId ? { answer_id: answer.dataset.savedAnswerId } : {}), question: q.label, answer: text, scope, origin: answer.dataset.origin === "suggestion" ? "suggestion" : "user" });
+      if (saved?.id) { answer.dataset.savedAnswerId = saved.id; answer.dispatchEvent(new Event("input")); }
       save.textContent = "Saved";
       save.disabled = true;
     }, "ghost");
+    answer.addEventListener("input", () => { save.disabled = false; save.textContent = "Save this answer"; });
     const scope = h("select", { "aria-label": `Reuse for: ${q.label}` },
       h("option", { value: "company" }, "This Company only"),
       h("option", { value: "country" }, "Jobs in this country"),
       h("option", { value: "general" }, "Any job"));
+    scope.addEventListener("change", () => { save.disabled = false; save.textContent = "Save this answer"; });
     return h("li", {}, box, h("label", { for: `f-${q.ref}` }, h("span", { class: "title" }, q.label),
       q.sensitive ? h("span", { class: "source" }, "Sensitive: filled only from your saved answers or what you write.") : null),
       answer, extra, h("div", { class: "actions" }, scope, save));
@@ -402,10 +415,11 @@ function questionsBlock(tabId: number, questions: Question[], hasDraft: boolean)
       for (const a of answers) {
         const item = items.get(a.ref);
         if (!item) continue;
+        if (a.saved_answer_id) item.answer.dataset.savedAnswerId = a.saved_answer_id;
         // Never replace what the User already wrote.
         if (a.text && !item.answer.value.trim()) {
           item.answer.value = a.text;
-          item.answer.dataset.origin = a.kind === "suggestion" ? "suggestion" : "user";
+          item.answer.dataset.origin = a.origin === "suggestion" || a.kind === "suggestion" ? "suggestion" : "user";
           item.answer.dispatchEvent(new Event("input"));
         }
         item.extra.replaceChildren(...parts(

@@ -1,7 +1,7 @@
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class QuestionIn(BaseModel):
@@ -14,9 +14,17 @@ class QuestionIn(BaseModel):
 
 class AnswersIn(BaseModel):
     job_id: uuid.UUID
+    draft_id: uuid.UUID | None = None
+    number: int | None = Field(default=None, ge=1)
     questions: list[QuestionIn] = Field(min_length=1, max_length=12)
     # The form says not to use AI: notes from the User's Facts only, never prose.
     no_ai: bool = False
+
+    @model_validator(mode="after")
+    def pinned_pair(self):
+        if (self.draft_id is None) != (self.number is None):
+            raise ValueError("Provide both the selected Draft and its saved document number")
+        return self
 
 
 class AnswerOut(BaseModel):
@@ -26,10 +34,12 @@ class AnswerOut(BaseModel):
     notes: list[str] = Field(default_factory=list)
     fact_refs: list[str] = Field(default_factory=list)
     saved_answer_id: uuid.UUID | None = None
+    origin: Literal["user", "suggestion"] | None = None
     warning: str | None = None
 
 
 class ExtSavedAnswerIn(BaseModel):
+    answer_id: uuid.UUID | None = None
     job_id: uuid.UUID
     question: str = Field(min_length=1, max_length=1000)
     answer: str = Field(min_length=1, max_length=10000)

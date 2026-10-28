@@ -452,3 +452,31 @@ it("makes saving the primary footer action and discarding a secondary action", a
   expect(save).toHaveClass("bg-brand-600");
   expect(discard).not.toHaveClass("bg-brand-600");
 });
+
+it("clears the resume section when switching to cover-letter proposals", async () => {
+  const calls = setup();
+  const user = userEvent.setup();
+  await editSection(user);
+  expect(screen.getByRole("heading", { name: "Improve Skills" })).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "Cover Letter" }));
+  expect(await screen.findByRole("heading", { name: "Improve cover letter" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Prepare replacement cover letter" }));
+  await waitFor(() => expect(calls.some(r => r.method === "POST" && r.url.endsWith("/proposals"))).toBe(true));
+  const request = calls.find(r => r.method === "POST" && r.url.endsWith("/proposals"))!;
+  const body = await request.json();
+  expect(body.part).toBe("cover_letter");
+  expect(body.section).toBeUndefined();
+});
+
+it("supports keyboard navigation between document tabs", async () => {
+  setup();
+  const user = userEvent.setup();
+  const resume = await screen.findByRole("tab", { name: "Tailored Resume" });
+  resume.focus();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByRole("tab", { name: "Cover Letter" })).toHaveFocus();
+  expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Cover Letter");
+  await user.keyboard("{Home}");
+  expect(resume).toHaveFocus();
+  expect(resume).toHaveAttribute("aria-selected", "true");
+});

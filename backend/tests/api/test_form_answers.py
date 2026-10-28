@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.core.config import get_settings
 from app.core.errors import GatewayError
@@ -27,11 +27,12 @@ def allow_extension(monkeypatch):
     get_settings.cache_clear()
 
 
-async def ask(client, job_id, questions=QUESTIONS, no_ai=False):
+async def ask(client, job_id, questions=QUESTIONS, no_ai=False, **pinned):
     token = await connect(client)
     async with ext_client(token=token) as ext:
         return await ext.post(
-            "/api/ext/answers", json={"job_id": job_id, "questions": questions, "no_ai": no_ai}
+            "/api/ext/answers",
+            json={"job_id": job_id, "questions": questions, "no_ai": no_ai, **pinned},
         )
 
 
@@ -240,3 +241,149 @@ async def test_writing_style_is_built_from_own_text_and_carries_no_claims(prepar
     assert edited.json()["excerpts"] == ["I shipped releases for the team at [NAME]."]
     assert (await client.delete("/api/me/writing-style")).status_code == 204
     assert (await client.get("/api/me/writing-style")).json()["traits"] == []
+
+
+@pytest.mark.parametrize(
+    "text,refs",
+    [
+        ("I build Python APIs.", []),
+        ("I build Python APIs.", ["F999"]),
+        ("I build Python APIs. " * 150, ["F1"]),
+    ],
+)
+async def test_unvalidatable_provider_answers_degrade_to_notes(prepared, text, refs):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+
+    async def invalid(_request):
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text=text, fact_refs=refs)]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = invalid
+    response = await ask(client, job_id, [QUESTIONS[0]])
+    assert response.status_code == 200, response.text
+    [answer] = response.json()
+    assert answer["kind"] == "fact_notes" and answer["notes"]
+
+
+async def test_no_ai_forms_do_not_reuse_ai_derived_saved_answers(prepared):  # noqa: F811
+    _, client, job_id, gateway = prepared
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        saved = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": QUESTIONS[0]["question"],
+                "answer": "Previously generated wording",
+                "origin": "suggestion",
+            },
+        )
+    assert saved.status_code == 201
+    normal = (await ask(client, job_id, [QUESTIONS[0]])).json()[0]
+    assert normal["kind"] == "saved" and normal["origin"] == "suggestion"
+
+    async def must_not_run(_request):
+        raise AssertionError("no provider call on no-AI forms")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(client, job_id, [QUESTIONS[0]], no_ai=True)
+    assert response.status_code == 200
+    [answer] = response.json()
+    assert answer["kind"] == "fact_notes" and answer["text"] == ""
+    assert "Previously generated wording" not in json.dumps(answer)
+
+
+async def test_answer_context_is_the_explicit_pinned_document(prepared, db):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse
+    from app.models import Draft, DraftVersion
+    from tests.api.test_drafts import generated
+
+    _, client, job_id, gateway = prepared
+    old = await generated(prepared)
+    draft = await db.get(Draft, old["id"])
+    original = await db.scalar(
+        select(DraftVersion).where(DraftVersion.draft_id == draft.id, DraftVersion.number == 1)
+    )
+    old_context = dict(original.job_context)
+    db.add(
+        DraftVersion(
+            user_id=draft.user_id,
+            draft_id=draft.id,
+            number=2,
+            source="replacement",
+            content=original.content,
+            facts=original.facts,
+            warnings=[],
+            message="",
+            job_context={**old_context, "description": "A different newer JD"},
+        )
+    )
+    draft.current_version = 2
+    await db.commit()
+    seen = []
+
+    async def capture(request):
+        seen.append(request.description)
+        return GatewayResponse(
+            result=AnswerQuestionsResult(answers=[]), provider="recorded", model="test"
+        )
+
+    gateway.answer_questions = capture
+    response = await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id), number=1)
+    assert response.status_code == 200, response.text
+    assert seen == [old_context["description"]]
+    assert (
+        await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id), number=999)
+    ).status_code == 404
+    assert (await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id))).status_code == 422
+
+
+async def test_pinned_answer_context_cannot_read_another_users_draft(prepared, bob, db):  # noqa: F811
+    from app.models import UserJob
+    from tests.api.test_drafts import generated
+
+    _, _, job_id, gateway = prepared
+    draft = await generated(prepared)
+    other, other_client = bob
+    db.add(UserJob(user_id=other.id, job_id=job_id))
+    await db.commit()
+
+    async def must_not_run(_request):
+        raise AssertionError("ownership checked before the gateway")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(other_client, job_id, [QUESTIONS[0]], draft_id=draft["id"], number=1)
+    assert response.status_code == 404
+
+
+async def test_extension_can_update_the_saved_answer_it_reviewed(prepared, bob):  # noqa: F811
+    _, client, job_id, _ = prepared
+    token = await connect(client)
+    body = {
+        "job_id": job_id,
+        "question": "Why us?",
+        "answer": "First answer",
+        "origin": "suggestion",
+    }
+    async with ext_client(token=token) as ext:
+        saved = (await ext.post("/api/ext/saved-answers", json=body)).json()
+        changed = await ext.post(
+            "/api/ext/saved-answers",
+            json={**body, "answer_id": saved["id"], "answer": "Reworked answer"},
+        )
+        assert changed.status_code == 201, changed.text
+        assert changed.json()["id"] == saved["id"]
+        assert changed.json()["answer"] == "Reworked answer"
+        assert changed.json()["origin"] == "suggestion"
+        wrong_question = await ext.post(
+            "/api/ext/saved-answers",
+            json={**body, "answer_id": saved["id"], "question": "Another question"},
+        )
+        assert wrong_question.status_code == 409

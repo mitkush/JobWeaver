@@ -247,3 +247,48 @@ it("keeps the side panel open after Connect, waiting for approval on JobWeaver",
   expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "connect")).toBe(true);
   expect(close).not.toHaveBeenCalled();
 });
+
+it("keeps AI provenance and makes a changed saved answer saveable again", async () => {
+  const send = await popup(() => pageJob, { selected: selectedDraft, reply: type => {
+    if (type === "scan") return { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why this role?", sensitive: false, noAi: false }] };
+    if (type === "reviewState") return { answers: { q1: "Saved generated wording" }, answerOrigins: { q1: "suggestion" } };
+    if (type === "saveAnswer") return { ok: true };
+  } });
+  document.querySelectorAll("button").forEach(b => { if (b.textContent === "Scan this form") b.click(); });
+  await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[aria-label="Your answer: Why this role?"]')?.value).toBe("Saved generated wording"));
+  const answer = document.querySelector<HTMLTextAreaElement>('[aria-label="Your answer: Why this role?"]')!;
+  expect(answer.dataset.origin).toBe("suggestion");
+  const save = [...document.querySelectorAll("button")].find(b => b.textContent === "Save this answer")!;
+  save.click();
+  await vi.waitFor(() => expect(save.textContent).toBe("Saved"));
+  const savedCall = send.mock.calls.find(([message]) => message.type === "saveAnswer")![0] as unknown as { origin: string };
+  expect(savedCall.origin).toBe("suggestion");
+  answer.value = "Reworked wording";
+  answer.dispatchEvent(new Event("input"));
+  expect(save.disabled).toBe(false);
+  expect(save.textContent).toBe("Save this answer");
+});
+
+it("does not restore AI-derived review prose on a no-AI form", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: true }] };
+    if (type === "reviewState") return { answers: { q1: "Prior AI wording" }, answerOrigins: { q1: "suggestion" } };
+  } });
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Show notes from my Facts")).toBeTruthy());
+  expect(document.querySelector<HTMLTextAreaElement>('textarea[data-answer-ref="q1"]')!.value).toBe("");
+});
+
+it("makes rescanning secondary after proposals are shown", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => type === "scan" ? { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: false }] } : undefined });
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Scan again")).toBeTruthy());
+  expect(buttonNamed("Scan again")!.classList.contains("ghost")).toBe(true);
+  expect(buttonNamed("Fill ticked fields")!.classList.contains("ghost")).toBe(false);
+});
+it("shows the recorded application status instead of another Mark as applied action", async () => {
+  await popup(() => pageJob, { selected: { ...pinned, application_status: "applied" } });
+  expect(buttonNamed("Mark as applied")).toBeUndefined();
+  expect(buttonNamed("Applied recorded")!.disabled).toBe(true);
+  expect(document.body.textContent).toContain("Application status: applied");
+});

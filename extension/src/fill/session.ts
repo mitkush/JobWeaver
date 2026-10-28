@@ -28,6 +28,7 @@ export type ScanResult = {
 export type Question = { ref: string; label: string; maxLength?: number; sensitive: boolean; noAi: boolean };
 
 export type Answer = {
+  origin?: "user" | "suggestion";
   ref: string;
   kind: "saved" | "suggestion" | "fact_notes" | "none";
   text: string;
@@ -127,6 +128,8 @@ export async function suggestAnswers(deps: Deps, tabId: number): Promise<Answer[
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       job_id: await selectedJob(deps, tabId),
+      draft_id: stored.draft?.id,
+      number: stored.draft?.number,
       no_ai: questions.some((q) => q.noAi),
       questions: questions.map((q) => ({ ref: q.ref, question: q.label, ...(q.maxLength ? { max_chars: q.maxLength } : {}) })),
     }),
@@ -139,8 +142,8 @@ export async function suggestAnswers(deps: Deps, tabId: number): Promise<Answer[
 export async function saveAnswer(
   deps: Deps,
   tabId: number,
-  body: { question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" },
-): Promise<void> {
+  body: { answer_id?: string; question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" },
+): Promise<{ id?: string }> {
   await assertConfirmed(deps, tabId);
   const response = await apiFetch(deps, "/api/ext/saved-answers", {
     method: "POST",
@@ -148,6 +151,7 @@ export async function saveAnswer(
     body: JSON.stringify({ ...body, job_id: await selectedJob(deps, tabId) }),
   });
   if (!response?.ok) throw new Error(await errorText(response, "The answer could not be saved."));
+  return await response.json() as { id?: string };
 }
 
 async function errorText(response: Response | null, fallback: string): Promise<string> {

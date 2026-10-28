@@ -1496,6 +1496,8 @@ export interface components {
             fact_refs?: string[];
             /** Saved Answer Id */
             saved_answer_id?: string | null;
+            /** Origin */
+            origin?: ("user" | "suggestion") | null;
             /** Warning */
             warning?: string | null;
         };
@@ -1506,6 +1508,10 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Number */
+            number?: number | null;
             /** Questions */
             questions: components["schemas"]["QuestionIn"][];
             /**
@@ -2030,6 +2036,8 @@ export interface components {
         };
         /** ExtSavedAnswerIn */
         ExtSavedAnswerIn: {
+            /** Answer Id */
+            answer_id?: string | null;
             /**
              * Job Id
              * Format: uuid

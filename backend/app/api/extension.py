@@ -202,7 +202,16 @@ async def ext_answers(
     """Answers for the form's own questions: Saved Answers, reviewed-only Suggestions, or
     Fact notes. Nothing is filled until the User ticks it in the extension."""
     _, user = caller
-    result = await form_answers.answer(db, user, body.job_id, body.questions, body.no_ai, gateway)
+    result = await form_answers.answer(
+        db,
+        user,
+        body.job_id,
+        body.questions,
+        body.no_ai,
+        gateway,
+        draft_id=body.draft_id,
+        number=body.number,
+    )
     await db.commit()
     return result
 
@@ -213,7 +222,14 @@ async def ext_save_answer(
 ) -> SavedAnswerOut:
     _, user = caller
     row = await form_answers.save_from_extension(
-        db, user, body.job_id, body.question, body.answer, body.scope, body.origin
+        db,
+        user,
+        body.job_id,
+        body.question,
+        body.answer,
+        body.scope,
+        body.origin,
+        answer_id=body.answer_id,
     )
     await db.commit()
     await db.refresh(row)

@@ -95,9 +95,9 @@ export type PopupMessage =
   | { type: "fill"; tabId: number; refs: string[]; answers?: Record<string, string> }
   | { type: "undo"; tabId: number }
   | { type: "lastFill" | "lastScan" | "frameSites" | "markApplied"; tabId: number }
-  | { type: "reviewState"; tabId: number; patch?: { capture?: PageJob | null; answers?: Record<string, string> } }
+  | { type: "reviewState"; tabId: number; patch?: { capture?: PageJob | null; answers?: Record<string, string>; answerOrigins?: Record<string, "user" | "suggestion">; answerIds?: Record<string, string> } }
   | { type: "suggestAnswers"; tabId: number }
-  | { type: "saveAnswer"; tabId: number; question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" }
+  | { type: "saveAnswer"; tabId: number; answer_id?: string; question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" }
   | { type: "open"; path: string };
 
 async function handle(message: PopupMessage): Promise<unknown> {

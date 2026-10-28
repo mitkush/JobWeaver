@@ -79,9 +79,6 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
 }
-body {
-  width: 360px;
-}
 .panel {
   margin: 12px 0;
   padding: 12px;
@@ -146,11 +143,6 @@ select {
   padding: 6px 0;
   border-top: 1px solid var(--line);
 }
-.fields label {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 .value {
   font: 12px/1.4 ui-monospace, monospace;
   word-break: break-all;
@@ -190,3 +182,14 @@ select {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Field labels must win over the capture editor's generic label rule. */
+.fields label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 0;
+}
+.fields input[type="checkbox"] { flex: none; align-self: flex-start; margin-top: 5px; }

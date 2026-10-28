@@ -30,3 +30,14 @@ Implemented together, following `APPLICATION_UX_PLAN.md`. This supersedes the ea
 - **Reviewed answers.** The typed `answer_questions` task is built: only question labels and the Job are sent, at most 12 per request, after the AI notice and region checks. Each Suggestion is checked by the same code as a cover letter line (ADR-0005) and becomes Fact notes when it fails or cites nothing; stock phrasing is flagged. Suggestions appear unticked in an editable box, and only the text the User reviewed is filled. A sensitive question gets a Saved Answer or nothing from JobWeaver; the User may still type their own answer in the panel, as they could on the page. Reviewed answers can be saved from the form with a scope. Writing Style is built by the `describe_writing_style` task from the User's summary and saved non-sensitive answers; code redacts its excerpts again on every save, including the User's own edits.
 - **Access list version 4:** reconnecting asks the User to approve Mark as applied and answer suggestions.
 - **Store build:** `npm run build:store` leaves out the pinned key, so the Chrome Web Store assigns its own ID, which must be added to `EXTENSION_IDS` beside the unpacked one. The privacy policy is served at `/privacy/extension`.
+
+
+### Answer context and provenance
+
+Form-answer requests from the extension include its selected Draft and exact saved number.
+The server verifies ownership and Job membership, and uses that version's immutable job
+context, including for an archived package. Legacy clients without a pin use current context.
+No-AI instructions also suppress Saved Answers originating as AI suggestions; saving or
+reopening a suggestion does not turn it into a user-authored answer. User-entered Saved
+Answers remain available, including sensitive answers. Unvalidatable provider output
+becomes Fact notes rather than an HTTP error.
