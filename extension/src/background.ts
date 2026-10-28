@@ -7,7 +7,7 @@ import { captured, carryCapture, clearCapture, createCapturedDraft, readPage, sa
 import { reviewState } from "./review-state";
 import { apiFetch } from "./connection";
 import type { PageJob } from "./job-read";
-import { fillTab, forgetTab, lastFill, scanTab, undoTab, lastScan, forgetScan, type TabPort } from "./fill/session";
+import { fillTab, forgetTab, lastFill, scanTab, undoTab, lastScan, forgetScan, saveAnswer, suggestAnswers, type TabPort } from "./fill/session";
 
 declare const __JOBWEAVER_ORIGIN__: string;
 
@@ -92,6 +92,8 @@ export type PopupMessage =
   | { type: "undo"; tabId: number }
   | { type: "lastFill" | "lastScan" | "frameSites" | "markApplied"; tabId: number }
   | { type: "reviewState"; tabId: number; patch?: { capture?: PageJob | null; answers?: Record<string, string> } }
+  | { type: "suggestAnswers"; tabId: number }
+  | { type: "saveAnswer"; tabId: number; question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" }
   | { type: "open"; path: string };
 
 async function handle(message: PopupMessage): Promise<unknown> {
@@ -134,6 +136,11 @@ async function handle(message: PopupMessage): Promise<unknown> {
       return reviewState(deps, message.tabId, tab.url, selection, message.patch);
     }
     case "lastScan": return lastScan(deps, message.tabId);
+    case "suggestAnswers": return suggestAnswers(deps, message.tabId);
+    case "saveAnswer": {
+      const { tabId, type: _type, ...body } = message;
+      return saveAnswer(deps, tabId, body);
+    }
     case "frameSites": {
       if (!await chrome.permissions.contains({ permissions: ["webNavigation"] })) return [];
       const frames = await chrome.webNavigation.getAllFrames({ tabId: message.tabId });

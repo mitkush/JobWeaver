@@ -192,3 +192,49 @@ it("offers site access only when this site is not allowed yet", async () => {
   await popup(() => pageJob, { siteAllowed: false });
   expect(buttonNamed("Allow access to example.com")).toBeTruthy();
 });
+
+it("puts suggestions unticked into editable answers and fills only reviewed, ticked text", async () => {
+  const questions = [
+    { ref: "q1", label: "Why do you want to join us?", sensitive: false, noAi: false },
+    { ref: "q2", label: "What is your notice period?", sensitive: true, noAi: false },
+  ];
+  const send = await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], questions, manual: [], profileReviewed: true, draft: { title: "Engineer", company: "Example", number: 2 } };
+    if (type === "suggestAnswers") return [
+      { ref: "q1", kind: "suggestion", text: "At Acme I built the billing API.", notes: [], fact_refs: ["F4"], saved_answer_id: null, warning: "Contains stock phrasing. Rework it in your own words." },
+      { ref: "q2", kind: "none", text: "", notes: [], fact_refs: [], saved_answer_id: null, warning: "Answer this yourself, or save an answer in Settings to reuse it." },
+    ];
+    if (type === "fill") return { filled: ["q1"], failed: [], downloads: [], labels: { q1: "Why do you want to join us?" } };
+    if (type === "reviewState") return {};
+  } });
+  await vi.waitFor(() => expect(buttonNamed("Scan this form")).toBeTruthy());
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Suggest answers")).toBeTruthy());
+  const answer = document.querySelector<HTMLTextAreaElement>('textarea[data-answer-ref="q1"]')!;
+  answer.value = "";
+  buttonNamed("Suggest answers")!.click();
+  await vi.waitFor(() => expect(answer.value).toBe("At Acme I built the billing API."));
+  expect(document.body.textContent).toContain("Rework it in your own words");
+  expect(document.body.textContent).toContain("Answer this yourself");
+  expect(document.querySelector<HTMLInputElement>("#f-q1")!.checked).toBe(false);
+
+  answer.value = "My reworked answer";
+  document.querySelector<HTMLInputElement>("#f-q1")!.checked = true;
+  buttonNamed("Fill ticked fields")!.click();
+  await vi.waitFor(() => expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "fill")).toBe(true));
+  const fill = send.mock.calls.map(([m]) => m as { type: string; refs?: string[]; answers?: Record<string, string> }).find(m => m.type === "fill")!;
+  expect(fill.refs).toEqual(["q1"]);
+  expect(fill.answers?.q1).toBe("My reworked answer");
+});
+
+it("offers notes, not suggestions, on a form that refuses AI answers", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: true }], manual: [], profileReviewed: true, draft: {} };
+    if (type === "reviewState") return {};
+  } });
+  await vi.waitFor(() => expect(buttonNamed("Scan this form")).toBeTruthy());
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Show notes from my Facts")).toBeTruthy());
+  expect(buttonNamed("Suggest answers")).toBeUndefined();
+  expect(document.body.textContent).toContain("answers not written by AI");
+});

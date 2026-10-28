@@ -1,7 +1,7 @@
 import type { ReviewState } from "./review-state";
 import type { PopupMessage } from "./background";
 import type { DraftSummary, DraftVersion, PageState } from "./drafts";
-import type { FillResult, ScanResult } from "./fill/session";
+import type { Answer, FillResult, Question, ScanResult } from "./fill/session";
 import type { FillReport } from "./fill/types";
 import { fromNow } from "./time";
 import type { Captured } from "./capture";
@@ -320,13 +320,16 @@ function fillSection(tabId: number): HTMLElement {
         el.addEventListener("input", () => { const answers = Object.fromEntries(Array.from(body.querySelectorAll<HTMLTextAreaElement>("textarea[data-answer-ref]"), item => [item.dataset.answerRef!, item.value])); void ask({ type: "reviewState", tabId, patch: { answers } }).catch(() => undefined); });
       }
     }).catch(() => undefined);
+    const questions = result.questions ?? [];
+    const fillable = rows.length + questions.length;
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
       result.profileReviewed ? null : h("p", { class: "warn-text" }, "Review your profile to fill your details."),
-      rows.length ? h("ul", { class: "fields" }, ...rows) : h("p", {}, "Nothing here JobWeaver can fill."),
+      rows.length ? h("ul", { class: "fields" }, ...rows) : questions.length ? null : h("p", {}, "Nothing here JobWeaver can fill."),
+      questions.length ? questionsBlock(tabId, questions, Boolean(result.draft)) : null,
       result.manual.length ? h("p", { class: "muted" }, `For you to fill: ${result.manual.slice(0, 8).join(", ")}${result.manual.length > 8 ? "…" : ""}`) : null,
-      rows.length ? h("p", { class: "muted" }, "Filling puts the ticked values into this site's form, which may save them before you submit. JobWeaver never submits.") : null,
-      rows.length ? h("div", { class: "actions" }, fillButton) : null,
+      fillable ? h("p", { class: "muted" }, "Filling puts the ticked values into this site's form, which may save them before you submit. JobWeaver never submits.") : null,
+      fillable ? h("div", { class: "actions" }, fillButton) : null,
     ));
   }
 
@@ -352,6 +355,75 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   return section;
+}
+
+const ANSWER_SOURCES: Record<Answer["kind"], string> = {
+  saved: "Your saved answer",
+  suggestion: "Suggestion from your Facts. Review and rework it in your own words, then tick to use.",
+  fact_notes: "Notes from your Facts to write from:",
+  none: "",
+};
+
+/** The form's own questions: the User writes, or reviews a Saved Answer or Suggestion,
+ * and ticks it. Nothing here is filled unticked or unreviewed (ADR-0017). */
+function questionsBlock(tabId: number, questions: Question[], hasDraft: boolean): HTMLElement {
+  const items = new Map<string, { answer: HTMLTextAreaElement; extra: HTMLElement; box: HTMLInputElement }>();
+  const list = h("ul", { class: "fields" }, ...questions.map((q) => {
+    const box = h("input", { type: "checkbox", value: q.ref, id: `f-${q.ref}` }) as HTMLInputElement;
+    const answer = h("textarea", {
+      "data-answer-ref": q.ref,
+      rows: "5",
+      "aria-label": `Your answer: ${q.label}`,
+      ...(q.maxLength ? { maxlength: String(q.maxLength) } : {}),
+    }) as HTMLTextAreaElement;
+    const extra = h("div");
+    items.set(q.ref, { answer, extra, box });
+    const save = button("Save this answer", async () => {
+      const text = answer.value.trim();
+      if (!text) throw new Error("Write or review the answer first.");
+      const scope = (save.parentElement!.querySelector("select") as HTMLSelectElement).value as "company" | "country" | "general";
+      await ask({ type: "saveAnswer", tabId, question: q.label, answer: text, scope, origin: answer.dataset.origin === "suggestion" ? "suggestion" : "user" });
+      save.textContent = "Saved";
+      save.disabled = true;
+    }, "ghost");
+    const scope = h("select", { "aria-label": `Reuse for: ${q.label}` },
+      h("option", { value: "company" }, "This Company only"),
+      h("option", { value: "country" }, "Jobs in this country"),
+      h("option", { value: "general" }, "Any job"));
+    return h("li", {}, box, h("label", { for: `f-${q.ref}` }, h("span", { class: "title" }, q.label),
+      q.sensitive ? h("span", { class: "source" }, "Sensitive: filled only from your saved answers or what you write.") : null),
+      answer, extra, h("div", { class: "actions" }, scope, save));
+  }));
+  const noAi = questions.some((q) => q.noAi);
+  const suggest = button(noAi ? "Show notes from my Facts" : "Suggest answers", async () => {
+    suggest.disabled = true;
+    try {
+      const answers = await ask<Answer[]>({ type: "suggestAnswers", tabId });
+      for (const a of answers) {
+        const item = items.get(a.ref);
+        if (!item) continue;
+        // Never replace what the User already wrote.
+        if (a.text && !item.answer.value.trim()) {
+          item.answer.value = a.text;
+          item.answer.dataset.origin = a.kind === "suggestion" ? "suggestion" : "user";
+          item.answer.dispatchEvent(new Event("input"));
+        }
+        item.extra.replaceChildren(...parts(
+          ANSWER_SOURCES[a.kind] ? h("span", { class: "source" }, ANSWER_SOURCES[a.kind]) : null,
+          a.kind === "fact_notes" && a.notes.length ? h("ul", { class: "notes" }, ...a.notes.map((n) => h("li", {}, n))) : null,
+          a.warning ? h("p", { class: "warn-text" }, a.warning) : null,
+        ));
+      }
+    } finally { suggest.disabled = false; }
+  }, "ghost");
+  suggest.disabled = !hasDraft;
+  return h("div", { class: "questions" }, ...parts(
+    h("p", { class: "label" }, `Questions on this form (${questions.length})`),
+    noAi ? h("p", { class: "warn-text" }, "This form asks for answers not written by AI. JobWeaver shows your Facts as notes; write the answers yourself.") : null,
+    hasDraft ? null : h("p", { class: "muted" }, "Choose a Draft above to get answers for this Job."),
+    h("div", { class: "actions" }, suggest),
+    list,
+  ));
 }
 
 async function render() {

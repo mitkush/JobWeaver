@@ -175,3 +175,18 @@ select {
 .panel textarea { resize: vertical; min-height: 140px; }
 .panel label { display: block; margin-top: 8px; }
 .panel p { overflow-wrap: anywhere; }
+.questions textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font: inherit;
+}
+.questions select {
+  min-height: 36px;
+}
+.notes {
+  margin: 4px 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}

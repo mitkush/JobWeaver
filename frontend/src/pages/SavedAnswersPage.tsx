@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { PageSpinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
+import { WritingStyleCard } from "@/features/extension/WritingStyleCard";
 import { COUNTRIES, countryName } from "@/lib/countries";
 
 type Form = {
@@ -151,6 +152,7 @@ export function SavedAnswersPage() {
             </ul>
           </Card>
         )}
+        <WritingStyleCard />
       </div>
       <ConfirmDialog
         open={deleting !== null}

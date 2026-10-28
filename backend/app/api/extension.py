@@ -33,7 +33,15 @@ from app.schemas.extension import (
     ExtensionUserOut,
     ExtProfileOut,
 )
-from app.services import application_profile, capture, drafting, extension_drafts, saved_answers
+from app.schemas.form_answers import AnswerOut, AnswersIn, ExtSavedAnswerIn
+from app.services import (
+    application_profile,
+    capture,
+    drafting,
+    extension_drafts,
+    form_answers,
+    saved_answers,
+)
 from app.services import extension as service
 
 router = APIRouter(tags=["extension"])
@@ -185,6 +193,31 @@ async def ext_draft(
     result = await extension_drafts.version_detail(db, user, draft_id, number)
     await db.commit()
     return result
+
+
+@router.post("/api/ext/answers")
+async def ext_answers(
+    db: DbSession, caller: ExtensionCaller, body: AnswersIn, gateway: Gateway
+) -> list[AnswerOut]:
+    """Answers for the form's own questions: Saved Answers, reviewed-only Suggestions, or
+    Fact notes. Nothing is filled until the User ticks it in the extension."""
+    _, user = caller
+    result = await form_answers.answer(db, user, body.job_id, body.questions, body.no_ai, gateway)
+    await db.commit()
+    return result
+
+
+@router.post("/api/ext/saved-answers", status_code=201)
+async def ext_save_answer(
+    db: DbSession, caller: ExtensionCaller, body: ExtSavedAnswerIn
+) -> SavedAnswerOut:
+    _, user = caller
+    row = await form_answers.save_from_extension(
+        db, user, body.job_id, body.question, body.answer, body.scope, body.origin
+    )
+    await db.commit()
+    await db.refresh(row)
+    return SavedAnswerOut.model_validate(row, from_attributes=True)
 
 
 @router.post("/api/ext/drafts/{draft_id}/applied", status_code=204)

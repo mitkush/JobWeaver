@@ -28,6 +28,8 @@ from app.gateway.routing import (
     Route,
 )
 from app.gateway.schemas import (
+    AnswerQuestionsRequest,
+    AnswerQuestionsResult,
     DraftResult,
     EmbedRequest,
     EmbedResult,
@@ -40,6 +42,8 @@ from app.gateway.schemas import (
     ParseDocumentsResult,
     ReviseDraftRequest,
     TailorDraftRequest,
+    WritingStyleRequest,
+    WritingStyleResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,6 +175,28 @@ class LiveAIGateway(BaseAIGateway):
             prompts.PARSE_DOCUMENTS_SYSTEM,
             prompts.parse_documents_user(request),
             ParseDocumentsResult,
+        )
+
+    async def answer_questions(
+        self, request: AnswerQuestionsRequest
+    ) -> GatewayResponse[AnswerQuestionsResult]:
+        return await self._run(
+            "answer_questions",
+            request.user_id,
+            prompts.ANSWER_QUESTIONS_SYSTEM,
+            prompts.answer_questions_user(request),
+            AnswerQuestionsResult,
+        )
+
+    async def describe_writing_style(
+        self, request: WritingStyleRequest
+    ) -> GatewayResponse[WritingStyleResult]:
+        return await self._run(
+            "describe_writing_style",
+            request.user_id,
+            prompts.WRITING_STYLE_SYSTEM,
+            prompts.writing_style_user(request),
+            WritingStyleResult,
         )
 
     async def extract_skills(

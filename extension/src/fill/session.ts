@@ -21,7 +21,23 @@ export type ScanResult = {
   draft: { title: string; company: string; number: number } | null;
   profileReviewed: boolean;
   unavailableFrames?: number;
+  /** Free-text questions the User may answer with a Saved Answer, Suggestion or notes. */
+  questions?: Question[];
 };
+
+export type Question = { ref: string; label: string; maxLength?: number; sensitive: boolean; noAi: boolean };
+
+export type Answer = {
+  ref: string;
+  kind: "saved" | "suggestion" | "fact_notes" | "none";
+  text: string;
+  notes: string[];
+  fact_refs: string[];
+  saved_answer_id: string | null;
+  warning: string | null;
+};
+
+const MAX_QUESTIONS = 12;
 
 export type FillResult = FillReport & {
   /** PDFs a site refused, for the popup to offer as downloads. */
@@ -66,6 +82,8 @@ export async function scanTab(deps: Deps, port: TabPort, tabId: number): Promise
   const files = chosen ? { resume: chosen.resume_file, cover_letter: chosen.cover_letter_file, background_answer: chosen.background_answer } : null;
   const proposals = propose(scan.fields, profile?.reviewed ? profile.content : null, files);
   const proposed = new Set(proposals.map((p) => p.ref));
+  const questions = questionsOf(scan, proposed);
+  for (const q of questions) proposed.add(q.ref);
   await deps.store.set(key(tabId), {
     frames: scans.map(f => ({ frameId: f.frameId, scanId: f.scan.scanId, prefix: frames.length > 1 ? `frame${f.frameId}:` : "" })),
     scan,
@@ -79,7 +97,66 @@ export async function scanTab(deps: Deps, port: TabPort, tabId: number): Promise
     manual: scan.fields.filter((f) => !proposed.has(f.ref)).map((f) => f.label),
     draft: chosen ? { title: chosen.title, company: chosen.company, number: chosen.number } : null,
     profileReviewed: Boolean(profile?.reviewed),
+    questions,
   };
+}
+
+function questionsOf(scan: Scan, proposed: Set<string>): Question[] {
+  return scan.fields
+    .filter((f) => f.question && !proposed.has(f.ref))
+    .map((f) => ({ ref: f.ref, label: f.label, maxLength: f.maxLength, sensitive: Boolean(f.sensitive), noAi: Boolean(f.noAi) }));
+}
+
+async function selectedJob(deps: Deps, tabId: number): Promise<string> {
+  const selection = await currentSelection(deps, tabId);
+  const chosen = selection ? await version(deps, selection.draftId, selection.number) : null;
+  if (!chosen) throw new Error("Choose a Draft above first, so answers fit this Job.");
+  return chosen.job_id;
+}
+
+/** Saved Answers, reviewed Suggestions or Fact notes for the scanned questions. Only the
+ * question labels leave the page, never what the User typed. */
+export async function suggestAnswers(deps: Deps, tabId: number): Promise<Answer[]> {
+  await assertConfirmed(deps, tabId);
+  const stored = await deps.store.get<Stored>(key(tabId));
+  if (!stored) throw new Error("Scan the form first");
+  const questions = questionsOf(stored.scan, new Set(stored.proposals.map((p) => p.ref))).slice(0, MAX_QUESTIONS);
+  if (!questions.length) return [];
+  const response = await apiFetch(deps, "/api/ext/answers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      job_id: await selectedJob(deps, tabId),
+      no_ai: questions.some((q) => q.noAi),
+      questions: questions.map((q) => ({ ref: q.ref, question: q.label, ...(q.maxLength ? { max_chars: q.maxLength } : {}) })),
+    }),
+  });
+  if (!response?.ok) throw new Error(await errorText(response, "Answers could not be prepared. Write them yourself, or try again."));
+  return (await response.json()) as Answer[];
+}
+
+/** Keeps an answer the User reviewed for this Company, a country or any job. */
+export async function saveAnswer(
+  deps: Deps,
+  tabId: number,
+  body: { question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" },
+): Promise<void> {
+  await assertConfirmed(deps, tabId);
+  const response = await apiFetch(deps, "/api/ext/saved-answers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, job_id: await selectedJob(deps, tabId) }),
+  });
+  if (!response?.ok) throw new Error(await errorText(response, "The answer could not be saved."));
+}
+
+async function errorText(response: Response | null, fallback: string): Promise<string> {
+  try {
+    const body = (await response?.json()) as { error?: { message?: string } } | undefined;
+    return body?.error?.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 async function pdf(deps: Deps, draft: { id: string; number: number }, kind: "resume" | "cover_letter") {
@@ -125,6 +202,17 @@ export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: st
       items.push({ ref: field.ref, kind: field.kind, value });
     }
   }
+  // Free-text questions: only the text the User reviewed in the panel, never a raw suggestion.
+  const questions = questionsOf(stored.scan, new Set(stored.proposals.map((p) => p.ref)));
+  for (const q of questions.filter((item) => wanted.has(item.ref))) {
+    const value = answers[q.ref]?.trim();
+    const field = stored.scan.fields.find((f) => f.ref === q.ref)!;
+    if (!value || (q.maxLength && value.length > q.maxLength)) {
+      failed.push({ ref: q.ref, reason: "Review the answer and its length before filling" });
+      continue;
+    }
+    items.push({ ref: q.ref, kind: field.kind === "textarea" ? "textarea" : "text", value });
+  }
   const report: FillReport = { filled: [], failed: [] };
   const frames = stored.frames ?? [{ frameId: 0, scanId: stored.scan.scanId }];
   for (const frame of frames) {
@@ -144,7 +232,7 @@ export async function fillTab(deps: Deps, port: TabPort, tabId: number, refs: st
     const item = items.find((i) => i.ref === failure.ref);
     if (item?.kind === "file") downloads.push({ name: item.file.name, base64: item.file.base64 });
   }
-  const labels = Object.fromEntries(stored.proposals.map((p) => [p.ref, p.label]));
+  const labels = Object.fromEntries([...stored.proposals, ...questions].map((p) => [p.ref, p.label]));
   const result: FillResult = { filled: report.filled, failed: [...failed, ...report.failed], downloads, labels };
   if (result.filled.length || result.downloads.length) await deps.store.set(resultKey(tabId), result);
   return result;
@@ -180,7 +268,10 @@ export async function lastScan(deps: Deps, tabId: number): Promise<ScanResult | 
   await assertConfirmed(deps, tabId);
   const stored = await deps.store.get<Stored>(key(tabId));
   if (!stored) return null;
-  return { adapter: stored.scan.adapter, proposals: stored.proposals, manual: stored.scan.fields.filter(f => !stored.proposals.some(p => p.ref === f.ref)).map(f => f.label), draft: stored.draft ? { title: "Selected Job", company: "", number: stored.draft.number } : null, profileReviewed: true };
+  const proposed = new Set(stored.proposals.map((p) => p.ref));
+  const questions = questionsOf(stored.scan, proposed);
+  for (const q of questions) proposed.add(q.ref);
+  return { adapter: stored.scan.adapter, proposals: stored.proposals, questions, manual: stored.scan.fields.filter(f => !proposed.has(f.ref)).map(f => f.label), draft: stored.draft ? { title: "Selected Job", company: "", number: stored.draft.number } : null, profileReviewed: true };
 }
 
 export async function forgetScan(deps: Deps, tabId: number): Promise<void> { await deps.store.remove(key(tabId)); }
