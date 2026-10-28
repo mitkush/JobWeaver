@@ -238,3 +238,12 @@ it("offers notes, not suggestions, on a form that refuses AI answers", async () 
   expect(buttonNamed("Suggest answers")).toBeUndefined();
   expect(document.body.textContent).toContain("answers not written by AI");
 });
+
+it("keeps the side panel open after Connect, waiting for approval on JobWeaver", async () => {
+  const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+  const send = await popup(() => pageJob, { reply: type => type === "status" ? { connected: false } : type === "connect" ? { ok: true } : undefined });
+  document.querySelector<HTMLButtonElement>("#connect")!.click();
+  await vi.waitFor(() => expect(document.querySelector("#status")?.textContent).toMatch(/Approve the connection/));
+  expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "connect")).toBe(true);
+  expect(close).not.toHaveBeenCalled();
+});

@@ -40,3 +40,10 @@ it("rejects a changed page before uploading reviewed text", async () => {
   await expect(savePage(deps, port, 1, job)).rejects.toThrow("page changed");
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("shows the server's reason when it refuses a field, such as a private page address", async () => {
+  const { deps, port, fetch } = setup();
+  fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ detail: [{ loc: ["body", "url"], msg: "Value error, Use a public careers page" }] }), { status: 422 }));
+  await readPage(deps, port, 1);
+  await expect(savePage(deps, port, 1, job)).rejects.toThrow(/^Use a public careers page$/);
+});

@@ -461,7 +461,8 @@ async function render() {
 
 connectButton.addEventListener("click", async () => {
   connectButton.disabled = true;
-  try { await ask({ type: "connect" }); window.close(); }
+  // The panel stays open and refreshes once the connection is approved on JobWeaver.
+  try { await ask({ type: "connect" }); statusText.textContent = "Approve the connection on the JobWeaver tab that opened."; }
   catch (error) { statusText.textContent = error instanceof Error ? error.message : "Connection failed. Try again."; }
   finally { connectButton.disabled = false; }
 });

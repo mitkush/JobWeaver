@@ -74,7 +74,11 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   handleExternal(deps, message, sender)
-    .then(sendResponse)
+    .then((reply) => {
+      sendResponse(reply);
+      // An open panel shows the new connection without being reopened.
+      void chrome.runtime.sendMessage({ type: "panelTabChanged" }).catch(() => undefined);
+    })
     .catch(() => sendResponse({ ok: false, error: "The extension could not reach JobWeaver." }));
   return true;
 });
