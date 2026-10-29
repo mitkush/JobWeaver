@@ -221,10 +221,11 @@ async def _suggest(
     for q in questions:
         notes = fact_notes(q.question, job.title, facts)
         got = drafted.get(q.ref)
-        text = fit(got.text, q.max_chars) if got and got.text.strip() else None
+        limit = min(q.max_chars or 2000, 2000)
+        text = fit(got.text, limit) if got and got.text.strip() else None
         refs = [r for r in (got.fact_refs if got else []) if r in known]
         problem = None
-        too_long = bool(text and len(text) > 2000)
+        too_long = bool(got and not text and len(got.text.strip()) > 2000 and limit == 2000)
         if text and refs:
             # Provider output may be valid for the answer task but invalid as a Draft
             # line (missing refs, long text, too many citations). Degrade to notes.

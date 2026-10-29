@@ -289,6 +289,7 @@ it("makes rescanning secondary after proposals are shown", async () => {
 it.each(["applied", "rejected", "interview", "offer"])("shows status %s instead of another Mark as applied action", async (status) => {
   await popup(() => pageJob, { selected: { ...pinned, application_status: status } });
   expect(buttonNamed("Mark as applied")).toBeUndefined();
-  expect(buttonNamed(`Status: ${status}`)!.disabled).toBe(true);
-  expect(document.body.textContent).toContain(`Application status: ${status}`);
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  expect(buttonNamed(`Status: ${status}`)).toBeUndefined();
+  expect(document.body.textContent!.match(new RegExp(`Application status: ${label}`, "g"))).toHaveLength(1);
 });

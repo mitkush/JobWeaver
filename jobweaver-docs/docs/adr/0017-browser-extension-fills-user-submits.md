@@ -42,4 +42,6 @@ reopening a suggestion does not turn it into a user-authored answer. User-entere
 Answers remain available, including sensitive answers. No-AI filtering happens before scope
 ranking, so an excluded suggestion cannot hide an eligible manual answer. Unvalidatable provider output
 becomes Fact notes rather than an HTTP error. Generated answers are requested within the
-2,000-character validation limit; oversized responses receive a specific length warning.
+2,000-character validation limit. Responses are fitted at a sentence boundary within that
+limit and the field limit, then Fact-checked. An oversized response with no fitting sentence
+receives a specific length warning.

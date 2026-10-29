@@ -248,7 +248,6 @@ async def test_writing_style_is_built_from_own_text_and_carries_no_claims(prepar
     [
         ("I build Python APIs.", []),
         ("I build Python APIs.", ["F999"]),
-        ("I build Python APIs. " * 150, ["F1"]),
     ],
 )
 async def test_unvalidatable_provider_answers_degrade_to_notes(prepared, text, refs):  # noqa: F811
@@ -473,3 +472,31 @@ async def test_long_answer_requests_are_capped_and_oversized_output_is_explained
     assert answer["kind"] == "fact_notes"
     assert "2,000-character validation limit" in answer["warning"]
     assert "fully support" not in answer["warning"]
+
+
+@pytest.mark.parametrize("max_chars", [None, 20000, 100])
+async def test_long_supported_answers_are_cut_at_a_sentence_end(prepared, max_chars):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+    sentence = "I built a billing API used by 40 merchant teams."
+    text = (sentence + " ") * 50
+
+    async def long_answer(_request):
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text=text, fact_refs=["F4"])]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = long_answer
+    response = await ask(client, job_id, [{**QUESTIONS[0], "max_chars": max_chars}])
+    assert response.status_code == 200, response.text
+    answer = response.json()[0]
+    assert answer["kind"] == "suggestion", answer
+    assert len(answer["text"]) <= min(max_chars or 2000, 2000)
+    assert answer["text"].endswith(sentence)
+    assert text.startswith(answer["text"])
+    assert answer["fact_refs"] == ["F4"]

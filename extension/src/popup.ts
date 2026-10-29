@@ -173,6 +173,7 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
 function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, needsConfirmation = false): HTMLElement {
   const newer = d.current_version > d.number;
   const applied = Boolean(d.application_status && d.application_status !== "drafted");
+  const statusLabel = d.application_status ? d.application_status.charAt(0).toUpperCase() + d.application_status.slice(1) : "";
   return h(
     "section",
     { class: "panel" },
@@ -180,7 +181,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
     h("p", { class: "title" }, draftLabel(d)),
     needsConfirmation ? h("div", {}, h("p", { class: "warn-text" }, "Confirm the Job and document before continuing on this page."), button("Continue with this reviewed document", async () => { await chooseDraft(tabId, d.draft_id, d.number); refresh(); })) : null,
     h("p", {}, `Saved ${fromNow(d.saved_at)}.`),
-    applied ? h("p", { class: "ok" }, `Application status: ${d.application_status}`) : null,
+    applied ? h("p", { class: "ok" }, `Application status: ${statusLabel}`) : null,
     h("ul", { class: "files" }, h("li", {}, d.resume_file), h("li", {}, d.cover_letter_file)),
     d.warnings ? h("p", { class: "warn-text" }, `${d.warnings} ${d.warnings === 1 ? "warning" : "warnings"} to check in the Draft.`) : null,
     newer ? h("p", { class: "warn-text" }, "An updated document is available. This application still uses the copy you reviewed.") : null,
@@ -199,7 +200,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
         if (saved.error) throw new Error(saved.error);
         content.append(h("p", { role: "status", class: "ok" }, "PDFs saved under Downloads in the company folder."));
       }, "ghost"),
-      applied ? h("button", { type: "button", class: "ghost", disabled: "true" }, `Status: ${d.application_status}`) : button("Mark as applied", async () => {
+      applied ? null : button("Mark as applied", async () => {
         const actions = h("div", { class: "actions" }, button("Yes, I submitted this application", async () => {
           await ask({ type: "markApplied", tabId }); refresh();
         }), button("Cancel", () => actions.remove(), "ghost"));
