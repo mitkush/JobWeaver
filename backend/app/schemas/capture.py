@@ -60,3 +60,6 @@ class CapturedJobOut(BaseModel):
 class CapturedDraftOut(BaseModel):
     draft_id: uuid.UUID
     state: str
+    # True when the Job already had an active Draft: the page description reaches it only
+    # through a replacement the User reviews on the Draft page.
+    existing: bool = False

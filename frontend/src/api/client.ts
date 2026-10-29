@@ -31,6 +31,8 @@ export type ApplicationProfile = Schemas["ProfileOut"];
 export type ProfileContent = Schemas["ProfileContent"];
 export type SavedAnswer = Schemas["SavedAnswerOut"];
 export type SavedAnswerInput = Schemas["SavedAnswerIn"];
+export type WritingStyle = Schemas["WritingStyleOut"];
+export type WritingStyleInput = Schemas["WritingStyleIn"];
 export type FeedQuery = NonNullable<paths["/api/feed"]["get"]["parameters"]["query"]>;
 
 export class ApiError extends Error {

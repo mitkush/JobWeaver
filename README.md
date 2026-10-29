@@ -65,32 +65,19 @@ Recorded AI fixtures exercise unsupported skills and fabricated metrics. Truthfu
 
 Set `MISTRAL_API_KEY` to add Mistral Small as an optional fallback through the AI gateway. The gateway applies the configured per-model daily cap and records usage. On Mistral Studio's Free mode, Mistral may use input and output data to train its models; review its data controls before enabling it for users' resumes.
 
-## Application Extension (FR-E14, in progress)
+## Application Extension (FR-E14)
 
-A Chrome/Brave extension that fills application forms from your reviewed profile and a chosen Draft; you review and submit (ADR-0017, plan in `jobweaver-docs/APPLICATION_EXTENSION_PLAN.md`). On a form, open the extension, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in. The combined background-and-interest question offers editable text from that Draft's Cover Letter; review it and tick it to use. Other questions, salary, visa and referrer fields stay for you. **Undo** restores what JobWeaver changed. It never submits.
+A Chrome/Brave extension that fills application forms from your reviewed profile and your Draft for that Job; you review and submit (ADR-0017). Click the JobWeaver toolbar button to open it in the side panel. On a form, choose the Draft, **Scan this form**, untick anything you do not want, then **Fill ticked fields**. Your details and the Draft's PDFs go in. **Undo** restores what JobWeaver changed. It never submits; after you submit, **Mark as applied** records it, with the document version you attached.
 
-You can also start directly on a company's careers-page advert, without a Job or Draft in
-JobWeaver: click **Read this job**, review the title, Company and public JD, and choose
-**Save reviewed job**. Structured `JobPosting` data, advert regions (including Workday)
-and selected text are supported; when extraction is incomplete, edit or paste the JD in
-the review box. Nothing is uploaded until Save. **Create Draft from this JD** uses your
-reviewed Fact Bank through the existing AI gateway and opens the Draft page. Return to
-the advert/form tab and choose **Use this Draft** once generation finishes. On an existing
-Job, your reviewed page text is personal and never replaces the shared Source description.
-Creating another Draft preserves existing Drafts and their manual edits.
+- **Other sites and embedded forms:** the panel reaches the tab you clicked the toolbar on. For another site, choose **Allow access to** that site. For a form embedded from another site (an iframe), choose **Find embedded forms** and allow its site.
+- **Questions:** **Suggest answers** offers your Saved Answer for that question, else a complete answer written only from your Facts in your Writing Style, else notes from your Facts. Suggestions arrive unticked in an editable box: rework them, then tick. Work authorisation, salary, notice and similar questions are answered only from Saved Answers, and forms that ask for answers not written by AI get notes only. **Save this answer** keeps your reviewed answer for that Company, the Job's country or any job.
+- **Writing Style:** under **Settings > Saved answers**, **Learn my writing style** reads your summary and saved answers; names, numbers, dates and tools in its examples are replaced with placeholders. Edit or clear it there.
+- **Careers pages:** on an advert JobWeaver does not have, **Read this job**, review it and **Save reviewed job**, then **Create Draft from this JD**. Your reviewed text stays on your own link to the Job. If you already have a Draft for that Job, the new description reaches it only as a Replacement you accept.
+- **One Draft per Job:** generating again prepares a Replacement for the resume, the cover letter or one section; the current document stays until you choose **Use this replacement**, and **Undo replacement** goes back. Edits save on their own. **Archive Draft** hides a package and keeps its versions; archived Drafts are listed on the Job page.
 
-Reviewed JD text is stored only on your own Job link, including the first capture.
-Capture-only Jobs are not added to other Users' Feeds by Preferences matching. Required
-skills are extracted from your JD through the AI gateway when the Draft is generated and
-kept on your link and Draft snapshot, so skill checks and Skill Gaps use that description.
-An extraction failure leaves a retryable failed Draft rather than skipping skill checks.
-The push-only capture Source has no scheduled fetches or Admin fetch controls.
+Unfinished review in the panel survives closing it for 30 minutes in the same browser session. If the document changed since the scan, filling is refused until you review the new version and scan again.
 
-Capture adds backend migration 0016 and new extension permissions (access list version 3).
-Deploy the server before rebuilding/reloading the extension, then reconnect and approve
-the new access list. This slice does not add AI custom-question answers or regenerate an
-existing Draft's versions; those remain later stages. The employer page still needs a
-separate Apply click before there are form fields to scan.
+This release adds backend migration 0017 (one active Draft per Job: extra packages are archived, never deleted) and access list version 4. Deploy the server first, then rebuild and reload the extension, reconnect, and approve the new access list.
 
 1. Set `EXTENSION_IDS=npdbpfgligiimfnoblngghbokehjbafm` on the server.
 2. Build it for your server: `cd extension && npm ci && JOBWEAVER_ORIGIN=https://your-host npm run build` (defaults to the production host; use `http://localhost:5173` locally).
@@ -99,7 +86,7 @@ separate Apply click before there are form fields to scan.
 
 Attachments use `Name_Resume.pdf` and `Name_Cover_Letter.pdf`. **Save PDFs in company folder** requests optional Downloads permission and saves both selected-version files under `Downloads/<company>/`; the browser's download settings can still prompt for a location. Filling a form does not save local copies automatically.
 
-On JobWeaver, **Generate new draft** creates a fresh package and keeps the older one. **Delete draft** on the Draft page permanently removes that package and its saved versions after confirmation, while keeping Application status and history. Unsaved edits must be saved first.
+**Chrome Web Store:** `cd extension && npm run build:store` writes `extension/release/jobweaver-extension-<version>.zip` for upload (no pinned key, HTTPS server only). The store assigns its own extension ID: add it to `EXTENSION_IDS` beside the unpacked one, and set `EXTENSION_STORE_URL` so Settings shows **Get the extension**. Listing text, permission reasons and the privacy answers are in `jobweaver-docs/EXTENSION_STORE_LISTING.md`; the privacy policy is served at `/privacy/extension`. Redraw the icons with `python3 extension/scripts/icons.py`.
 
 The connection lasts `EXTENSION_CREDENTIAL_HOURS` (default 12) or until the browser closes, and **Settings > Browser extension** revokes it at once.
 

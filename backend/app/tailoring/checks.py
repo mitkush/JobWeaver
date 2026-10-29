@@ -385,6 +385,23 @@ def line_problem(line: DraftLine, facts: list[FactSnapshot]) -> str | None:
     return reasons[0] if reasons else None
 
 
+def answer_problem(
+    line: DraftLine,
+    facts: list[FactSnapshot],
+    *,
+    job_title: str = "",
+    company: str = "",
+    job_text: str = "",
+    user_name: str = "",
+    experience_years: float | None = None,
+) -> str | None:
+    """The first reason an application-form answer fails. Answers are prose addressed to
+    the employer, so they are checked like a cover letter line."""
+    checker = Checker(facts, job_title, company, (), job_text, user_name, experience_years)
+    reasons = checker.problems(line, "cover_letter")
+    return reasons[0] if reasons else None
+
+
 def check_content(
     content: DraftContent, facts: list[FactSnapshot]
 ) -> tuple[DraftContent, list[str]]:

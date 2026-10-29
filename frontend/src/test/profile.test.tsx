@@ -7,6 +7,8 @@ import { SavedAnswersPage } from "@/pages/SavedAnswersPage";
 
 import { expectAccessible, json, mockFetch, renderWithApp } from "./utils";
 
+const NO_STYLE = { traits: [], excerpts: [], built_at: null };
+
 const suggestion = {
   first_name: "Asha",
   last_name: "Rao",
@@ -87,6 +89,7 @@ it("saves a salary answer for one country and keeps the form when the server ref
   let posts = 0;
   const calls = mockFetch({
     "GET /api/saved-answers": () => json([]),
+    "GET /api/me/writing-style": () => json(NO_STYLE),
     "POST /api/saved-answers": () =>
       ++posts === 1
         ? json({ error: { code: "conflict", message: "You already saved an answer to this question for the same scope" } }, 409)
@@ -117,6 +120,7 @@ it("saves a salary answer for one country and keeps the form when the server ref
 
 it("lists answers with where they apply", async () => {
   mockFetch({
+    "GET /api/me/writing-style": () => json(NO_STYLE),
     "GET /api/saved-answers": () =>
       json([
         {
@@ -139,4 +143,44 @@ it("lists answers with where they apply", async () => {
   renderWithApp(<SavedAnswersPage />);
   expect(await screen.findByText("Only for Acme")).toBeInTheDocument();
   await expectAccessible();
+});
+
+it("learns, edits and clears the writing style", async () => {
+  document.cookie = "jw_csrf=t";
+  const learned = {
+    traits: ["Short, direct sentences"],
+    excerpts: ["I like owning a problem end to end."],
+    built_at: "2026-10-28T10:00:00Z",
+  };
+  const calls = mockFetch({
+    "GET /api/saved-answers": () => json([]),
+    "GET /api/me/writing-style": () => json(NO_STYLE),
+    "POST /api/me/writing-style/rebuild": () => json(learned),
+    "PUT /api/me/writing-style": () => json({ ...learned, traits: ["Plain words"], excerpts: ["At [NAME] I write plainly."] }),
+    "DELETE /api/me/writing-style": () => new Response(null, { status: 204 }),
+  });
+  const user = userEvent.setup();
+  renderWithApp(<SavedAnswersPage />);
+
+  expect(await screen.findByText(/No writing style yet/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Learn my writing style" }));
+  expect(await screen.findByText("Short, direct sentences")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  const traits = screen.getByLabelText("Traits");
+  await user.clear(traits);
+  await user.type(traits, "Plain words");
+  const excerpts = screen.getByLabelText("Tone examples");
+  await user.clear(excerpts);
+  await user.type(excerpts, "At Acme I write plainly.");
+  await user.click(screen.getByRole("button", { name: "Save style" }));
+  // The server redacts the edit; the page shows what was stored.
+  expect(await screen.findByText("At [NAME] I write plainly.")).toBeInTheDocument();
+  const put = calls.find((c) => c.method === "PUT")!;
+  expect(await put.json()).toEqual({ traits: ["Plain words"], excerpts: ["At Acme I write plainly."] });
+  await expectAccessible();
+
+  await user.click(screen.getByRole("button", { name: "Clear" }));
+  await user.click(screen.getAllByRole("button", { name: "Clear" }).at(-1)!);
+  expect(await screen.findByText("Writing style cleared")).toBeInTheDocument();
 });

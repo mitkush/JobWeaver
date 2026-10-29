@@ -50,7 +50,7 @@ export function SettingsPage({ me }: { me: Me }) {
           />
           <CardBody className="space-y-6">
             <ProfileCard />
-            <ExtensionCard />
+            <ExtensionCard storeUrl={me.extension_store_url ?? null} />
           </CardBody>
         </Card>
 

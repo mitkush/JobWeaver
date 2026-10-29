@@ -9,11 +9,17 @@ export type Captured = { job_id: string; title: string; company: string; matched
 const key = (id: number) => `captured:${id}`;
 const readKey = (id: number) => `read-job:${id}`;
 
+/** The server's own reason for a refused field, such as a URL that is not a public page. */
+function validationMessage(detail: unknown): string | undefined {
+  const first = Array.isArray(detail) ? (detail[0] as { msg?: unknown } | undefined) : undefined;
+  return typeof first?.msg === "string" ? first.msg.replace(/^Value error, /, "") : undefined;
+}
+
 async function json<T>(deps: Deps, path: string, body: unknown): Promise<T> {
   const response = await apiFetch(deps, path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!response) throw new Error("Reconnect the extension to approve careers-page capture.");
   const data = await response.json() as T & { error?: { message?: string }; detail?: unknown };
-  if (!response.ok) throw new Error(data.error?.message ?? "Check the title, Company and JD. The description needs at least 80 characters.");
+  if (!response.ok) throw new Error(data.error?.message ?? validationMessage(data.detail) ?? "Check the title, Company and JD. The description needs at least 80 characters.");
   return data;
 }
 

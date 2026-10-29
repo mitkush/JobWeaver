@@ -121,10 +121,16 @@ def change_status(
 
 
 async def mark_applied(
-    session: AsyncSession, user: User, job_id: uuid.UUID, draft_id: uuid.UUID
+    session: AsyncSession,
+    user: User,
+    job_id: uuid.UUID,
+    draft_id: uuid.UUID,
+    draft_version: int | None = None,
 ) -> Application:
     now = utcnow()
     application = await ensure(session, user, job_id, draft_id, now)
+    if draft_version is not None:
+        application.draft_version = draft_version
     # A later status (Interview, Offer...) is never moved back by Mark as applied.
     if application.status == S.DRAFTED:
         change_status(session, user, application, S.APPLIED, now)

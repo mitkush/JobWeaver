@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.errors import GatewayError
-from app.models import Draft, Job, Posting, UserJob
+from app.models import Draft, DraftVersion, Job, Posting, UserJob
 from app.models.preference import Preference
 from app.schemas.capture import public_page_url
 from app.services.correspondence import merge_jobs, source_priorities
@@ -87,11 +87,15 @@ async def test_repeat_and_second_user_capture_share_job_but_never_rewrite_descri
     assert (await b.get(f"/api/jobs/{job_id}")).json()["description"] == texts[other.id]
 
 
-async def test_capture_creates_draft_from_own_facts_and_keeps_older_draft_context(prepared, db):  # noqa: F811
+async def test_capture_reaches_an_existing_draft_only_through_a_reviewed_replacement(prepared, db):  # noqa: F811
+    """One active package per Job: the captured page JD becomes a new version only when the
+    User accepts a replacement, and earlier versions keep their own job context."""
     user, client, job_id, _ = prepared
     old = await generated(prepared)
-    old_draft = await db.get(Draft, uuid.UUID(old["id"]))
-    original = copy.deepcopy(old_draft.job_snapshot)
+    draft = await db.get(Draft, uuid.UUID(old["id"]))
+    first_context = copy.deepcopy(
+        (await db.scalar(select(DraftVersion).where(DraftVersion.draft_id == draft.id))).job_context
+    )
     job = await db.get(Job, uuid.UUID(job_id))
     job.required_skills = ["Redis"]
     await db.commit()
@@ -101,24 +105,40 @@ async def test_capture_creates_draft_from_own_facts_and_keeps_older_draft_contex
     async with ext_client(token=token) as ext:
         response = await ext.post(f"/api/ext/jobs/{job_id}/draft")
     assert response.status_code == 202, response.text
-    new_id = uuid.UUID(response.json()["draft_id"])
-    assert new_id != old_draft.id
-    await db.refresh(old_draft)
-    assert old_draft.job_snapshot == original
-    new = await db.get(Draft, new_id)
-    assert new.user_id == user.id
-    assert new.job_snapshot["description"] == body["description"].strip()
-    assert new.job_snapshot["description_origin"]["url"] == public_page_url(job.apply_url)
-    assert new.job_snapshot["required_skills"] == ["Python", "PostgreSQL", "Kubernetes", "Go"]
-    link = await db.scalar(
-        select(UserJob).where(UserJob.user_id == user.id, UserJob.job_id == job.id)
+    assert response.json() == {"draft_id": old["id"], "state": "ready", "existing": True}
+
+    queued = await client.post(
+        f"/api/drafts/{old['id']}/proposals",
+        json={"expected_version": 1, "part": "resume"},
     )
-    assert link.page_required_skills == new.job_snapshot["required_skills"]
-    detail = (await client.get(f"/api/jobs/{job_id}")).json()
-    assert "Kubernetes" in detail["skill_gaps"]
+    assert queued.status_code == 202, queued.text
+    [proposal] = (await client.get(f"/api/drafts/{old['id']}/proposals")).json()
+    assert proposal["state"] == "ready", proposal
+    accepted = await client.post(
+        f"/api/drafts/{old['id']}/proposals/{proposal['id']}/accept",
+        json={"expected_version": 1},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["current_version"] == 2
+    versions = list(
+        await db.scalars(
+            select(DraftVersion)
+            .where(DraftVersion.draft_id == draft.id)
+            .order_by(DraftVersion.number)
+            .execution_options(populate_existing=True)
+        )
+    )
+    assert versions[0].job_context == first_context
+    assert versions[1].job_context["description"] == body["description"].strip()
+    assert versions[1].job_context["description_origin"]["url"] == public_page_url(job.apply_url)
+    assert versions[1].job_context["required_skills"] == [
+        "Python",
+        "PostgreSQL",
+        "Kubernetes",
+        "Go",
+    ]
     await db.refresh(job)
     assert job.required_skills == ["Redis"]
-    assert new.state == "ready"
 
 
 async def test_capture_only_job_never_enters_another_users_matching_feed(alice, bob, db):

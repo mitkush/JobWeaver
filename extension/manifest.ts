@@ -13,21 +13,28 @@ export function matchPattern(origin: string): string {
   return `${url.protocol}//${url.hostname}/*`;
 }
 
-export function buildManifest(origin: string, version: string) {
+const ICONS = { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" };
+
+/** `store` builds the Chrome Web Store upload: the store assigns its own ID and refuses a
+ * `key`, so only unpacked builds pin the ID. */
+export function buildManifest(origin: string, version: string, { store = false } = {}) {
   const pattern = matchPattern(origin);
   return {
     manifest_version: 3,
     name: "JobWeaver",
     description: "Fills job application forms from your JobWeaver Drafts. You review and submit.",
     version,
-    key: PUBLIC_KEY,
+    ...(store ? {} : { key: PUBLIC_KEY }),
     minimum_chrome_version: "116",
-    action: { default_popup: "popup.html", default_title: "JobWeaver" },
+    icons: ICONS,
+    action: { default_title: "JobWeaver", default_icon: ICONS },
+    side_panel: { default_path: "popup.html" },
     background: { service_worker: "background.js", type: "module" },
     // activeTab: on the User's click, read the tab's address to suggest a Draft, and
     // (scripting) scan and fill that tab's form. No access to any other site.
-    permissions: ["storage", "activeTab", "scripting"],
-    optional_permissions: ["downloads"],
+    permissions: ["storage", "activeTab", "scripting", "sidePanel"],
+    optional_permissions: ["downloads", "webNavigation"],
+    optional_host_permissions: ["https://*/*", "http://*/*"],
     host_permissions: [pattern],
     externally_connectable: { matches: [pattern] },
   };

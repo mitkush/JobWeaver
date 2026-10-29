@@ -83,3 +83,21 @@ ROUTING_TABLE: dict[str, list[Route]] = {
         Route("mistral", MISTRAL_SMALL, 8192),
     ],
 }
+
+# Background proposals have the full-Draft budgets; synchronous chat remains bounded.
+ROUTING_TABLE["propose_draft"] = list(ROUTING_TABLE["tailor_draft"])
+
+# Application-form answers and Writing Style: short outputs, Flash-Lite first (COSTS.md).
+# Answers are requested while the User waits in the side panel, so routes stay short.
+ROUTING_TABLE["answer_questions"] = [
+    Route("gemini", GEMINI_FLASH_LITE, 6144, timeout_seconds=20),
+    Route("groq", GROQ_LARGE, 6144, timeout_seconds=20),
+    Route("openrouter", OPENROUTER_FREE, 6144, timeout_seconds=20),
+    Route("mistral", MISTRAL_SMALL, 6144, timeout_seconds=20),
+]
+ROUTING_TABLE["describe_writing_style"] = [
+    Route("gemini", GEMINI_FLASH_LITE, 2048),
+    Route("groq", GROQ_LARGE, 2048),
+    Route("openrouter", OPENROUTER_FREE, 2048),
+    Route("mistral", MISTRAL_SMALL, 2048),
+]

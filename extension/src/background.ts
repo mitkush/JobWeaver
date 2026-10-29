@@ -2,10 +2,12 @@
 
 import { currentConnection, disconnect, handleExternal, startConnect, status, type Deps } from "./connection";
 import { savePdfs } from "./downloads";
-import { clear, pageState, select, requireConfirmation } from "./drafts";
+import { currentSelection, clear, pageState, select, requireConfirmation } from "./drafts";
 import { captured, carryCapture, clearCapture, createCapturedDraft, readPage, savePage } from "./capture";
+import { reviewState } from "./review-state";
+import { apiFetch } from "./connection";
 import type { PageJob } from "./job-read";
-import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "./fill/session";
+import { fillTab, forgetTab, lastFill, scanTab, undoTab, lastScan, forgetScan, saveAnswer, suggestAnswers, type TabPort } from "./fill/session";
 
 declare const __JOBWEAVER_ORIGIN__: string;
 
@@ -29,12 +31,28 @@ const deps: Deps = {
 // Session storage stays private to the extension's own pages and service worker.
 void chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 
+
+// Toolbar activation grants activeTab for this tab; the panel itself grants nothing.
+chrome.action?.onClicked.addListener(async (tab) => {
+  if (tab.id === undefined) return;
+  if (chrome.sidePanel?.open) {
+    await chrome.sidePanel.open({ tabId: tab.id });
+    void chrome.runtime.sendMessage({ type: "panelTabChanged" }).catch(() => undefined);
+  } else {
+    await chrome.windows.create({ url: chrome.runtime.getURL("popup.html"), type: "popup", width: 440, height: 720 });
+  }
+});
+
 const port: TabPort = {
-  async inject(tabId) {
-    // Main frame only; embedded forms on other sites come with host permissions later.
-    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] });
+  async frames(tabId) {
+    if (!await chrome.permissions.contains({ permissions: ["webNavigation"] })) return [{ frameId: 0 }];
+    return (await chrome.webNavigation.getAllFrames({ tabId }) ?? []).filter(frame => frame.frameId === 0 || /^https?:/.test(frame.url));
   },
-  send: (tabId, message) => chrome.tabs.sendMessage(tabId, message, { frameId: 0 }),
+  async inject(tabId, frameId = 0) {
+    // Main frame only; embedded forms on other sites come with host permissions later.
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ["content.js"] });
+  },
+  send: (tabId, message, frameId = 0) => chrome.tabs.sendMessage(tabId, message, { frameId }),
 };
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -56,7 +74,11 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   handleExternal(deps, message, sender)
-    .then(sendResponse)
+    .then((reply) => {
+      sendResponse(reply);
+      // An open panel shows the new connection without being reopened.
+      void chrome.runtime.sendMessage({ type: "panelTabChanged" }).catch(() => undefined);
+    })
     .catch(() => sendResponse({ ok: false, error: "The extension could not reach JobWeaver." }));
   return true;
 });
@@ -72,7 +94,10 @@ export type PopupMessage =
   | { type: "scan"; tabId: number }
   | { type: "fill"; tabId: number; refs: string[]; answers?: Record<string, string> }
   | { type: "undo"; tabId: number }
-  | { type: "lastFill"; tabId: number }
+  | { type: "lastFill" | "lastScan" | "frameSites" | "markApplied"; tabId: number }
+  | { type: "reviewState"; tabId: number; patch?: { capture?: PageJob | null; answers?: Record<string, string>; answerOrigins?: Record<string, "user" | "suggestion">; answerIds?: Record<string, string> } }
+  | { type: "suggestAnswers"; tabId: number }
+  | { type: "saveAnswer"; tabId: number; answer_id?: string; question: string; answer: string; scope: "company" | "country" | "general"; origin: "suggestion" | "user" }
   | { type: "open"; path: string };
 
 async function handle(message: PopupMessage): Promise<unknown> {
@@ -91,8 +116,11 @@ async function handle(message: PopupMessage): Promise<unknown> {
       return status(deps);
     case "page":
       return pageState(deps, message.tabId, message.url);
-    case "select":
-      return select(deps, message.tabId, message.draftId, message.number);
+    case "select": {
+      const chosen = await select(deps, message.tabId, message.draftId, message.number);
+      if (chosen) await forgetScan(deps, message.tabId);
+      return chosen;
+    }
     case "clear":
       await clear(deps, message.tabId);
       return null;
@@ -106,6 +134,29 @@ async function handle(message: PopupMessage): Promise<unknown> {
       return fillTab(deps, port, message.tabId, message.refs, message.answers);
     case "undo":
       return undoTab(deps, port, message.tabId);
+    case "reviewState": {
+      const tab = await chrome.tabs.get(message.tabId);
+      const selection = await currentSelection(deps, message.tabId);
+      return reviewState(deps, message.tabId, tab.url, selection, message.patch);
+    }
+    case "lastScan": return lastScan(deps, message.tabId);
+    case "suggestAnswers": return suggestAnswers(deps, message.tabId);
+    case "saveAnswer": {
+      const { tabId, type: _type, ...body } = message;
+      return saveAnswer(deps, tabId, body);
+    }
+    case "frameSites": {
+      if (!await chrome.permissions.contains({ permissions: ["webNavigation"] })) return [];
+      const frames = await chrome.webNavigation.getAllFrames({ tabId: message.tabId });
+      return [...new Set((frames ?? []).filter(f => f.frameId !== 0 && /^https?:/.test(f.url)).map(f => new URL(f.url).origin))];
+    }
+    case "markApplied": {
+      const selected = await currentSelection(deps, message.tabId);
+      if (!selected) throw new Error("Choose the document you used before marking Applied");
+      const response = await apiFetch(deps, `/api/ext/drafts/${encodeURIComponent(selected.draftId)}/applied`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_version: selected.number }) });
+      if (!response?.ok) throw new Error("Applied could not be recorded. Reconnect or retry.");
+      return { ok: true };
+    }
     case "lastFill":
       return lastFill(deps, message.tabId);
     case "open":

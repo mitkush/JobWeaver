@@ -10,6 +10,7 @@ async function popup(read: () => unknown, options: {
   needsConfirmation?: boolean;
   recent?: unknown[];
   saveResult?: { error?: string; ok?: boolean };
+  siteAllowed?: boolean;
 } = {}) {
   const send = vi.fn(async (message: { type: string }) => {
     const override = options.reply?.(message.type);
@@ -22,7 +23,7 @@ async function popup(read: () => unknown, options: {
   });
   vi.stubGlobal("chrome", {
     runtime: { sendMessage: send },
-    permissions: { request: options.permission ?? (async () => true) },
+    permissions: { request: options.permission ?? (async () => true), contains: async () => options.siteAllowed ?? false },
     windows: { getLastFocused: async () => ({ id: 1 }) },
     tabs: { query: async () => [{ id: 42, url: pageJob.url }] },
   });
@@ -142,7 +143,7 @@ it("shows the provider error and reenables Fill and Undo after failed replies", 
 });
 it("does not offer scanning until a retained Draft is confirmed on the new page", async () => {
   await popup(() => pageJob, { selected: selectedDraft, needsConfirmation: true });
-  expect(document.body.textContent).toContain("Use this Draft on this page");
+  expect(document.body.textContent).toContain("Continue with this reviewed document");
   expect(document.body.textContent).not.toContain("Scan this form");
 });
 
@@ -164,4 +165,131 @@ it.each([
   expect(document.querySelector<HTMLButtonElement>("#disconnect")!.hidden).toBe(true);
   expect(document.querySelector('[role="alert"]')).toBeNull();
   expect(send.mock.calls.some(([m]) => m.type === "page")).toBe(false);
+});
+
+const pinned = { draft_id: "d1", job_id: "j1", title: "Engineer", company: "Example", apply_url: null, number: 2, current_version: 2, saved_at: new Date().toISOString(), warnings: 0, template: "standard", resume_file: "Asha_Resume.pdf", cover_letter_file: "Asha_Cover_Letter.pdf", application_status: null };
+
+function buttonNamed(name: string) {
+  return [...document.querySelectorAll("button")].find((b) => b.textContent === name);
+}
+
+it("marks Applied only after the User confirms they submitted the form", async () => {
+  const send = await popup(() => pageJob, { selected: pinned });
+  await vi.waitFor(() => expect(buttonNamed("Mark as applied")).toBeTruthy());
+  buttonNamed("Mark as applied")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Yes, I submitted this application")).toBeTruthy());
+  expect(document.body.textContent).toContain("Filling or downloading does not submit it");
+  expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "markApplied")).toBe(false);
+  buttonNamed("Yes, I submitted this application")!.click();
+  await vi.waitFor(() => expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "markApplied")).toBe(true));
+});
+
+it("offers site access only when this site is not allowed yet", async () => {
+  await popup(() => pageJob, { siteAllowed: true });
+  expect(buttonNamed("Allow access to example.com")).toBeUndefined();
+  vi.resetModules();
+  document.body.innerHTML = '<p id="status"></p><div id="content"></div><button id="connect" hidden></button><button id="disconnect" hidden></button>';
+  await popup(() => pageJob, { siteAllowed: false });
+  expect(buttonNamed("Allow access to example.com")).toBeTruthy();
+});
+
+it("puts suggestions unticked into editable answers and fills only reviewed, ticked text", async () => {
+  const questions = [
+    { ref: "q1", label: "Why do you want to join us?", sensitive: false, noAi: false },
+    { ref: "q2", label: "What is your notice period?", sensitive: true, noAi: false },
+  ];
+  const send = await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], questions, manual: [], profileReviewed: true, draft: { title: "Engineer", company: "Example", number: 2 } };
+    if (type === "suggestAnswers") return [
+      { ref: "q1", kind: "suggestion", text: "At Acme I built the billing API.", notes: [], fact_refs: ["F4"], saved_answer_id: null, warning: "Contains stock phrasing. Rework it in your own words." },
+      { ref: "q2", kind: "none", text: "", notes: [], fact_refs: [], saved_answer_id: null, warning: "Answer this yourself, or save an answer in Settings to reuse it." },
+    ];
+    if (type === "fill") return { filled: ["q1"], failed: [], downloads: [], labels: { q1: "Why do you want to join us?" } };
+    if (type === "reviewState") return {};
+  } });
+  await vi.waitFor(() => expect(buttonNamed("Scan this form")).toBeTruthy());
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Suggest answers")).toBeTruthy());
+  const answer = document.querySelector<HTMLTextAreaElement>('textarea[data-answer-ref="q1"]')!;
+  answer.value = "";
+  buttonNamed("Suggest answers")!.click();
+  await vi.waitFor(() => expect(answer.value).toBe("At Acme I built the billing API."));
+  expect(document.body.textContent).toContain("Rework it in your own words");
+  expect(document.body.textContent).toContain("Answer this yourself");
+  expect(document.querySelector<HTMLInputElement>("#f-q1")!.checked).toBe(false);
+
+  answer.value = "My reworked answer";
+  document.querySelector<HTMLInputElement>("#f-q1")!.checked = true;
+  buttonNamed("Fill ticked fields")!.click();
+  await vi.waitFor(() => expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "fill")).toBe(true));
+  const fill = send.mock.calls.map(([m]) => m as { type: string; refs?: string[]; answers?: Record<string, string> }).find(m => m.type === "fill")!;
+  expect(fill.refs).toEqual(["q1"]);
+  expect(fill.answers?.q1).toBe("My reworked answer");
+});
+
+it("offers notes, not suggestions, on a form that refuses AI answers", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: true }], manual: [], profileReviewed: true, draft: {} };
+    if (type === "reviewState") return {};
+  } });
+  await vi.waitFor(() => expect(buttonNamed("Scan this form")).toBeTruthy());
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Show notes from my Facts")).toBeTruthy());
+  expect(buttonNamed("Suggest answers")).toBeUndefined();
+  expect(document.body.textContent).toContain("answers not written by AI");
+});
+
+it("keeps the side panel open after Connect, waiting for approval on JobWeaver", async () => {
+  const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+  const send = await popup(() => pageJob, { reply: type => type === "status" ? { connected: false } : type === "connect" ? { ok: true } : undefined });
+  document.querySelector<HTMLButtonElement>("#connect")!.click();
+  await vi.waitFor(() => expect(document.querySelector("#status")?.textContent).toMatch(/Approve the connection/));
+  expect(send.mock.calls.some(([m]) => (m as { type: string }).type === "connect")).toBe(true);
+  expect(close).not.toHaveBeenCalled();
+});
+
+it("keeps AI provenance and makes a changed saved answer saveable again", async () => {
+  const send = await popup(() => pageJob, { selected: selectedDraft, reply: type => {
+    if (type === "scan") return { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why this role?", sensitive: false, noAi: false }] };
+    if (type === "reviewState") return { answers: { q1: "Saved generated wording" }, answerOrigins: { q1: "suggestion" } };
+    if (type === "saveAnswer") return { ok: true };
+  } });
+  document.querySelectorAll("button").forEach(b => { if (b.textContent === "Scan this form") b.click(); });
+  await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[aria-label="Your answer: Why this role?"]')?.value).toBe("Saved generated wording"));
+  const answer = document.querySelector<HTMLTextAreaElement>('[aria-label="Your answer: Why this role?"]')!;
+  expect(answer.dataset.origin).toBe("suggestion");
+  const save = [...document.querySelectorAll("button")].find(b => b.textContent === "Save this answer")!;
+  save.click();
+  await vi.waitFor(() => expect(save.textContent).toBe("Saved"));
+  const savedCall = send.mock.calls.find(([message]) => message.type === "saveAnswer")![0] as unknown as { origin: string };
+  expect(savedCall.origin).toBe("suggestion");
+  answer.value = "Reworked wording";
+  answer.dispatchEvent(new Event("input"));
+  expect(save.disabled).toBe(false);
+  expect(save.textContent).toBe("Save this answer");
+});
+
+it("does not restore AI-derived review prose on a no-AI form", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => {
+    if (type === "scan") return { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: true }] };
+    if (type === "reviewState") return { answers: { q1: "Prior AI wording" }, answerOrigins: { q1: "suggestion" } };
+  } });
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Show notes from my Facts")).toBeTruthy());
+  expect(document.querySelector<HTMLTextAreaElement>('textarea[data-answer-ref="q1"]')!.value).toBe("");
+});
+
+it("makes rescanning secondary after proposals are shown", async () => {
+  await popup(() => pageJob, { selected: pinned, reply: type => type === "scan" ? { proposals: [], manual: [], profileReviewed: true, draft: {}, questions: [{ ref: "q1", label: "Why us?", sensitive: false, noAi: false }] } : undefined });
+  buttonNamed("Scan this form")!.click();
+  await vi.waitFor(() => expect(buttonNamed("Scan again")).toBeTruthy());
+  expect(buttonNamed("Scan again")!.classList.contains("ghost")).toBe(true);
+  expect(buttonNamed("Fill ticked fields")!.classList.contains("ghost")).toBe(false);
+});
+it.each(["applied", "rejected", "interview", "offer"])("shows status %s instead of another Mark as applied action", async (status) => {
+  await popup(() => pageJob, { selected: { ...pinned, application_status: status } });
+  expect(buttonNamed("Mark as applied")).toBeUndefined();
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  expect(buttonNamed(`Status: ${status}`)).toBeUndefined();
+  expect(document.body.textContent!.match(new RegExp(`Application status: ${label}`, "g"))).toHaveLength(1);
 });

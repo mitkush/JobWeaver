@@ -21,3 +21,4 @@ docker-compose.override.yml
 
 # Extension
 extension/dist/
+extension/release/

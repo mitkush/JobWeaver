@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Integer, String
+from sqlalchemy import DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -28,5 +28,6 @@ class User(Base):
     ai_notice_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ai_notice_version: Mapped[str | None] = mapped_column(String(32))
     fact_bank_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    writing_style: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Days an Application may stay Applied before a Follow-up Reminder (FR-F2).
     follow_up_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7")

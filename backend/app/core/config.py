@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     extension_ids: Annotated[list[str], NoDecode] = []
     # The extension keeps its credential in session storage and reconnects after expiry.
     extension_credential_hours: int = Field(default=12, ge=1, le=168)
+    # The Chrome Web Store listing, once published. Empty: Settings explains the unpacked
+    # install instead.
+    extension_store_url: str = ""
 
     gateway_mode: Literal["live", "recorded"] = "live"
     gateway_recorded_dir: str = "tests/fixtures/gateway"

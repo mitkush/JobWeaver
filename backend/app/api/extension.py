@@ -19,6 +19,7 @@ from app.core.errors import JobWeaverError, NotFoundError
 from app.models.job import UserJob
 from app.schemas.application_profile import SavedAnswerOut
 from app.schemas.capture import CapturedDraftOut, CapturedJobOut, CaptureIn
+from app.schemas.drafts import AppliedIn
 from app.schemas.extension import (
     ExtDraftMatch,
     ExtDraftSummary,
@@ -32,7 +33,15 @@ from app.schemas.extension import (
     ExtensionUserOut,
     ExtProfileOut,
 )
-from app.services import application_profile, capture, drafting, extension_drafts, saved_answers
+from app.schemas.form_answers import AnswerOut, AnswersIn, ExtSavedAnswerIn
+from app.services import (
+    application_profile,
+    capture,
+    drafting,
+    extension_drafts,
+    form_answers,
+    saved_answers,
+)
 from app.services import extension as service
 
 router = APIRouter(tags=["extension"])
@@ -66,9 +75,11 @@ async def capture_draft(
         raise NotFoundError("Job not found")
     await drafting.ensure_link_open(db, user, job_id, link_http)
     draft = await drafting.create(db, user, job_id)
+    existing = draft.current_version > 0 or draft.state != "queued"
     await db.commit()
-    result = CapturedDraftOut(draft_id=draft.id, state=draft.state)
-    background.add_task(drafting.generate, draft.id, user.id, gateway)
+    result = CapturedDraftOut(draft_id=draft.id, state=draft.state, existing=existing)
+    if not existing:
+        background.add_task(drafting.generate, draft.id, user.id, gateway)
     return result
 
 
@@ -182,6 +193,57 @@ async def ext_draft(
     result = await extension_drafts.version_detail(db, user, draft_id, number)
     await db.commit()
     return result
+
+
+@router.post("/api/ext/answers")
+async def ext_answers(
+    db: DbSession, caller: ExtensionCaller, body: AnswersIn, gateway: Gateway
+) -> list[AnswerOut]:
+    """Answers for the form's own questions: Saved Answers, reviewed-only Suggestions, or
+    Fact notes. Nothing is filled until the User ticks it in the extension."""
+    _, user = caller
+    result = await form_answers.answer(
+        db,
+        user,
+        body.job_id,
+        body.questions,
+        body.no_ai,
+        gateway,
+        draft_id=body.draft_id,
+        number=body.number,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/api/ext/saved-answers", status_code=201)
+async def ext_save_answer(
+    db: DbSession, caller: ExtensionCaller, body: ExtSavedAnswerIn
+) -> SavedAnswerOut:
+    _, user = caller
+    row = await form_answers.save_from_extension(
+        db,
+        user,
+        body.job_id,
+        body.question,
+        body.answer,
+        body.scope,
+        body.origin,
+        answer_id=body.answer_id,
+    )
+    await db.commit()
+    await db.refresh(row)
+    return SavedAnswerOut.model_validate(row, from_attributes=True)
+
+
+@router.post("/api/ext/drafts/{draft_id}/applied", status_code=204)
+async def ext_mark_applied(
+    db: DbSession, caller: ExtensionCaller, draft_id: uuid.UUID, body: AppliedIn
+) -> None:
+    """Only after the User confirms in the extension that they submitted the form."""
+    _, user = caller
+    await drafting.mark_applied_with_version(db, user, draft_id, body.expected_version)
+    await db.commit()
 
 
 @router.get("/api/ext/drafts/{draft_id}/pdf")

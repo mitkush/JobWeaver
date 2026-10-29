@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 
 from app.gateway.schemas import (
+    AnswerQuestionsRequest,
+    AnswerQuestionsResult,
     DraftResult,
     EmbedRequest,
     EmbedResult,
@@ -13,6 +15,8 @@ from app.gateway.schemas import (
     ParseDocumentsResult,
     ReviseDraftRequest,
     TailorDraftRequest,
+    WritingStyleRequest,
+    WritingStyleResult,
 )
 
 
@@ -27,6 +31,10 @@ class BaseAIGateway(ABC):
 
     @abstractmethod
     async def revise_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]: ...
+
+    async def propose_draft(self, request: ReviseDraftRequest) -> GatewayResponse[DraftResult]:
+        """Background-only candidate route; recorded gateways reuse revision fixtures."""
+        return await self.revise_draft(request)
 
     @abstractmethod
     async def parse_documents(
@@ -47,3 +55,13 @@ class BaseAIGateway(ABC):
     async def embed_texts(self, request: EmbedRequest) -> GatewayResponse[EmbedResult]:
         """Gemini only, no fallback: vectors from different models are not comparable
         (ADR-0014). Raises GatewayError when Gemini is unavailable; callers queue."""
+
+    @abstractmethod
+    async def answer_questions(
+        self, request: AnswerQuestionsRequest
+    ) -> GatewayResponse[AnswerQuestionsResult]: ...
+
+    @abstractmethod
+    async def describe_writing_style(
+        self, request: WritingStyleRequest
+    ) -> GatewayResponse[WritingStyleResult]: ...

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { requireConfirmation } from "../src/drafts";
 import type { Deps } from "../src/connection";
-import { fillTab, forgetTab, lastFill, scanTab, undoTab, type TabPort } from "../src/fill/session";
+import { fillTab, forgetTab, lastFill, saveAnswer, scanTab, suggestAnswers, undoTab, type TabPort } from "../src/fill/session";
 import type { FillItem, Scan } from "../src/fill/types";
 
 const ORIGIN = "https://jobweaver.example";
@@ -144,4 +144,130 @@ it("refuses scan and prepared fill after navigation until the Draft is reconfirm
   await requireConfirmation(deps, 5);
   await expect(scanTab(deps, port, 5)).rejects.toThrow(/Confirm/);
   await expect(fillTab(deps, port, 5, ["r3"])).rejects.toThrow(/Confirm/);
+});
+
+describe("embedded forms and updated documents", () => {
+  function framed() {
+    const made = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    const frameScans: Record<number, Scan> = {
+      0: { ...scan, scanId: "top", fields: [scan.fields[0]!] },
+      7: { ...scan, scanId: "frame", fields: [scan.fields[2]!] },
+    };
+    const routed: { frameId: number; message: { type: string; items?: FillItem[]; scanId?: string } }[] = [];
+    made.port.frames = async () => [{ frameId: 0 }, { frameId: 7 }, { frameId: 9 }];
+    made.port.inject = vi.fn(async (_tab: number, frameId?: number) => {
+      if (frameId === 9) throw new Error("Cannot access contents of the page");
+    });
+    made.port.send = async <T,>(_tab: number, message: unknown, frameId = 0) => {
+      const m = message as { type: string; items?: FillItem[]; scanId?: string };
+      routed.push({ frameId, message: m });
+      if (m.type === "jw.scan") return frameScans[frameId] as T;
+      return { filled: (m.items ?? []).map((i) => i.ref), failed: [] } as T;
+    };
+    return { ...made, routed };
+  }
+
+  it("scans each reachable frame and reports the ones that need site access", async () => {
+    const { deps, port } = framed();
+    const result = await scanTab(deps, port, 5);
+    expect(result.unavailableFrames).toBe(1);
+    expect(result.proposals.map((p) => p.ref)).toEqual(["frame0:r1", "frame7:r3"]);
+  });
+
+  it("fills and undoes each field in its own frame, with that frame's scan", async () => {
+    const { deps, port, routed } = framed();
+    await scanTab(deps, port, 5);
+    const report = await fillTab(deps, port, 5, ["frame0:r1", "frame7:r3"]);
+    expect(report.filled).toEqual(["frame0:r1", "frame7:r3"]);
+    const fills = routed.filter((r) => r.message.type === "jw.fill");
+    expect(fills.map((f) => [f.frameId, f.message.scanId, f.message.items!.map((i) => i.ref)])).toEqual([
+      [0, "top", ["r1"]],
+      [7, "frame", ["r3"]],
+    ]);
+    const undone = await undoTab(deps, port, 5);
+    expect(routed.filter((r) => r.message.type === "jw.undo").map((r) => r.frameId)).toEqual([0, 7]);
+    expect(undone.failed).toEqual([]);
+  });
+
+  it("refuses to fill after the document was updated since the scan", async () => {
+    const { deps, port } = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    await scanTab(deps, port, 5);
+    // The scan saw current version 3; an accepted replacement makes it 4.
+    const stored = await deps.store.get<{ draft: { currentVersion: number } }>("fill:5");
+    await deps.store.set("fill:5", { ...stored, draft: { ...stored!.draft, currentVersion: 2 } });
+    await expect(fillTab(deps, port, 5, ["r1"])).rejects.toThrow("The resume was updated");
+  });
+});
+
+describe("answers to the form's own questions", () => {
+  const questionScan: Scan = {
+    ...scan,
+    fields: [
+      { ref: "r1", kind: "text", label: "First name", key: "first_name", required: true, hasValue: false },
+      { ref: "q1", kind: "textarea", label: "Why do you want to join us?", key: null, required: true, hasValue: false, question: true, sensitive: false, noAi: false, maxLength: 500 },
+      { ref: "q2", kind: "text", label: "What is your notice period?", key: null, required: false, hasValue: false, question: true, sensitive: true, noAi: false },
+    ],
+  };
+
+  function withQuestions() {
+    const env = setup((items) => ({ filled: items.map((i) => i.ref), failed: [] }));
+    const bodies: Record<string, unknown>[] = [];
+    const base = env.deps.fetch;
+    env.deps.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/ext/answers" || path === "/api/ext/saved-answers") {
+        bodies.push({ path, ...JSON.parse(String(init?.body)) });
+        return path === "/api/ext/answers"
+          ? json([{ ref: "q1", kind: "suggestion", text: "From my Facts", notes: [], fact_refs: ["F4"], saved_answer_id: null, warning: null }])
+          : json({}, 201);
+      }
+      return base(input, init);
+    }) as typeof fetch;
+    env.port.send = async <T,>(_tab: number, message: unknown) => {
+      env.sent.push(message);
+      const m = message as { type: string; items?: FillItem[] };
+      return (m.type === "jw.scan" ? questionScan : { filled: (m.items ?? []).map((i) => i.ref), failed: [] }) as T;
+    };
+    return { ...env, bodies };
+  }
+
+  it("lists questions apart from manual fields and sends only their labels for this Job", async () => {
+    const { deps, port, bodies } = withQuestions();
+    const result = await scanTab(deps, port, 5);
+    expect(result.questions?.map((q) => [q.ref, q.sensitive])).toEqual([["q1", false], ["q2", true]]);
+    expect(result.manual).toEqual([]);
+    const answers = await suggestAnswers(deps, 5);
+    expect(answers[0]).toMatchObject({ ref: "q1", kind: "suggestion" });
+    expect(bodies[0]).toEqual({
+      path: "/api/ext/answers",
+      job_id: "j1",
+      draft_id: "d1",
+      number: 2,
+      no_ai: false,
+      questions: [
+        { ref: "q1", question: "Why do you want to join us?", max_chars: 500 },
+        { ref: "q2", question: "What is your notice period?" },
+      ],
+    });
+  });
+
+  it("fills a question only with the reviewed text the User ticked", async () => {
+    const { deps, port, sent } = withQuestions();
+    await scanTab(deps, port, 5);
+    expect((await fillTab(deps, port, 5, ["q1"])).failed).toHaveLength(1);
+    const result = await fillTab(deps, port, 5, ["q1", "q2"], { q1: "My own answer", q2: "30 days" });
+    expect(result.filled).toEqual(["q1", "q2"]);
+    expect((sent.at(-1) as { items: FillItem[] }).items).toEqual([
+      { ref: "q1", kind: "textarea", value: "My own answer" },
+      { ref: "q2", kind: "text", value: "30 days" },
+    ]);
+    expect(result.labels.q1).toBe("Why do you want to join us?");
+  });
+
+  it("saves a reviewed answer for the selected Job's scope", async () => {
+    const { deps, port, bodies } = withQuestions();
+    await scanTab(deps, port, 5);
+    expect(await saveAnswer(deps, 5, { question: "Why us?", answer: "Reworked", scope: "company", origin: "suggestion" })).toEqual({});
+    expect(bodies.at(-1)).toEqual({ path: "/api/ext/saved-answers", question: "Why us?", answer: "Reworked", scope: "company", origin: "suggestion", job_id: "j1" });
+  });
 });

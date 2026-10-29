@@ -11,20 +11,20 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PageSpinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
-import { pdfHref, useDraft, useDraftActions, useDraftDiff, useVersions, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
-import { DraftChatPanel } from "@/features/drafts/DraftChatPanel";
+import { pdfHref, useDraft, useDraftActions, useDraftDiff, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
+import { DocumentReview } from "@/features/drafts/DocumentReview";
+import { ReplacementPanel } from "@/features/drafts/ReplacementPanel";
 import { DraftManagement } from "@/features/drafts/DraftManagement";
-import { DraftEditor } from "@/features/drafts/DraftEditor";
 import { PdfPreview, type PdfFile } from "@/features/drafts/PdfPreview";
 import { statusLabel } from "@/features/applications/status";
-import { movedIndexes } from "@/lib/order";
+
+const DIFF_LABELS = { unchanged: "Unchanged", rewritten: "Rewritten", added_from_portfolio: "Added from portfolio", reordered: "Reordered", removed: "Removed" };
 
 const PARTS: { value: Part; label: string }[] = [
   { value: "resume", label: "Tailored Resume" },
   { value: "cover_letter", label: "Cover Letter" },
   { value: "email_body", label: "Application Email" },
 ];
-const DIFF_LABELS = { unchanged: "Unchanged", rewritten: "Rewritten", added_from_portfolio: "Added from portfolio", reordered: "Reordered", removed: "Removed" };
 
 export function DraftPage() {
   const { draftId = "" } = useParams();
@@ -42,8 +42,9 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const [current, setCurrent] = useState<Version>(draft.version!);
   const [content, setContent] = useState<Content>(draft.version!.content);
   const [part, setPart] = useState<Part>("resume");
-  const [showDiff, setShowDiff] = useState(false);
-  const [compare, setCompare] = useState("base");
+  const [section, setSection] = useState<Content["resume"][number]["section"]>();
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [failedSnapshot, setFailedSnapshot] = useState<string>();
   const [recipient, setRecipient] = useState(() =>
     search.has("resume_handoff") ? (sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? String(draft.job.contact_email ?? "")) : String(draft.job.contact_email ?? ""),
   );
@@ -59,22 +60,38 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [preview, setPreview] = useState<PdfFile | null>(null);
-  const [chatError, setChatError] = useState<string | undefined>();
   const [outwardBusy, setOutwardBusy] = useState(false);
   const [loadLatestConfirm, setLoadLatestConfirm] = useState(false);
   const [recheckConfirm, setRecheckConfirm] = useState(false);
   const [resumePrompt, setResumePrompt] = useState(search.has("resume_handoff"));
-  const versions = useVersions(draft.id);
-  const diff = useDraftDiff(draft.id, current.number, showDiff && compare === "base");
   const actions = useDraftActions(draft.id);
   const toast = useToast();
   const dirty = JSON.stringify(content) !== JSON.stringify(current.content);
+  // Fetched only when the comparison is opened.
+  const diff = useDraftDiff(draft.id, current.number, compareOpen);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
   const busy = actions.save.isPending || actions.recheck.isPending || actions.chat.isPending || actions.restore.isPending || outwardBusy;
   const hasEmail = Boolean(draft.job.contact_email);
   // Applied or any later status: Mark as applied has nothing left to do.
   const applied = Boolean(draft.application_status && draft.application_status !== "drafted");
   const stale = current.number !== draft.current_version;
+  const snapshot = JSON.stringify(content);
+  const blocked = actions.recheck.isPending || actions.restore.isPending || outwardBusy || draft.active === false;
+  const { mutateAsync: saveDraft, isPending: saving } = actions.save;
+
+  useEffect(() => {
+    if (!dirty || stale || busy || failedSnapshot === snapshot) return;
+    const timer = setTimeout(() => {
+      void saveDraft({ expected_version: current.number, content: JSON.parse(snapshot) as Content }).then(updated => {
+        if (updated.version) {
+          setCurrent(updated.version);
+          setContent(local => JSON.stringify(local) === snapshot ? updated.version!.content : local);
+        }
+        setError(null); setFailedSnapshot(undefined);
+      }).catch((failure: Error) => { setError(failure.message); setFailedSnapshot(snapshot); });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [dirty, stale, busy, failedSnapshot, snapshot, current.number, saveDraft]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -92,10 +109,11 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
   }
   async function save() {
     try {
-      accept(await actions.save.mutateAsync({ expected_version: current.number, content }));
-      toast("success", "Draft saved");
-      return true;
-    } catch (failure) { setError((failure as Error).message); return false; }
+      const updated = await actions.save.mutateAsync({ expected_version: current.number, content });
+      if (updated.version) { setCurrent(updated.version); setContent(local => JSON.stringify(local) === snapshot ? updated.version!.content : local); }
+      setError(null); setFailedSnapshot(undefined);
+      return updated;
+    } catch (failure) { setError((failure as Error).message); setFailedSnapshot(snapshot); return null; }
   }
   async function recheck() {
     setRecheckConfirm(false);
@@ -103,13 +121,6 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       accept(await actions.recheck.mutateAsync(current.number));
       toast("success", "Draft checked against your latest Fact Bank");
     } catch (failure) { setError((failure as Error).message); }
-  }
-  async function chat(message: string, overwrite: boolean) {
-    setChatError(undefined);
-    try {
-      accept(await actions.chat.mutateAsync({ expected_version: current.number, message, overwrite_manual: overwrite }));
-      return true;
-    } catch (failure) { setChatError((failure as Error).message); return false; }
   }
   async function restore(number: number) {
     try {
@@ -133,8 +144,10 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
     setDownloadError(null);
     setDownloading(`${action}-${kind}`);
     const fallback = kind === "cover_letter" ? draft.attachment_name.replace(/\.pdf$/, "_Cover_Letter.pdf") : draft.attachment_name;
-    const url = pdfHref(draft.id, kind, current.number, template);
     try {
+      const saved = dirty ? await save() : null;
+      if (dirty && !saved) throw new Error("Save failed. Your edits are still here; retry saving before previewing.");
+      const url = pdfHref(draft.id, kind, saved?.version?.number ?? current.number, template);
       if (action === "download") await downloadFile(url, fallback);
       else setPreview({ kind, template, ...(await fetchFile(url, fallback)) });
     } catch (failure) {
@@ -171,12 +184,6 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
     finally { setOutwardBusy(false); }
   }
 
-  const selected = versions.data?.find((version) => String(version.number) === compare);
-  const oldLines = selected?.content[part] ?? [];
-  const prior = new Map(oldLines.map((line) => [line.id, line.text]));
-  const oldIndex = new Map(oldLines.map((line, i) => [line.id, i]));
-  const keptLines = (content[part] ?? []).map((line, i) => [i, oldIndex.get(line.id)] as const).filter((entry): entry is readonly [number, number] => entry[1] !== undefined);
-  const movedLines = new Set([...movedIndexes(keptLines.map(([, old]) => old))].map((j) => keptLines[j]![0]));
   return (
     <div className="space-y-5">
       <ConfirmDialog open={blocker.state === "blocked"} title="Save your edits before leaving?" confirmLabel="Save and leave" tone="primary" loading={actions.save.isPending} confirmDisabled={busy || stale} onCancel={() => blocker.state === "blocked" && blocker.reset()} onConfirm={() => void (async () => { if (await save()) { if (blocker.state === "blocked") blocker.proceed(); } })()}
@@ -187,46 +194,51 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       <Link to={`/jobs/${draft.job_id}`} className="text-sm text-brand-700 dark:text-brand-200">← Back to Job</Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-semibold">Draft · {String(draft.job.company ?? "")}</h1><p className="mt-1 text-slate-600 dark:text-slate-400">{String(draft.job.title ?? "")}</p></div>
-        <div className="flex items-center gap-2"><Badge>Version {current.number}</Badge>{draft.application_status && <Badge>{statusLabel(draft.application_status)}</Badge>}</div>
+        <div className="flex items-center gap-2"><Badge>{saving ? "Saving…" : dirty ? failedSnapshot === snapshot ? "Couldn’t save" : "Unsaved changes" : "Saved"}</Badge>{draft.application_status && <Badge>{statusLabel(draft.application_status)}</Badge>}</div>
       </div>
+      {draft.active === false && <Alert tone="info">This archived package is kept for your application history and is read-only. Open the current Draft from the Job page.</Alert>}
       {error && <Alert tone="error">{error}</Alert>}
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
-      {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul><p className="mt-2">Edit the line or cite a supporting Fact in its Tailoring Trace. If the Fact is missing, add it to your Fact Bank and recheck.</p><div className="mt-2 flex flex-wrap items-center gap-3"><a href="#draft-editor" className="text-sm font-medium underline" onClick={() => setPart("resume")}>Review resume lines</a><Link to="/fact-bank" className="text-sm font-medium underline">Open Fact Bank</Link><Button variant="secondary" size="sm" disabled={busy || dirty || stale} onClick={() => setRecheckConfirm(true)}>Recheck latest Facts</Button></div>{dirty && <p className="mt-2 text-xs">Save your edits before rechecking.</p>}</Alert>}
+      {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul><p className="mt-2">Edit the line or cite a supporting Fact in its Tailoring Trace. If the Fact is missing, add it to your Fact Bank and recheck.</p><div className="mt-2 flex flex-wrap items-center gap-3"><a href="#draft-editor" className="text-sm font-medium underline" onClick={() => { setPart("resume"); setSection(undefined); }}>Review resume lines</a><Link to="/fact-bank" className="text-sm font-medium underline">Open Fact Bank</Link><Button variant="secondary" size="sm" disabled={busy || dirty || stale} onClick={() => setRecheckConfirm(true)}>Recheck latest Facts</Button></div>{dirty && <p className="mt-2 text-xs">Save your edits before rechecking.</p>}</Alert>}
       {resumePrompt && <Alert tone="info">Gmail connection returned. Review the recipient and confirm to resume the hand-off.<Button variant="ghost" onClick={() => { setRecipient(sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? recipient); }}>Restore recipient</Button></Alert>}
       {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <button type="button" className="underline" onClick={() => void pdfFile("resume", "download")}>Download resume PDF</button></>}</Alert>}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Card id="draft-editor" className="min-w-0 space-y-5 p-4 sm:p-6">
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Draft documents">
-            {PARTS.filter((entry) => entry.value !== "email_body" || hasEmail).map((entry) => <Button key={entry.value} role="tab" aria-selected={part === entry.value} variant={part === entry.value ? "primary" : "secondary"} onClick={() => setPart(entry.value)}>{entry.label}</Button>)}
+            {PARTS.filter((entry) => entry.value !== "email_body" || hasEmail).map((entry) => <Button key={entry.value} id={`draft-tab-${entry.value}`} role="tab" aria-controls="draft-document-panel" tabIndex={part === entry.value ? 0 : -1} aria-selected={part === entry.value} variant={part === entry.value ? "primary" : "secondary"} onClick={() => { setPart(entry.value); setSection(undefined); }} onKeyDown={event => {
+              const entries = PARTS.filter(item => item.value !== "email_body" || hasEmail);
+              const index = entries.findIndex(item => item.value === entry.value);
+              const next = event.key === "ArrowRight" ? (index + 1) % entries.length : event.key === "ArrowLeft" ? (index - 1 + entries.length) % entries.length : event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault(); setPart(entries[next]!.value); setSection(undefined);
+              document.getElementById(`draft-tab-${entries[next]!.value}`)?.focus();
+            }}>{entry.label}</Button>)}
           </div>
           {part === "email_body" && <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
             <Field label="Email subject" htmlFor="email-subject"><Input id="email-subject" value={content.email_subject ?? ""} maxLength={200} onChange={(event) => setContent({ ...content, email_subject: event.target.value })} disabled={busy} /></Field>
             <Field label="Greeting name (blank: Hiring Team)" htmlFor="email-greeting"><Input id="email-greeting" value={content.email_greeting ?? ""} maxLength={100} onChange={(event) => setContent({ ...content, email_greeting: event.target.value })} disabled={busy} /></Field>
           </div>}
-          <DraftEditor content={content} part={part} facts={current.facts} onChange={setContent} disabled={busy} />
-          <div className="flex flex-wrap items-center gap-3"><Button variant="primary" loading={actions.save.isPending} disabled={busy || !dirty || stale} onClick={() => void save()}>Save draft</Button><span className="text-xs text-slate-500 dark:text-slate-400">{dirty ? "Unsaved edits. Save before downloading or opening Gmail." : "Saved in JobWeaver. Nothing has been sent."}</span></div>
-          <details><summary className="cursor-pointer text-sm font-medium">Base Resume</summary><pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-600 dark:text-slate-400">{draft.base_resume || "No Base Resume text is available."}</pre></details>
-          <Button variant="ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide diff and versions" : "Show diff and versions"}</Button>
-          {showDiff && <section className="space-y-3" aria-label="Diff and versions">
-            <Field label="Compare against" htmlFor="compare-version"><Select id="compare-version" value={compare} onChange={(event) => setCompare(event.target.value)}><option value="base">Base Resume</option>{versions.data?.map((version) => <option key={version.number} value={version.number}>Version {version.number} · {version.source}</option>)}</Select></Field>
-            {compare === "base" ? <>
+          <div id="draft-document-panel" role="tabpanel" aria-labelledby={`draft-tab-${part}`}><DocumentReview key={part} content={content} part={part} facts={current.facts} onChange={setContent} disabled={blocked} onSection={setSection} /></div>
+          <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-3 rounded border bg-white p-3 shadow dark:border-slate-700 dark:bg-slate-900"><Button variant="primary" loading={actions.save.isPending} disabled={busy || !dirty || stale} onClick={() => void save()}>Save now</Button><span className="text-xs text-slate-500 dark:text-slate-400">{dirty ? "Your edits save automatically. Saving never sends anything." : "Saved in JobWeaver. Nothing has been sent."}</span></div>
+          <details onToggle={(event) => setCompareOpen((event.target as HTMLDetailsElement).open)}><summary className="cursor-pointer text-sm font-medium">Compare with your Base Resume</summary>
+            <div className="mt-3 space-y-2" aria-label="Changes from your Base Resume">
+              {diff.isPending && compareOpen && <p className="text-sm text-slate-500 dark:text-slate-400">Loading the comparison…</p>}
               {diff.isError && <Alert tone="error">{diff.error.message}</Alert>}
               {diff.data?.map((line, i) => <div key={i} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{DIFF_LABELS[line.kind]}</Badge><p className="mt-2">{line.text}</p>{line.kind === "rewritten" && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Before: {line.before?.join(" · ")}</p>}<p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Trace: {line.fact_refs.join(", ")}</p></div>)}
-            </> : selected && <>
-              {(content[part] ?? []).map((line, index) => <div key={line.id ?? index} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-700"><Badge>{!prior.has(line.id) ? "Added" : prior.get(line.id) !== line.text ? "Rewritten" : movedLines.has(index) ? "Reordered" : "Unchanged"}</Badge><p className="mt-1">{line.text}</p>{prior.get(line.id) !== line.text && prior.has(line.id) && <p className="text-xs text-slate-500 dark:text-slate-400">Before: {prior.get(line.id)}</p>}</div>)}
-              {oldLines.filter((line) => !(content[part] ?? []).some((entry) => entry.id === line.id)).map((line, index) => <p key={line.id ?? index} className="text-sm"><Badge>Removed</Badge> {line.text}</p>)}
-              <Button variant="secondary" disabled={busy || dirty || stale} onClick={() => void restore(selected.number)}>Restore version {selected.number}</Button>
-            </>}
-          </section>}
+            </div>
+          </details>
+          <details><summary className="cursor-pointer text-sm font-medium">Base Resume</summary><pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-600 dark:text-slate-400">{draft.base_resume || "No Base Resume text is available."}</pre></details>
+
         </Card>
         <div className="min-w-0 space-y-4">
-          <DraftChatPanel versions={versions.data ?? []} currentVersion={draft.current_version} busy={busy} dirty={dirty || stale} onChat={chat} onUndo={(number) => void restore(number)} error={chatError} />
+          {part !== "email_body" && <ReplacementPanel draftId={draft.id} currentVersion={current.number} currentContent={content} part={part} section={section} dirty={dirty || stale || busy} onAccept={updated => { accept(updated); void actions.refresh(updated); }} />}
+          {current.source === "replacement" && current.number > 1 && <Button variant="secondary" disabled={dirty || stale || busy} onClick={() => void restore(current.number - 1)}>Undo replacement</Button>}
           <Card className="space-y-4 p-4">
             <h2 className="text-base font-semibold">Review and apply</h2>
-            <div className="flex flex-wrap gap-2"><DraftManagement jobId={draft.job_id} draftId={draft.id} version={current.number} disabled={dirty || stale || busy} allowDelete /></div>
+            <div className="flex flex-wrap gap-2"><DraftManagement jobId={draft.job_id} draftId={draft.id} version={current.number} disabled={dirty || stale || busy} allowDelete={draft.active !== false} /></div>
             <Field label="PDF layout" htmlFor="pdf-template" hint={draft.template === "compact" ? "This resume fits two pages only in Compact." : undefined}><Select id="pdf-template" value={template} onChange={(event) => setTemplate(event.target.value === "compact" ? "compact" : "standard")}><option value="standard">Standard · single column</option><option value="compact">Compact · single column</option></Select></Field>
-            {!dirty && !stale ? <div className="flex flex-wrap gap-2">{(["resume", "cover_letter"] as const).map((kind) => { const label = kind === "resume" ? "Resume" : "Cover Letter"; return <span key={kind} className="flex flex-wrap gap-1"><Button variant="secondary" size="sm" loading={downloading === `preview-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "preview")}>Preview {label}</Button><Button variant="secondary" size="sm" loading={downloading === `download-${kind}`} disabled={downloading !== null} onClick={() => void pdfFile(kind, "download")} aria-label={`Download ${label} PDF`}>{label} PDF</Button></span>; })}</div> : <p className="text-xs text-slate-500 dark:text-slate-400">Save your edits to download PDFs.</p>}
+            {!stale ? <div className="flex flex-wrap gap-2">{(["resume", "cover_letter"] as const).map((kind) => { const label = kind === "resume" ? "Resume" : "Cover Letter"; return <span key={kind} className="flex flex-wrap gap-1"><Button variant="secondary" size="sm" loading={downloading === `preview-${kind}`} disabled={downloading !== null || saving} onClick={() => void pdfFile(kind, "preview")}>Preview {label}</Button><Button variant="secondary" size="sm" loading={downloading === `download-${kind}`} disabled={downloading !== null || saving} onClick={() => void pdfFile(kind, "download")} aria-label={`Download ${label} PDF`}>{label} PDF</Button></span>; })}</div> : <p className="text-xs text-slate-500 dark:text-slate-400">Load the latest saved Draft before previewing.</p>}
             {downloadError && <Alert tone="error" title="The PDF could not be made">{downloadError}</Alert>}
             {preview && <PdfPreview file={preview} onClose={() => setPreview(null)} />}
             {hasEmail ? <>

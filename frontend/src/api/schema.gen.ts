@@ -188,6 +188,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/writing-style": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Writing Style */
+        get: operations["get_writing_style_api_me_writing_style_get"];
+        /** Save Writing Style */
+        put: operations["save_writing_style_api_me_writing_style_put"];
+        post?: never;
+        /** Clear Writing Style */
+        delete: operations["clear_writing_style_api_me_writing_style_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/writing-style/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild Writing Style */
+        post: operations["rebuild_writing_style_api_me_writing_style_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/gmail/connect": {
         parameters: {
             query?: never;
@@ -854,6 +890,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts/{draft_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proposals */
+        get: operations["proposals_api_drafts__draft_id__proposals_get"];
+        put?: never;
+        /** Propose */
+        post: operations["propose_api_drafts__draft_id__proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/proposals/{proposal_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Proposal */
+        post: operations["accept_proposal_api_drafts__draft_id__proposals__proposal_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drafts/{draft_id}/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Proposal */
+        delete: operations["discard_proposal_api_drafts__draft_id__proposals__proposal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -1124,7 +1212,8 @@ export interface paths {
         /** Ext Saved Answers */
         get: operations["ext_saved_answers_api_ext_saved_answers_get"];
         put?: never;
-        post?: never;
+        /** Ext Save Answer */
+        post: operations["ext_save_answer_api_ext_saved_answers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1176,6 +1265,47 @@ export interface paths {
         get: operations["ext_draft_api_ext_drafts__draft_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ext Answers
+         * @description Answers for the form's own questions: Saved Answers, reviewed-only Suggestions, or
+         *     Fact notes. Nothing is filled until the User ticks it in the extension.
+         */
+        post: operations["ext_answers_api_ext_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ext/drafts/{draft_id}/applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ext Mark Applied
+         * @description Only after the User confirms in the extension that they submitted the form.
+         */
+        post: operations["ext_mark_applied_api_ext_drafts__draft_id__applied_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1346,6 +1476,50 @@ export interface components {
             /** Renews On */
             renews_on?: string | null;
         };
+        /** AnswerOut */
+        AnswerOut: {
+            /** Ref */
+            ref: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "saved" | "suggestion" | "fact_notes" | "none";
+            /**
+             * Text
+             * @default
+             */
+            text?: string;
+            /** Notes */
+            notes?: string[];
+            /** Fact Refs */
+            fact_refs?: string[];
+            /** Saved Answer Id */
+            saved_answer_id?: string | null;
+            /** Origin */
+            origin?: ("user" | "suggestion") | null;
+            /** Warning */
+            warning?: string | null;
+        };
+        /** AnswersIn */
+        AnswersIn: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Number */
+            number?: number | null;
+            /** Questions */
+            questions: components["schemas"]["QuestionIn"][];
+            /**
+             * No Ai
+             * @default false
+             */
+            no_ai?: boolean;
+        };
         /** ApplicationOut */
         ApplicationOut: {
             /**
@@ -1389,6 +1563,24 @@ export interface components {
         AppliedIn: {
             /** Expected Version */
             expected_version: number;
+        };
+        /**
+         * ArchivedDraftOut
+         * @description An earlier package for this Job, kept with its versions (ADR-0017).
+         */
+        ArchivedDraftOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Version */
+            current_version: number;
         };
         /** AtsBoardIn */
         AtsBoardIn: {
@@ -1476,6 +1668,11 @@ export interface components {
             draft_id: string;
             /** State */
             state: string;
+            /**
+             * Existing
+             * @default false
+             */
+            existing?: boolean;
         };
         /** CapturedJobOut */
         CapturedJobOut: {
@@ -1634,6 +1831,11 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /**
+             * Active
+             * @default true
+             */
+            active?: boolean;
             /** State */
             state: string;
             /** Progress */
@@ -1831,6 +2033,32 @@ export interface components {
             /** Needs Review */
             needs_review: boolean;
             content: components["schemas"]["ProfileContent"] | null;
+        };
+        /** ExtSavedAnswerIn */
+        ExtSavedAnswerIn: {
+            /** Answer Id */
+            answer_id?: string | null;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Question */
+            question: string;
+            /** Answer */
+            answer: string;
+            /**
+             * Scope
+             * @default company
+             * @enum {string}
+             */
+            scope?: "general" | "country" | "company";
+            /**
+             * Origin
+             * @default user
+             * @enum {string}
+             */
+            origin?: "user" | "suggestion";
         };
         /** ExtensionApproveIn */
         ExtensionApproveIn: {
@@ -2240,6 +2468,12 @@ export interface components {
             company_id: string;
             /** Description */
             description: string;
+            /** Description Origin */
+            description_origin?: {
+                [key: string]: unknown;
+            };
+            /** Experience Requirement */
+            experience_requirement?: string | null;
             /** Locations */
             locations: components["schemas"]["LocationOut"][];
             /** Work Mode */
@@ -2268,6 +2502,8 @@ export interface components {
             possible_duplicates: components["schemas"]["PossibleDuplicateOut"][];
             /** Draft Id */
             draft_id?: string | null;
+            /** Archived Drafts */
+            archived_drafts?: components["schemas"]["ArchivedDraftOut"][];
             /** Application Status */
             application_status?: string | null;
             /**
@@ -2335,6 +2571,8 @@ export interface components {
             gmail: components["schemas"]["GmailStatus"];
             /** Follow Up Days */
             follow_up_days: number;
+            /** Extension Store Url */
+            extension_store_url?: string | null;
         };
         /** ModelUsage */
         ModelUsage: {
@@ -2550,12 +2788,69 @@ export interface components {
             /** Expected Version */
             expected_version: number;
         };
+        /** ProposalAccept */
+        ProposalAccept: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** ProposalIn */
+        ProposalIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Part
+             * @enum {string}
+             */
+            part: "resume" | "cover_letter";
+            /** Section */
+            section?: ("Headline" | "Contact" | "Summary" | "Skills" | "Experience" | "Projects" | "Education" | "Links" | "Additional") | null;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction?: string;
+        };
+        /** ProposalOut */
+        ProposalOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Base Version */
+            base_version: number;
+            /** Part */
+            part: string;
+            /** Section */
+            section: string | null;
+            /** State */
+            state: string;
+            /** Progress */
+            progress: string;
+            /** Error */
+            error: string | null;
+            content: components["schemas"]["DraftContent"] | null;
+            /** Warnings */
+            warnings: string[];
+        };
         /** QuerySpend */
         QuerySpend: {
             /** Query Key */
             query_key: string;
             /** Spent */
             spent: number;
+        };
+        /**
+         * QuestionIn
+         * @description Question text from the form, never page content or other answers (ADR-0017).
+         */
+        QuestionIn: {
+            /** Ref */
+            ref: string;
+            /** Question */
+            question: string;
+            /** Max Chars */
+            max_chars?: number | null;
         };
         /** ReminderOut */
         ReminderOut: {
@@ -2813,6 +3108,22 @@ export interface components {
          * @enum {string}
          */
         WorkMode: "onsite" | "hybrid" | "remote";
+        /** WritingStyleIn */
+        WritingStyleIn: {
+            /** Traits */
+            traits?: string[];
+            /** Excerpts */
+            excerpts?: string[];
+        };
+        /** WritingStyleOut */
+        WritingStyleOut: {
+            /** Traits */
+            traits: string[];
+            /** Excerpts */
+            excerpts: string[];
+            /** Built At */
+            built_at?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -3138,6 +3449,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_writing_style_api_me_writing_style_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WritingStyleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_writing_style_api_me_writing_style_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WritingStyleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WritingStyleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_writing_style_api_me_writing_style_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_writing_style_api_me_writing_style_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WritingStyleOut"];
                 };
             };
             /** @description Validation Error */
@@ -4699,6 +5136,146 @@ export interface operations {
             };
         };
     };
+    proposals_api_drafts__draft_id__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_api_drafts__draft_id__proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_proposal_api_drafts__draft_id__proposals__proposal_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_proposal_api_drafts__draft_id__proposals__proposal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_applications_api_applications_get: {
         parameters: {
             query?: never;
@@ -5293,6 +5870,42 @@ export interface operations {
             };
         };
     };
+    ext_save_answer_api_ext_saved_answers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtSavedAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedAnswerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ext_drafts_api_ext_drafts_get: {
         parameters: {
             query?: never;
@@ -5383,6 +5996,78 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExtDraftVersion"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_answers_api_ext_answers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswersIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ext_mark_applied_api_ext_drafts__draft_id__applied_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                origin?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppliedIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

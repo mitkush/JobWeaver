@@ -1,0 +1,502 @@
+"""Answers to application-form questions and the Writing Style (ADR-0017, stage 7)."""
+
+import json
+
+import pytest
+from sqlalchemy import select, update
+
+from app.core.config import get_settings
+from app.core.errors import GatewayError
+from app.models import Document, User
+from app.models.document import DocumentKind
+from app.services.form_answers import fit
+from app.services.writing_style import redact
+from tests.api.test_drafts import prepared  # noqa: F401
+from tests.api.test_extension import EXT, connect, ext_client
+
+QUESTIONS = [
+    {"ref": "q1", "question": "Why do you want to join us?"},
+    {"ref": "q2", "question": "Describe your infrastructure experience"},
+    {"ref": "q3", "question": "What will you bring to this role?"},
+]
+
+
+@pytest.fixture(autouse=True)
+def allow_extension(monkeypatch):
+    monkeypatch.setenv("EXTENSION_IDS", EXT)
+    get_settings.cache_clear()
+
+
+async def ask(client, job_id, questions=QUESTIONS, no_ai=False, **pinned):
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        return await ext.post(
+            "/api/ext/answers",
+            json={"job_id": job_id, "questions": questions, "no_ai": no_ai, **pinned},
+        )
+
+
+async def test_suggestions_must_pass_the_fact_checks(prepared):  # noqa: F811
+    _, client, job_id, _ = prepared
+    response = await ask(client, job_id)
+    assert response.status_code == 200, response.text
+    by_ref = {a["ref"]: a for a in response.json()}
+    # Backed by the cited Fact: kept as a full Suggestion.
+    assert by_ref["q1"]["kind"] == "suggestion"
+    assert "40 merchant teams" in by_ref["q1"]["text"] and by_ref["q1"]["fact_refs"] == ["F4"]
+    # Names a tool that is not in the Fact Bank: never offered as prose.
+    assert by_ref["q2"]["kind"] == "fact_notes"
+    assert "Kubernetes" not in json.dumps(by_ref["q2"])
+    assert by_ref["q2"]["notes"]
+    # Stock phrasing is flagged for the User to rework.
+    assert by_ref["q3"]["kind"] == "suggestion"
+    assert "stock phrasing" in by_ref["q3"]["warning"]
+
+
+async def test_forms_that_refuse_ai_get_fact_notes_and_no_provider_call(prepared):  # noqa: F811
+    _, client, job_id, gateway = prepared
+
+    async def must_not_run(_request):
+        raise AssertionError("no AI call for a form that refuses AI answers")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(client, job_id, no_ai=True)
+    assert response.status_code == 200
+    assert {a["kind"] for a in response.json()} == {"fact_notes"}
+    assert all("not written by AI" in a["warning"] for a in response.json())
+
+
+async def test_sensitive_questions_only_use_saved_answers(prepared):  # noqa: F811
+    _, client, job_id, gateway = prepared
+    questions = [
+        {"ref": "s1", "question": "What is your notice period?"},
+        {"ref": "s2", "question": "Will you require visa sponsorship?"},
+    ]
+    saved = await client.post(
+        "/api/saved-answers",
+        json={"question": "What is your notice period?", "answer": "30 days", "sensitive": True},
+    )
+    assert saved.status_code == 201
+
+    async def must_not_run(_request):
+        raise AssertionError("sensitive questions never reach the AI")
+
+    gateway.answer_questions = must_not_run
+    by_ref = {a["ref"]: a for a in (await ask(client, job_id, questions)).json()}
+    assert (by_ref["s1"]["kind"], by_ref["s1"]["text"]) == ("saved", "30 days")
+    assert by_ref["s2"]["kind"] == "none" and by_ref["s2"]["text"] == ""
+
+
+async def test_a_company_answer_is_used_only_for_that_company(prepared, db):  # noqa: F811
+    from app.models import Company, Job
+
+    _, client, job_id, gateway = prepared
+    job = await db.get(Job, job_id)
+    other = Company(name="Globex", normalized_name="globex-test")
+    db.add(other)
+    await db.commit()
+    question = "Why do you want to join us?"
+    await client.post(
+        "/api/saved-answers",
+        json={
+            "question": question,
+            "answer": "For Globex only",
+            "scope": "company",
+            "company_id": str(other.id),
+        },
+    )
+    await client.post(
+        "/api/saved-answers",
+        json={
+            "question": question,
+            "answer": "Mine for this company",
+            "scope": "company",
+            "company_id": str(job.company_id),
+        },
+    )
+    [answer] = (await ask(client, job_id, [{"ref": "q1", "question": question}])).json()
+    assert (answer["kind"], answer["text"]) == ("saved", "Mine for this company")
+
+
+async def test_suggestions_fit_the_field_or_become_notes(prepared):  # noqa: F811
+    assert fit("First sentence. Second one is longer.", 20) == "First sentence."
+    assert fit("One very long sentence without a stop", 10) is None
+    _, client, job_id, _ = prepared
+    tight = [{"ref": "q1", "question": "Why do you want to join us?", "max_chars": 12}]
+    [answer] = (await ask(client, job_id, tight)).json()
+    assert answer["kind"] == "fact_notes"
+
+
+async def test_ai_answers_need_the_notice_and_an_unavailable_ai_degrades_to_notes(prepared, db):  # noqa: F811
+    user, client, job_id, gateway = prepared
+
+    async def unavailable(_request):
+        raise GatewayError("busy")
+
+    gateway.answer_questions = unavailable
+    answers = (await ask(client, job_id)).json()
+    assert {a["kind"] for a in answers} == {"fact_notes"}
+    assert "unavailable" in answers[0]["warning"]
+
+    await db.execute(update(User).where(User.id == user.id).values(ai_notice_accepted_at=None))
+    await db.commit()
+    assert (await ask(client, job_id)).status_code == 409
+
+
+async def test_answers_are_scoped_to_the_users_own_jobs(prepared, bob):  # noqa: F811
+    _, _, job_id, _ = prepared
+    _, other = bob
+    assert (await ask(other, job_id)).status_code == 404
+    _, client, _, _ = prepared
+    cookie_only = await client.post(
+        "/api/ext/answers", json={"job_id": job_id, "questions": QUESTIONS}
+    )
+    assert cookie_only.status_code == 401
+
+
+async def test_saving_a_reviewed_answer_from_the_extension(prepared, db):  # noqa: F811
+    from app.models import Job
+
+    _, client, job_id, _ = prepared
+    job = await db.get(Job, job_id)
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        saved = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": "Why us?",
+                "answer": "My reworked answer",
+                "origin": "suggestion",
+            },
+        )
+    assert saved.status_code == 201, saved.text
+    body = saved.json()
+    assert (body["scope"], body["company_id"], body["origin"]) == (
+        "company",
+        str(job.company_id),
+        "suggestion",
+    )
+    async with ext_client(token=token) as ext:
+        notice = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": "What is your notice period?",
+                "answer": "30 days",
+                "scope": "general",
+            },
+        )
+    assert notice.json()["sensitive"] is True
+
+
+# Writing Style
+
+
+def test_redaction_removes_names_numbers_dates_and_tools():
+    text = redact(
+        "At Acme Corp I cut report time from 10 minutes to 30 seconds using Kafka in March 2024.",
+        {"Acme Corp"},
+    )
+    for gone in ("Acme", "10", "30", "Kafka", "2024"):
+        assert gone not in text
+    assert "[NAME]" in text and "[NUMBER]" in text and "[TECH]" in text
+
+
+async def test_writing_style_is_built_from_own_text_and_carries_no_claims(prepared, db):  # noqa: F811
+    user, client, _, _ = prepared
+    assert (await client.post("/api/me/writing-style/rebuild")).status_code == 409  # no samples yet
+    db.add(
+        Document(
+            user_id=user.id,
+            kind=DocumentKind.SUMMARY,
+            filename="summary.txt",
+            content_type="text/plain",
+            size_bytes=0,
+            content=b"",
+            extracted_text="I like owning a problem end to end and writing down what I learned.",
+        )
+    )
+    await db.commit()
+    built = await client.post("/api/me/writing-style/rebuild")
+    assert built.status_code == 200, built.text
+    style = built.json()
+    assert "Short, direct sentences" in style["traits"]
+    joined = " ".join(style["excerpts"])
+    for claim in ("Acme", "10 minutes", "Kafka", "Ledger Sync"):
+        assert claim not in joined
+    assert any("[NUMBER]" in e for e in style["excerpts"])
+
+    edited = await client.put(
+        "/api/me/writing-style",
+        json={
+            "traits": ["Plain words"],
+            "excerpts": [
+                "I shipped releases for the team at Acme Corp.",
+                "Kafka at Acme Corp, 2024.",
+            ],
+        },
+    )
+    # The User's own edit is redacted too, and an excerpt that was mostly claims is dropped.
+    assert edited.json()["excerpts"] == ["I shipped releases for the team at [NAME]."]
+    assert (await client.delete("/api/me/writing-style")).status_code == 204
+    assert (await client.get("/api/me/writing-style")).json()["traits"] == []
+
+
+@pytest.mark.parametrize(
+    "text,refs",
+    [
+        ("I build Python APIs.", []),
+        ("I build Python APIs.", ["F999"]),
+    ],
+)
+async def test_unvalidatable_provider_answers_degrade_to_notes(prepared, text, refs):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+
+    async def invalid(_request):
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text=text, fact_refs=refs)]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = invalid
+    response = await ask(client, job_id, [QUESTIONS[0]])
+    assert response.status_code == 200, response.text
+    [answer] = response.json()
+    assert answer["kind"] == "fact_notes" and answer["notes"]
+
+
+async def test_no_ai_forms_do_not_reuse_ai_derived_saved_answers(prepared):  # noqa: F811
+    _, client, job_id, gateway = prepared
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        saved = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": QUESTIONS[0]["question"],
+                "answer": "Previously generated wording",
+                "origin": "suggestion",
+            },
+        )
+    assert saved.status_code == 201
+    normal = (await ask(client, job_id, [QUESTIONS[0]])).json()[0]
+    assert normal["kind"] == "saved" and normal["origin"] == "suggestion"
+
+    async def must_not_run(_request):
+        raise AssertionError("no provider call on no-AI forms")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(client, job_id, [QUESTIONS[0]], no_ai=True)
+    assert response.status_code == 200
+    [answer] = response.json()
+    assert answer["kind"] == "fact_notes" and answer["text"] == ""
+    assert "Previously generated wording" not in json.dumps(answer)
+
+
+async def test_answer_context_is_the_explicit_pinned_document(prepared, db):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse
+    from app.models import Draft, DraftVersion
+    from tests.api.test_drafts import generated
+
+    _, client, job_id, gateway = prepared
+    old = await generated(prepared)
+    draft = await db.get(Draft, old["id"])
+    original = await db.scalar(
+        select(DraftVersion).where(DraftVersion.draft_id == draft.id, DraftVersion.number == 1)
+    )
+    old_context = dict(original.job_context)
+    db.add(
+        DraftVersion(
+            user_id=draft.user_id,
+            draft_id=draft.id,
+            number=2,
+            source="replacement",
+            content=original.content,
+            facts=original.facts,
+            warnings=[],
+            message="",
+            job_context={**old_context, "description": "A different newer JD"},
+        )
+    )
+    draft.current_version = 2
+    await db.commit()
+    seen = []
+
+    async def capture(request):
+        seen.append(request.description)
+        return GatewayResponse(
+            result=AnswerQuestionsResult(answers=[]), provider="recorded", model="test"
+        )
+
+    gateway.answer_questions = capture
+    response = await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id), number=1)
+    assert response.status_code == 200, response.text
+    assert seen == [old_context["description"]]
+    assert (
+        await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id), number=999)
+    ).status_code == 404
+    assert (await ask(client, job_id, [QUESTIONS[0]], draft_id=str(draft.id))).status_code == 422
+
+
+async def test_pinned_answer_context_cannot_read_another_users_draft(prepared, bob, db):  # noqa: F811
+    from app.models import UserJob
+    from tests.api.test_drafts import generated
+
+    _, _, job_id, gateway = prepared
+    draft = await generated(prepared)
+    other, other_client = bob
+    db.add(UserJob(user_id=other.id, job_id=job_id))
+    await db.commit()
+
+    async def must_not_run(_request):
+        raise AssertionError("ownership checked before the gateway")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(other_client, job_id, [QUESTIONS[0]], draft_id=draft["id"], number=1)
+    assert response.status_code == 404
+
+
+async def test_extension_can_update_the_saved_answer_it_reviewed(prepared, bob):  # noqa: F811
+    _, client, job_id, _ = prepared
+    token = await connect(client)
+    body = {
+        "job_id": job_id,
+        "question": "Why us?",
+        "answer": "First answer",
+        "origin": "suggestion",
+    }
+    async with ext_client(token=token) as ext:
+        saved = (await ext.post("/api/ext/saved-answers", json=body)).json()
+        changed = await ext.post(
+            "/api/ext/saved-answers",
+            json={**body, "answer_id": saved["id"], "answer": "Reworked answer"},
+        )
+        assert changed.status_code == 201, changed.text
+        assert changed.json()["id"] == saved["id"]
+        assert changed.json()["answer"] == "Reworked answer"
+        assert changed.json()["origin"] == "suggestion"
+        wrong_question = await ext.post(
+            "/api/ext/saved-answers",
+            json={**body, "answer_id": saved["id"], "question": "Another question"},
+        )
+        assert wrong_question.status_code == 409
+
+
+@pytest.mark.parametrize("question", [QUESTIONS[0]["question"], "What is your notice period?"])
+async def test_no_ai_ranks_only_manual_saved_answers(prepared, question):  # noqa: F811
+    _, client, job_id, gateway = prepared
+    manual = await client.post(
+        "/api/saved-answers", json={"question": question, "answer": "My own answer"}
+    )
+    assert manual.status_code == 201, manual.text
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        ai = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": question,
+                "answer": "Generated answer",
+                "origin": "suggestion",
+            },
+        )
+    assert ai.status_code == 201, ai.text
+
+    async def must_not_run(_request):
+        raise AssertionError("Saved answers need no provider")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(client, job_id, [{"ref": "q1", "question": question}], no_ai=True)
+    assert response.status_code == 200, response.text
+    [answer] = response.json()
+    assert answer["kind"] == "saved" and answer["text"] == "My own answer"
+    assert answer["origin"] == "user"
+
+
+async def test_saved_answers_and_no_ai_notes_do_not_require_a_valid_pin(prepared):  # noqa: F811
+    import uuid
+
+    _, client, job_id, gateway = prepared
+    saved = await client.post(
+        "/api/saved-answers",
+        json={"question": QUESTIONS[0]["question"], "answer": "My own answer"},
+    )
+    assert saved.status_code == 201
+
+    async def must_not_run(_request):
+        raise AssertionError("No provider needed")
+
+    gateway.answer_questions = must_not_run
+    pin = {"draft_id": str(uuid.uuid4()), "number": 1}
+    response = await ask(client, job_id, [QUESTIONS[0]], **pin)
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["kind"] == "saved"
+    response = await ask(client, job_id, [QUESTIONS[1]], no_ai=True, **pin)
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["kind"] == "fact_notes"
+
+
+async def test_long_answer_requests_are_capped_and_oversized_output_is_explained(prepared):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+
+    async def oversized(request):
+        assert [q.max_chars for q in request.questions] == [2000, 2000, 100]
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text="A" * 2001, fact_refs=["F1"])]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = oversized
+    response = await ask(
+        client,
+        job_id,
+        [
+            {**QUESTIONS[0], "max_chars": 20000},
+            QUESTIONS[1],
+            {**QUESTIONS[2], "max_chars": 100},
+        ],
+    )
+    assert response.status_code == 200, response.text
+    answer = response.json()[0]
+    assert answer["kind"] == "fact_notes"
+    assert "2,000-character validation limit" in answer["warning"]
+    assert "fully support" not in answer["warning"]
+
+
+@pytest.mark.parametrize("max_chars", [None, 20000, 100])
+async def test_long_supported_answers_are_cut_at_a_sentence_end(prepared, max_chars):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+    sentence = "I built a billing API used by 40 merchant teams."
+    text = (sentence + " ") * 50
+
+    async def long_answer(_request):
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text=text, fact_refs=["F4"])]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = long_answer
+    response = await ask(client, job_id, [{**QUESTIONS[0], "max_chars": max_chars}])
+    assert response.status_code == 200, response.text
+    answer = response.json()[0]
+    assert answer["kind"] == "suggestion", answer
+    assert len(answer["text"]) <= min(max_chars or 2000, 2000)
+    assert answer["text"].endswith(sentence)
+    assert text.startswith(answer["text"])
+    assert answer["fact_refs"] == ["F4"]

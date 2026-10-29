@@ -10,7 +10,8 @@ from app.adapters.gmail import GmailClient, get_gmail_client
 from app.adapters.links import get_link_http
 from app.api.deps import CurrentUser, DbSession, Gateway, Google
 from app.core.errors import ConflictError
-from app.models import DraftVersion
+from app.models import DraftProposal, DraftVersion
+from app.schemas.draft_workflow import ProposalAccept, ProposalIn, ProposalOut
 from app.schemas.drafts import (
     AppliedIn,
     DiffLine,
@@ -25,7 +26,7 @@ from app.schemas.drafts import (
     RestoreVersion,
     VersionOut,
 )
-from app.services import drafting
+from app.services import draft_workflow, drafting
 from app.services.email_check import check_recipient
 from app.tailoring.content import DraftContent, FactSnapshot
 from app.tailoring.diff import resume_diff
@@ -86,7 +87,7 @@ async def delete(
         raise ConflictError("Wait for generation to finish before deleting this Draft")
     if draft.current_version != expected_version:
         raise ConflictError("The Draft changed. Reload it before deleting.")
-    await db.delete(draft)
+    draft.active = False  # Preserve application-linked snapshots and pinned PDFs.
     await db.commit()
 
 
@@ -223,4 +224,59 @@ async def applied(
     body: AppliedIn,
 ) -> None:
     await drafting.mark_applied(db, user, draft_id, body.expected_version)
+    await db.commit()
+
+
+# Proposal APIs return immediately; accepted content is never replaced by a worker.
+
+
+@router.post("/{draft_id}/proposals", status_code=202)
+async def propose(
+    db: DbSession,
+    user: CurrentUser,
+    draft_id: uuid.UUID,
+    body: ProposalIn,
+    gateway: Gateway,
+    background: BackgroundTasks,
+) -> ProposalOut:
+    row = await draft_workflow.queue(db, user, draft_id, body)
+    await db.commit()
+    background.add_task(draft_workflow.generate, row.id, user.id, gateway)
+    return draft_workflow.out(row)
+
+
+@router.get("/{draft_id}/proposals")
+async def proposals(db: DbSession, user: CurrentUser, draft_id: uuid.UUID) -> list[ProposalOut]:
+    await drafting.owned_draft(db, user, draft_id)
+    rows = await db.scalars(
+        select(DraftProposal)
+        .where(
+            DraftProposal.draft_id == draft_id,
+            DraftProposal.user_id == user.id,
+            DraftProposal.state.in_(["queued", "generating", "ready", "failed"]),
+        )
+        .order_by(DraftProposal.created_at.desc())
+        .limit(10)
+    )
+    return [draft_workflow.out(row) for row in rows]
+
+
+@router.post("/{draft_id}/proposals/{proposal_id}/accept")
+async def accept_proposal(
+    db: DbSession,
+    user: CurrentUser,
+    draft_id: uuid.UUID,
+    proposal_id: uuid.UUID,
+    body: ProposalAccept,
+) -> DraftOut:
+    await draft_workflow.accept(db, user, draft_id, proposal_id, body.expected_version)
+    await db.commit()
+    return await drafting.detail(db, user, draft_id)
+
+
+@router.delete("/{draft_id}/proposals/{proposal_id}", status_code=204)
+async def discard_proposal(
+    db: DbSession, user: CurrentUser, draft_id: uuid.UUID, proposal_id: uuid.UUID
+) -> None:
+    await draft_workflow.discard(db, user, draft_id, proposal_id)
     await db.commit()

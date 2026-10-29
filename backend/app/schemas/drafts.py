@@ -45,6 +45,7 @@ class VersionOut(BaseModel):
 class DraftOut(BaseModel):
     id: uuid.UUID
     job_id: uuid.UUID
+    active: bool = True
     state: str
     progress: str
     error: str | None

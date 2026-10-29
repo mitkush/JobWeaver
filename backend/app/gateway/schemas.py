@@ -136,3 +136,44 @@ class ReviseDraftRequest(TailorDraftRequest):
 class DraftResult(BaseModel):
     content: DraftContent
     message: str = ""
+
+
+class FormQuestion(BaseModel):
+    """A question from an application form: its text only, never the page (ADR-0017)."""
+
+    ref: str = Field(min_length=1, max_length=80)
+    question: str = Field(min_length=1, max_length=1000)
+    max_chars: int | None = Field(default=None, ge=1, le=20000)
+
+
+class AnswerQuestionsRequest(BaseModel):
+    user_id: uuid.UUID
+    job_title: str
+    company: str
+    description: str
+    facts: list[FactSnapshot] = Field(min_length=1, max_length=200)
+    # Observable traits and redacted excerpts only; never facts (ADR-0017).
+    writing_style: str = ""
+    questions: list[FormQuestion] = Field(min_length=1, max_length=12)
+
+
+class QuestionAnswer(BaseModel):
+    ref: str
+    text: str = Field(max_length=20000)
+    fact_refs: list[str] = Field(default_factory=list)
+
+
+class AnswerQuestionsResult(BaseModel):
+    answers: list[QuestionAnswer]
+
+
+class WritingStyleRequest(BaseModel):
+    """Text the User wrote themselves; the result describes how they write, not what."""
+
+    user_id: uuid.UUID
+    samples: list[str] = Field(min_length=1, max_length=8)
+
+
+class WritingStyleResult(BaseModel):
+    traits: list[str] = Field(default_factory=list, max_length=8)
+    excerpts: list[str] = Field(default_factory=list, max_length=3)

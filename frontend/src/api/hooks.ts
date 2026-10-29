@@ -15,6 +15,7 @@ import {
   type Preferences,
   type ProfileContent,
   type SavedAnswerInput,
+  type WritingStyleInput,
 } from "./client";
 
 export const keys = {
@@ -35,6 +36,7 @@ export const keys = {
   extensionConnections: ["extension", "connections"] as const,
   profile: ["profile"] as const,
   savedAnswers: ["saved-answers"] as const,
+  writingStyle: ["writing-style"] as const,
 };
 
 export function useMe() {
@@ -274,6 +276,34 @@ export function useDeleteAnswer() {
   return useMutation({
     mutationFn: (id: string) => unwrap(api.DELETE("/api/saved-answers/{answer_id}", { params: { path: { answer_id: id } } })),
     onSettled: () => client.invalidateQueries({ queryKey: keys.savedAnswers }),
+  });
+}
+
+export function useWritingStyle() {
+  return useQuery({ queryKey: keys.writingStyle, queryFn: () => unwrap(api.GET("/api/me/writing-style")) });
+}
+
+export function useRebuildWritingStyle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => unwrap(api.POST("/api/me/writing-style/rebuild")),
+    onSuccess: (style) => client.setQueryData(keys.writingStyle, style),
+  });
+}
+
+export function useSaveWritingStyle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: WritingStyleInput) => unwrap(api.PUT("/api/me/writing-style", { body })),
+    onSuccess: (style) => client.setQueryData(keys.writingStyle, style),
+  });
+}
+
+export function useClearWritingStyle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => unwrap(api.DELETE("/api/me/writing-style")),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.writingStyle }),
   });
 }
 

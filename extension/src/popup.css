@@ -19,7 +19,9 @@
 }
 body {
   margin: 0;
-  width: 320px;
+  width: 100%;
+  min-width: 280px;
+  overflow-wrap: anywhere;
   background: var(--bg);
   color: var(--fg);
   font: 14px/1.5 system-ui, sans-serif;
@@ -43,6 +45,7 @@ h1 {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
 }
@@ -75,9 +78,6 @@ button:disabled {
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
-}
-body {
-  width: 360px;
 }
 .panel {
   margin: 12px 0;
@@ -138,14 +138,10 @@ select {
 }
 .fields li {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 0;
   border-top: 1px solid var(--line);
-}
-.fields label {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 .value {
   font: 12px/1.4 ui-monospace, monospace;
@@ -171,3 +167,29 @@ select {
 .panel textarea { resize: vertical; min-height: 140px; }
 .panel label { display: block; margin-top: 8px; }
 .panel p { overflow-wrap: anywhere; }
+.questions textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font: inherit;
+}
+.questions select {
+  min-height: 36px;
+}
+.notes {
+  margin: 4px 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Field labels must win over the capture editor's generic label rule. */
+.fields label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 0;
+}
+.fields input[type="checkbox"] { flex: none; align-self: flex-start; margin-top: 5px; }

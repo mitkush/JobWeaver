@@ -2,10 +2,11 @@ from fastapi import APIRouter, Response
 from fastapi.responses import RedirectResponse
 
 from app.api.auth import gmail_connect
-from app.api.deps import SESSION_COOKIE, CurrentUser, DbSession, Google
+from app.api.deps import SESSION_COOKIE, CurrentUser, DbSession, Gateway, Google
 from app.schemas.applications import FollowUpDaysIn
 from app.schemas.me import CountryIn, MeOut
-from app.services import accounts
+from app.schemas.writing_style import WritingStyleIn, WritingStyleOut
+from app.services import accounts, writing_style
 from app.services.gmail import disconnect_gmail
 
 router = APIRouter(prefix="/api", tags=["me"])
@@ -36,6 +37,35 @@ async def set_follow_up_days(db: DbSession, user: CurrentUser, body: FollowUpDay
     user.follow_up_days = body.days
     await db.commit()
     return await accounts.build_me(db, user)
+
+
+@router.get("/me/writing-style")
+async def get_writing_style(user: CurrentUser) -> WritingStyleOut:
+    return writing_style.get(user)
+
+
+@router.post("/me/writing-style/rebuild")
+async def rebuild_writing_style(
+    db: DbSession, user: CurrentUser, gateway: Gateway
+) -> WritingStyleOut:
+    result = await writing_style.rebuild(db, user, gateway)
+    await db.commit()
+    return result
+
+
+@router.put("/me/writing-style")
+async def save_writing_style(
+    db: DbSession, user: CurrentUser, body: WritingStyleIn
+) -> WritingStyleOut:
+    result = await writing_style.save(db, user, body)
+    await db.commit()
+    return result
+
+
+@router.delete("/me/writing-style", status_code=204)
+async def clear_writing_style(db: DbSession, user: CurrentUser) -> None:
+    await writing_style.clear(db, user)
+    await db.commit()
 
 
 @router.delete("/me", status_code=204)

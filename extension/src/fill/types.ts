@@ -35,6 +35,12 @@ export type Field = {
   hasValue: boolean;
   options?: string[];
   maxLength?: number;
+  /** A free-text question about the applicant, answered only after the User reviews it. */
+  question?: boolean;
+  /** Work authorisation, salary, notice and similar: only ever a Saved Answer. */
+  sensitive?: boolean;
+  /** The form asks for answers not written by AI: Fact notes only, never a Suggestion. */
+  noAi?: boolean;
 };
 
 export type Scan = { scanId: string; url: string; adapter: string; fields: Field[] };

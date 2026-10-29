@@ -12,6 +12,8 @@ from app.gateway.base import BaseAIGateway
 from app.gateway.parsing import parse_output
 from app.gateway.routing import EMBEDDING_DIMENSIONS
 from app.gateway.schemas import (
+    AnswerQuestionsRequest,
+    AnswerQuestionsResult,
     DraftResult,
     EmbedRequest,
     EmbedResult,
@@ -24,6 +26,8 @@ from app.gateway.schemas import (
     ParseDocumentsResult,
     ReviseDraftRequest,
     TailorDraftRequest,
+    WritingStyleRequest,
+    WritingStyleResult,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -58,6 +62,16 @@ class RecordedAIGateway(BaseAIGateway):
         self, request: ExtractSkillsRequest
     ) -> GatewayResponse[ExtractSkillsResult]:
         return self._serve("extract_skills", ExtractSkillsResult)
+
+    async def answer_questions(
+        self, request: AnswerQuestionsRequest
+    ) -> GatewayResponse[AnswerQuestionsResult]:
+        return self._serve("answer_questions", AnswerQuestionsResult)
+
+    async def describe_writing_style(
+        self, request: WritingStyleRequest
+    ) -> GatewayResponse[WritingStyleResult]:
+        return self._serve("describe_writing_style", WritingStyleResult)
 
     async def extract_adverts(
         self, request: ExtractAdvertsRequest

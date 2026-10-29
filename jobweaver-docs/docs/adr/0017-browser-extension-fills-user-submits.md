@@ -16,6 +16,32 @@ When a careers page shows a fuller description than the stored one, the User can
 
 ## Increment: reviewed letter reuse and local copies
 
-The combined background-and-interest question may reuse the selected Draft version's existing Cover Letter body, without a new AI call or sending question text to a provider. The proposal is editable, starts unticked, and requires the User to review and tick it before filling. Other questions remain manual until the typed question-answer task is built. Fields too short for the letter stay manual, and detected no-AI instructions suppress this prose proposal. Detection is conservative, not a guarantee; the User must check the form's instructions.
+The combined background-and-interest question may reuse the selected Draft version's existing Cover Letter body, without a new AI call or sending question text to a provider. The proposal is editable, starts unticked, and requires the User to review and tick it before filling. Other questions were manual until the typed question-answer task was built (see the next increment). Fields too short for the letter stay manual, and detected no-AI instructions suppress this prose proposal. Detection is conservative, not a guarantee; the User must check the form's instructions.
 
 Attachment names are `Name_Resume.pdf` and `Name_Cover_Letter.pdf`. An explicit Save PDFs in company folder action requests optional browser Downloads access and saves copies under Downloads/<company>/. It does not create local files just by scanning or filling. The browser's download settings may still ask where to save.
+
+## Increment: one active package, side panel and reviewed answers (Oct 2026)
+
+Implemented together, following `APPLICATION_UX_PLAN.md`. This supersedes the earlier user-visible multiple Draft packages and separate captured-page packages.
+
+- **One active Draft per User and Job.** A database index enforces it. Generating again, or a Page Description saved for a Job that already has a Draft, prepares a **Replacement**: background AI work, based on one version, for the resume, the cover letter or one resume section. The accepted document does not change until the User accepts it; acceptance is refused when the Draft or a cited Fact changed meanwhile, and Undo restores the previous version. Archiving replaces deletion and keeps versions and Application history. Edits autosave as versions; versions are never merged, because the extension pins version numbers.
+- **Side panel.** The toolbar button opens the panel, which grants `activeTab` for that tab; other sites are reached only through an optional per-site host permission the User grants in the panel. Forms embedded from another site are found with the optional `webNavigation` permission and scanned, filled and undone per frame once their site is allowed. Unfinished review is kept in session storage for 30 minutes, scoped to the connection, page, Draft and version. A fill prepared before the document changed is refused.
+- **Mark as applied** in the panel requires the User to confirm they submitted the form, is idempotent, and records the attached version on the Application.
+- **Reviewed answers.** The typed `answer_questions` task is built: only question labels and the Job are sent, at most 12 per request, after the AI notice and region checks. Each Suggestion is checked by the same code as a cover letter line (ADR-0005) and becomes Fact notes when it fails or cites nothing; stock phrasing is flagged. Suggestions appear unticked in an editable box, and only the text the User reviewed is filled. A sensitive question gets a Saved Answer or nothing from JobWeaver; the User may still type their own answer in the panel, as they could on the page. Reviewed answers can be saved from the form with a scope. Writing Style is built by the `describe_writing_style` task from the User's summary and saved non-sensitive answers; code redacts its excerpts again on every save, including the User's own edits.
+- **Access list version 4:** reconnecting asks the User to approve Mark as applied and answer suggestions.
+- **Store build:** `npm run build:store` leaves out the pinned key, so the Chrome Web Store assigns its own ID, which must be added to `EXTENSION_IDS` beside the unpacked one. The privacy policy is served at `/privacy/extension`.
+
+### Answer context and provenance
+
+Form-answer requests from the extension include its selected Draft and exact saved number.
+When AI needs job context, the server verifies ownership and Job membership and uses that
+version's immutable context, including for an archived package. Saved-only requests and
+no-AI Fact notes do not need a Draft pin. Legacy clients without a pin use current context.
+No-AI instructions also suppress Saved Answers originating as AI suggestions; saving or
+reopening a suggestion does not turn it into a user-authored answer. User-entered Saved
+Answers remain available, including sensitive answers. No-AI filtering happens before scope
+ranking, so an excluded suggestion cannot hide an eligible manual answer. Unvalidatable provider output
+becomes Fact notes rather than an HTTP error. Generated answers are requested within the
+2,000-character validation limit. Responses are fitted at a sentence boundary within that
+limit and the field limit, then Fact-checked. An oversized response with no fitting sentence
+receives a specific length warning.

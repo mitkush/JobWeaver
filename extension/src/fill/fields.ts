@@ -12,6 +12,10 @@ const NOT_THE_APPLICANT =
 const SENSITIVE =
   /\b(citizenship|nationality|authori[sz](ed|ation)|sponsor(ship)?|visa|salary|compensation|notice|gender|race|ethnic|veteran|disability|pronoun|date of birth|birth|age)\b/;
 
+// A form that asks applicants not to use AI gets Fact notes only (ADR-0017).
+export const NO_AI =
+  /\b(no (?:use of )?ai|(?:do not|don.t|must not) use (?:ai|artificial intelligence)|not (?:be )?(?:written|generated) (?:by|with|using) (?:ai|artificial intelligence)|without (?:using )?(?:ai|artificial intelligence))\b/i;
+
 const AUTOCOMPLETE: Record<string, FieldKey> = {
   "given-name": "first_name",
   "family-name": "last_name",
@@ -112,6 +116,21 @@ export function kindOf(el: Element): FieldKind | null {
   return null;
 }
 
+function formTextOf(el: Element): string {
+  return el.closest("form")?.textContent ?? el.ownerDocument.body.textContent ?? "";
+}
+
+/** A free-text question about the applicant that no profile value answers: a text area,
+ * or a single-line field whose label is a real question. */
+export function questionOf(el: Control, kind: FieldKind, label: string, key: FieldKey | null) {
+  if (key || (kind !== "textarea" && kind !== "text")) return null;
+  const text = normalise(label);
+  if (!text || NOT_THE_APPLICANT.test(text)) return null;
+  const asks = kind === "textarea" || (label.trim().endsWith("?") && text.split(" ").length >= 4);
+  if (!asks) return null;
+  return { question: true, sensitive: SENSITIVE.test(text), noAi: NO_AI.test(formTextOf(el)) };
+}
+
 /** The profile value a field asks for, or null when it is not clearly one of them. */
 export function classify(el: Control, kind: FieldKind, label: string): FieldKey | null {
   const text = normalise(label);
@@ -123,8 +142,7 @@ export function classify(el: Control, kind: FieldKind, label: string): FieldKey 
   }
   if (kind === "textarea") {
     // Reuse the chosen job-specific letter only for this combined question.
-    const formText = el.closest("form")?.textContent ?? el.ownerDocument.body.textContent ?? "";
-    if (/\b(no (?:use of )?ai|(?:do not|don.t|must not) use (?:ai|artificial intelligence)|not (?:written|generated) by ai|without (?:using )?(?:ai|artificial intelligence))\b/i.test(formText)) return null;
+    if (NO_AI.test(formTextOf(el))) return null;
     return /\bbackground\b/.test(text) && /\b(why|interest|interested|motivation)\b/.test(text)
       ? "background_answer" : null;
   }
@@ -210,6 +228,7 @@ export function scanFields(doc: Document, adapter: Adapter, newRef: () => string
     const known = adapter.keyFor?.(el);
     const key = known !== undefined ? known : classify(el, kind, label);
     const ref = el.getAttribute("data-jobweaver-ref") ?? newRef();
+    const question = questionOf(el, kind, label, key);
     el.setAttribute("data-jobweaver-ref", ref);
     fields.push({
       ref,
@@ -219,6 +238,7 @@ export function scanFields(doc: Document, adapter: Adapter, newRef: () => string
       required: el.required || el.getAttribute("aria-required") === "true",
       hasValue: hasValue(el, kind),
       ...("maxLength" in el && el.maxLength > 0 ? { maxLength: el.maxLength } : {}),
+      ...(question ?? {}),
       ...(kind === "select"
         ? { options: Array.from((el as HTMLSelectElement).options, (o) => o.text.trim()).slice(0, 400) }
         : {}),
