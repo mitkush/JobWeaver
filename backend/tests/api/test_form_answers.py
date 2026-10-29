@@ -387,3 +387,89 @@ async def test_extension_can_update_the_saved_answer_it_reviewed(prepared, bob):
             json={**body, "answer_id": saved["id"], "question": "Another question"},
         )
         assert wrong_question.status_code == 409
+
+
+@pytest.mark.parametrize("question", [QUESTIONS[0]["question"], "What is your notice period?"])
+async def test_no_ai_ranks_only_manual_saved_answers(prepared, question):  # noqa: F811
+    _, client, job_id, gateway = prepared
+    manual = await client.post(
+        "/api/saved-answers", json={"question": question, "answer": "My own answer"}
+    )
+    assert manual.status_code == 201, manual.text
+    token = await connect(client)
+    async with ext_client(token=token) as ext:
+        ai = await ext.post(
+            "/api/ext/saved-answers",
+            json={
+                "job_id": job_id,
+                "question": question,
+                "answer": "Generated answer",
+                "origin": "suggestion",
+            },
+        )
+    assert ai.status_code == 201, ai.text
+
+    async def must_not_run(_request):
+        raise AssertionError("Saved answers need no provider")
+
+    gateway.answer_questions = must_not_run
+    response = await ask(client, job_id, [{"ref": "q1", "question": question}], no_ai=True)
+    assert response.status_code == 200, response.text
+    [answer] = response.json()
+    assert answer["kind"] == "saved" and answer["text"] == "My own answer"
+    assert answer["origin"] == "user"
+
+
+async def test_saved_answers_and_no_ai_notes_do_not_require_a_valid_pin(prepared):  # noqa: F811
+    import uuid
+
+    _, client, job_id, gateway = prepared
+    saved = await client.post(
+        "/api/saved-answers",
+        json={"question": QUESTIONS[0]["question"], "answer": "My own answer"},
+    )
+    assert saved.status_code == 201
+
+    async def must_not_run(_request):
+        raise AssertionError("No provider needed")
+
+    gateway.answer_questions = must_not_run
+    pin = {"draft_id": str(uuid.uuid4()), "number": 1}
+    response = await ask(client, job_id, [QUESTIONS[0]], **pin)
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["kind"] == "saved"
+    response = await ask(client, job_id, [QUESTIONS[1]], no_ai=True, **pin)
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["kind"] == "fact_notes"
+
+
+async def test_long_answer_requests_are_capped_and_oversized_output_is_explained(prepared):  # noqa: F811
+    from app.gateway.schemas import AnswerQuestionsResult, GatewayResponse, QuestionAnswer
+
+    _, client, job_id, gateway = prepared
+
+    async def oversized(request):
+        assert [q.max_chars for q in request.questions] == [2000, 2000, 100]
+        return GatewayResponse(
+            result=AnswerQuestionsResult(
+                answers=[QuestionAnswer(ref="q1", text="A" * 2001, fact_refs=["F1"])]
+            ),
+            provider="recorded",
+            model="test",
+        )
+
+    gateway.answer_questions = oversized
+    response = await ask(
+        client,
+        job_id,
+        [
+            {**QUESTIONS[0], "max_chars": 20000},
+            QUESTIONS[1],
+            {**QUESTIONS[2], "max_chars": 100},
+        ],
+    )
+    assert response.status_code == 200, response.text
+    answer = response.json()[0]
+    assert answer["kind"] == "fact_notes"
+    assert "2,000-character validation limit" in answer["warning"]
+    assert "fully support" not in answer["warning"]

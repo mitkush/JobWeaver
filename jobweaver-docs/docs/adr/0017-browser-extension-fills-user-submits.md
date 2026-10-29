@@ -31,13 +31,15 @@ Implemented together, following `APPLICATION_UX_PLAN.md`. This supersedes the ea
 - **Access list version 4:** reconnecting asks the User to approve Mark as applied and answer suggestions.
 - **Store build:** `npm run build:store` leaves out the pinned key, so the Chrome Web Store assigns its own ID, which must be added to `EXTENSION_IDS` beside the unpacked one. The privacy policy is served at `/privacy/extension`.
 
-
 ### Answer context and provenance
 
 Form-answer requests from the extension include its selected Draft and exact saved number.
-The server verifies ownership and Job membership, and uses that version's immutable job
-context, including for an archived package. Legacy clients without a pin use current context.
+When AI needs job context, the server verifies ownership and Job membership and uses that
+version's immutable context, including for an archived package. Saved-only requests and
+no-AI Fact notes do not need a Draft pin. Legacy clients without a pin use current context.
 No-AI instructions also suppress Saved Answers originating as AI suggestions; saving or
 reopening a suggestion does not turn it into a user-authored answer. User-entered Saved
-Answers remain available, including sensitive answers. Unvalidatable provider output
-becomes Fact notes rather than an HTTP error.
+Answers remain available, including sensitive answers. No-AI filtering happens before scope
+ranking, so an excluded suggestion cannot hide an eligible manual answer. Unvalidatable provider output
+becomes Fact notes rather than an HTTP error. Generated answers are requested within the
+2,000-character validation limit; oversized responses receive a specific length warning.

@@ -145,15 +145,14 @@ async def answer(
     number: int | None = None,
 ) -> list[AnswerOut]:
     job = await _job(session, user, job_id)
-    pinned_context = (
-        await _description(session, user, job, draft_id, number) if draft_id is not None else None
-    )
     applicable = await saved_answers.applicable(session, user, job.id)
+    if no_ai:
+        applicable = [a for a in applicable if a.origin != "suggestion"]
     results: dict[str, AnswerOut] = {}
     pending: list[QuestionIn] = []
     for q in questions:
         saved = _saved_for(q.question, applicable)
-        if saved is not None and not (no_ai and saved.origin == "suggestion"):
+        if saved is not None:
             results[q.ref] = AnswerOut(
                 ref=q.ref,
                 kind="saved",
@@ -170,12 +169,10 @@ async def answer(
         else:
             pending.append(q)
     if pending:
+        context = await _description(session, user, job, draft_id, number) if not no_ai else ""
         if user.fact_bank_reviewed_at is None:
             raise PreconditionError("Review your Fact Bank first")
         facts = await drafting._facts(session, user)
-        context = (
-            pinned_context if pinned_context is not None else await _description(session, user, job)
-        )
         if no_ai:
             for q in pending:
                 results[q.ref] = AnswerOut(
@@ -208,7 +205,8 @@ async def _suggest(
         facts=facts,
         writing_style=writing_style.prompt_text(user),
         questions=[
-            FormQuestion(ref=q.ref, question=q.question, max_chars=q.max_chars) for q in questions
+            FormQuestion(ref=q.ref, question=q.question, max_chars=min(q.max_chars or 2000, 2000))
+            for q in questions
         ],
     )
     try:
@@ -226,6 +224,7 @@ async def _suggest(
         text = fit(got.text, q.max_chars) if got and got.text.strip() else None
         refs = [r for r in (got.fact_refs if got else []) if r in known]
         problem = None
+        too_long = bool(text and len(text) > 2000)
         if text and refs:
             # Provider output may be valid for the answer task but invalid as a Draft
             # line (missing refs, long text, too many citations). Degrade to notes.
@@ -248,9 +247,14 @@ async def _suggest(
                 ref=q.ref,
                 kind="fact_notes",
                 notes=notes,
-                warning="No suggestion your Facts fully support. Write it from these notes."
-                if got
-                else "Suggestions are unavailable right now. Write it from these notes.",
+                warning=(
+                    "The suggestion exceeded the 2,000-character validation limit. "
+                    "Write a shorter answer from these notes."
+                    if too_long
+                    else "No suggestion your Facts fully support. Write it from these notes."
+                    if got
+                    else "Suggestions are unavailable right now. Write it from these notes."
+                ),
             )
             continue
         out[q.ref] = AnswerOut(

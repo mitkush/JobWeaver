@@ -286,9 +286,9 @@ it("makes rescanning secondary after proposals are shown", async () => {
   expect(buttonNamed("Scan again")!.classList.contains("ghost")).toBe(true);
   expect(buttonNamed("Fill ticked fields")!.classList.contains("ghost")).toBe(false);
 });
-it("shows the recorded application status instead of another Mark as applied action", async () => {
-  await popup(() => pageJob, { selected: { ...pinned, application_status: "applied" } });
+it.each(["applied", "rejected", "interview", "offer"])("shows status %s instead of another Mark as applied action", async (status) => {
+  await popup(() => pageJob, { selected: { ...pinned, application_status: status } });
   expect(buttonNamed("Mark as applied")).toBeUndefined();
-  expect(buttonNamed("Applied recorded")!.disabled).toBe(true);
-  expect(document.body.textContent).toContain("Application status: applied");
+  expect(buttonNamed(`Status: ${status}`)!.disabled).toBe(true);
+  expect(document.body.textContent).toContain(`Application status: ${status}`);
 });

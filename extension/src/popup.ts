@@ -199,7 +199,7 @@ function selectedSection(tabId: number, d: DraftVersion, refresh: () => void, ne
         if (saved.error) throw new Error(saved.error);
         content.append(h("p", { role: "status", class: "ok" }, "PDFs saved under Downloads in the company folder."));
       }, "ghost"),
-      applied ? h("button", { type: "button", class: "ghost", disabled: "true" }, "Applied recorded") : button("Mark as applied", async () => {
+      applied ? h("button", { type: "button", class: "ghost", disabled: "true" }, `Status: ${d.application_status}`) : button("Mark as applied", async () => {
         const actions = h("div", { class: "actions" }, button("Yes, I submitted this application", async () => {
           await ask({ type: "markApplied", tabId }); refresh();
         }), button("Cancel", () => actions.remove(), "ghost"));
