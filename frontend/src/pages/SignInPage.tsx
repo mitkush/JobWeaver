@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, unwrap } from "@/api/client";
+import { BorderGlow } from "@/components/ui/brand";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
@@ -97,7 +98,7 @@ export function SignInPage() {
       </div>
       <div className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[1.15fr_1fr]">
         <div>
-          <p className="eyebrow eyebrow-box"><span className="size-1.5 rounded-full bg-brand-600 dark:bg-brand-500" aria-hidden />jobweaver // every_genuine_job</p>
+          <p className="eyebrow eyebrow-box"><BorderGlow /><span className="size-1.5 rounded-full bg-brand-600 dark:bg-brand-500" aria-hidden />jobweaver // every_genuine_job</p>
           <h1 className="mt-5 font-display text-5xl leading-[0.95] font-bold tracking-tight uppercase italic sm:text-6xl">
             Every genuine job,{" "}
             <span className="text-brand-600 outline-text dark:text-brand-500">one card each.</span>

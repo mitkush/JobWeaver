@@ -9,7 +9,7 @@ import { buttonClasses } from "@/components/ui/button-classes";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select } from "@/components/ui/field";
-import { PageSpinner } from "@/components/ui/spinner";
+import { LoadingMark, PageSpinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
 import { pdfHref, useDraft, useDraftActions, useDraftDiff, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
 import { DocumentReview } from "@/features/drafts/DocumentReview";
@@ -33,7 +33,7 @@ export function DraftPage() {
   if (draft.isPending) return <PageSpinner />;
   if (draft.isError) return <Alert tone="error" title="Draft could not load">{draft.error.message}</Alert>;
   if (draft.data.state === "failed") return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Draft generation stopped</h1><Alert tone="warning">{draft.data.error}</Alert><DraftManagement jobId={draft.data.job_id} draftId={draft.data.id} version={draft.data.current_version} allowDelete /><Button loading={actions.retry.isPending} onClick={() => void actions.retry.mutate()}>Retry generation</Button>{actions.retry.isError && <Alert tone="error">{actions.retry.error.message}</Alert>}</Card>;
-  if (!draft.data.version) return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Preparing your Draft</h1><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500 dark:text-slate-400">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
+  if (!draft.data.version) return <Card className="space-y-4 p-6"><div className="flex items-center gap-3"><LoadingMark compact /><h1 className="text-xl font-semibold">Preparing your Draft</h1></div><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500 dark:text-slate-400">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
   return <DraftWorkspace draft={draft.data} key={draftId} />;
 }
 

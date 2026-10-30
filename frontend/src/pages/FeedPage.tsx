@@ -8,7 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageSpinner } from "@/components/ui/spinner";
+import { FeedSkeleton } from "@/components/ui/spinner";
 import { FeedFilters } from "@/features/feed/FeedFilters";
 import { lastFeedKey, read, takeScroll, viewKey, write } from "@/features/feed/feed-memory";
 import { clearFilters, feedMatch, feedQuery, feedView, hasFilters, PAGE_SIZE, withParam, type FeedMatch, type FeedView } from "@/features/feed/feed-params";
@@ -235,7 +235,7 @@ function FeedList({ userId }: { userId: string | null }) {
       )}
 
       {feed.isPending ? (
-        <PageSpinner label="Loading your feed" />
+        <FeedSkeleton />
       ) : savedView && data && data.items.length === 0 ? (
         hasFilters(params) && (data.counts.saved ?? 0) > 0 ? (
           <EmptyState

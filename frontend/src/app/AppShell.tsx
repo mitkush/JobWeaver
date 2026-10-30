@@ -1,10 +1,11 @@
-import { Briefcase, LogOut, Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "@/api/client";
 import { useSignOut } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
+import { BrandMark, BorderGlow } from "@/components/ui/brand";
 import { Button } from "@/components/ui/button";
 import { buttonClasses } from "@/components/ui/button-classes";
 import { gmailConnectHref } from "@/features/gmail/links";
@@ -168,7 +169,8 @@ export function PageHeader({ title, description, action }: { title: string; desc
   return (
     <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="eyebrow eyebrow-box mb-5" aria-hidden>
+        <p key={title} className="eyebrow eyebrow-box mb-5" aria-hidden>
+          <BorderGlow />
           <span className="size-1.5 rounded-full bg-brand-600 dark:bg-brand-500" />
           jobweaver <span className="text-slate-400 dark:text-slate-500">//</span> {eyebrowFor(title)}
         </p>
@@ -184,7 +186,7 @@ export function Logo({ size = "md" }: { size?: "md" | "lg" }) {
   return (
     <Link to="/" className="group flex items-center gap-2" aria-label="JobWeaver home">
       <span className={cn("clip-corner bg-brand-600 text-white dark:bg-brand-500 dark:text-slate-950", size === "lg" ? "p-1.5" : "p-1")}>
-        <Briefcase className={size === "lg" ? "size-5" : "size-4"} aria-hidden />
+        <BrandMark className={size === "lg" ? "size-7" : "size-6"} />
       </span>
       <span className={cn("font-display font-bold tracking-wide uppercase italic", size === "lg" ? "text-xl" : "text-base")}>
         Job<span className="text-brand-600 dark:text-brand-500 neon-text">Weaver</span>
