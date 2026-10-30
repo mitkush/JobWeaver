@@ -293,3 +293,12 @@ it.each(["applied", "rejected", "interview", "offer"])("shows status %s instead 
   expect(buttonNamed(`Status: ${status}`)).toBeUndefined();
   expect(document.body.textContent!.match(new RegExp(`Application status: ${label}`, "g"))).toHaveLength(1);
 });
+
+it("explains advert versus form scanning and offers recovery when no fields are supported", async () => {
+  await popup(() => pageJob, { reply: type => type === "scan" ? { proposals: [], questions: [], manual: [], profileReviewed: true, draft: null } : undefined });
+  expect(document.querySelector('[aria-label="Application steps"]')?.textContent).toContain("Reading captures the advert");
+  [...document.querySelectorAll("button")].find(b => b.textContent === "Scan this form")!.click();
+  await vi.waitFor(() => expect(document.body.textContent).toContain("No supported fields found"));
+  expect(document.body.textContent).toContain("click its Apply button");
+  expect(document.body.textContent).toContain("Find embedded forms");
+});

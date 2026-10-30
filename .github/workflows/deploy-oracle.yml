@@ -34,20 +34,7 @@ jobs:
           set -euo pipefail
           commit=$(git rev-parse HEAD)
           result=$(gh run list --workflow ci.yml --event push --commit "$commit" --limit 1 --json conclusion --jq '.[0].conclusion')
-          if [[ "$result" != success ]]; then
-            # GitHub may not run push CI on a merge commit. Accept its parent runs only
-            # when both passed and the merge added no changes beyond the deploy workflow.
-            main_parent=$(git rev-parse "$commit^1" 2>/dev/null || true)
-            pr_parent=$(git rev-parse "$commit^2" 2>/dev/null || true)
-            if [[ -n "$main_parent" && -n "$pr_parent" ]] && \
-              git diff --quiet "$pr_parent" "$commit" -- . ':!.github/workflows/deploy-oracle.yml'; then
-              main_result=$(gh run list --workflow ci.yml --event push --commit "$main_parent" --limit 1 --json conclusion --jq '.[0].conclusion')
-              pr_result=$(gh run list --workflow ci.yml --event pull_request --commit "$pr_parent" --limit 1 --json conclusion --jq '.[0].conclusion')
-              if [[ "$main_result" == success && "$pr_result" == success ]]; then
-                result=success
-              fi
-            fi
-          fi
+          # PR checks are scoped. Only the full push run validates a production commit.
           test "$result" = success || { echo 'Main CI must pass before deploying. Run again when it passes.'; exit 1; }
           echo "DEPLOY_COMMIT=$commit" >> "$GITHUB_ENV"
       - name: Log in to GitHub Container Registry

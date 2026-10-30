@@ -100,6 +100,33 @@ def _failure_summary(exc: GatewayError) -> str:
     return "request failed (details recorded in server logs)"
 
 
+def unavailable_message(reasons: list[str]) -> str:
+    """Only fixed messages reach the UI; never return a provider response body."""
+    usable = [reason for reason in reasons if reason != "not configured"]
+    if not usable:
+        return "AI is not available for this task. Please contact the site owner."
+    if all(reason == "timed out" for reason in usable):
+        return (
+            "The AI providers did not finish in time. Retry generation; your Facts are unchanged."
+        )
+    if all(
+        reason in {"daily quota reached", "rate-limited or quota exhausted"} for reason in usable
+    ):
+        return (
+            "The available AI providers reached a usage or rate limit. "
+            "Wait for capacity to return before retrying."
+        )
+    if all(reason == TOO_LARGE for reason in usable):
+        return (
+            "This request is too large for the available AI providers. "
+            "Shorten the job description or ask the site owner about provider capacity."
+        )
+    return (
+        "The AI providers could not complete this Draft. "
+        "Some may be busy, limited or unavailable. Retry later; your Facts are unchanged."
+    )
+
+
 class LiveAIGateway(BaseAIGateway):
     """Tries each route of a task in order; skips routes without a key or over quota."""
 
@@ -263,6 +290,7 @@ class LiveAIGateway(BaseAIGateway):
         personal_route: bool = False,
     ) -> GatewayResponse[T]:
         failures: list[str] = []
+        reasons: list[str] = []
         routes = list(ROUTING_TABLE[task])
         if personal_route and personal.allowed(user_id):
             routes.insert(0, personal.CLAUDE_ROUTE)
@@ -270,11 +298,13 @@ class LiveAIGateway(BaseAIGateway):
             client = self.clients.get(route.provider)
             if client is None:
                 failures.append(f"{route.provider}: not configured")
+                reasons.append("not configured")
                 continue
             quota = DAILY_QUOTAS.get((route.provider, route.model))
             used = await self.ledger.used_today(route.provider, route.model)
             if quota is not None and used >= quota:
                 failures.append(f"{route.provider}/{route.model}: daily quota reached")
+                reasons.append("daily quota reached")
                 continue
             route_user = prepare(route) if prepare else user
             budget = output_budget(route, system, route_user) if route_user is not None else None
@@ -284,6 +314,7 @@ class LiveAIGateway(BaseAIGateway):
                     "AI route %s/%s skipped for %s: prompt too large", *route_of(route), task
                 )
                 failures.append(f"{route.provider}/{route.model}: {TOO_LARGE}")
+                reasons.append(TOO_LARGE)
                 continue
             await progress.trying(route.provider)
             try:
@@ -327,6 +358,7 @@ class LiveAIGateway(BaseAIGateway):
                     outcome="error",
                 )
                 failures.append(f"{route.provider}/{route.model}: {_failure_summary(exc)}")
+                reasons.append(_failure_summary(exc))
                 continue
             await self.ledger.record(
                 user_id=user_id,
@@ -344,7 +376,10 @@ class LiveAIGateway(BaseAIGateway):
                 input_tokens=completion.input_tokens,
                 output_tokens=completion.output_tokens,
             )
-        raise GatewayError("All AI providers are unavailable right now: " + "; ".join(failures))
+        raise GatewayError(
+            "All AI providers are unavailable right now: " + "; ".join(failures),
+            user_message=unavailable_message(reasons),
+        )
 
 
 def unit(vector: list[float]) -> list[float]:
