@@ -9,7 +9,7 @@ import { buttonClasses } from "@/components/ui/button-classes";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, Select } from "@/components/ui/field";
-import { LoadingMark, PageSpinner } from "@/components/ui/spinner";
+import { PageSpinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast-context";
 import { pdfHref, useDraft, useDraftActions, useDraftDiff, type Content, type Draft, type Part, type Version } from "@/features/drafts/api";
 import { DocumentReview } from "@/features/drafts/DocumentReview";
@@ -17,6 +17,9 @@ import { ReplacementPanel } from "@/features/drafts/ReplacementPanel";
 import { DraftManagement } from "@/features/drafts/DraftManagement";
 import { PdfPreview, type PdfFile } from "@/features/drafts/PdfPreview";
 import { statusLabel } from "@/features/applications/status";
+
+import { GenerationProgress } from "@/features/drafts/GenerationProgress";
+import { ResumeReviewGuide } from "@/features/drafts/ResumeReviewGuide";
 
 const DIFF_LABELS = { unchanged: "Unchanged", rewritten: "Rewritten", added_from_portfolio: "Added from portfolio", reordered: "Reordered", removed: "Removed" };
 
@@ -33,7 +36,7 @@ export function DraftPage() {
   if (draft.isPending) return <PageSpinner />;
   if (draft.isError) return <Alert tone="error" title="Draft could not load">{draft.error.message}</Alert>;
   if (draft.data.state === "failed") return <Card className="space-y-4 p-6"><h1 className="text-xl font-semibold">Draft generation stopped</h1><Alert tone="warning">{draft.data.error}</Alert><DraftManagement jobId={draft.data.job_id} draftId={draft.data.id} version={draft.data.current_version} allowDelete /><Button loading={actions.retry.isPending} onClick={() => void actions.retry.mutate()}>Retry generation</Button>{actions.retry.isError && <Alert tone="error">{actions.retry.error.message}</Alert>}</Card>;
-  if (!draft.data.version) return <Card className="space-y-4 p-6"><div className="flex items-center gap-3"><LoadingMark compact /><h1 className="text-xl font-semibold">Preparing your Draft</h1></div><p role="status" aria-live="polite">{draft.data.progress}</p><p className="text-sm text-slate-500 dark:text-slate-400">Reading the job → Choosing your experience → Writing → Checking Facts and Trace</p></Card>;
+  if (!draft.data.version) return <GenerationProgress key={draftId} progress={draft.data.progress} jobId={draft.data.job_id} />;
   return <DraftWorkspace draft={draft.data} key={draftId} />;
 }
 
@@ -200,6 +203,7 @@ export function DraftWorkspace({ draft }: { draft: Draft }) {
       {error && <Alert tone="error">{error}</Alert>}
       {stale && <Alert tone="warning">A newer version is available. Your edits are still here. <Button variant="ghost" size="sm" onClick={() => dirty ? setLoadLatestConfirm(true) : accept(draft)}>Load latest version</Button></Alert>}
       {current.warnings.length > 0 && <Alert tone="warning" title="Checked against your Fact Bank"><ul className="list-disc pl-5">{current.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul><p className="mt-2">Edit the line or cite a supporting Fact in its Tailoring Trace. If the Fact is missing, add it to your Fact Bank and recheck.</p><div className="mt-2 flex flex-wrap items-center gap-3"><a href="#draft-editor" className="text-sm font-medium underline" onClick={() => { setPart("resume"); setSection(undefined); }}>Review resume lines</a><Link to="/fact-bank" className="text-sm font-medium underline">Open Fact Bank</Link><Button variant="secondary" size="sm" disabled={busy || dirty || stale} onClick={() => setRecheckConfirm(true)}>Recheck latest Facts</Button></div>{dirty && <p className="mt-2 text-xs">Save your edits before rechecking.</p>}</Alert>}
+      <ResumeReviewGuide content={content} facts={current.facts} />
       {resumePrompt && <Alert tone="info">Gmail connection returned. Review the recipient and confirm to resume the hand-off.<Button variant="ghost" onClick={() => { setRecipient(sessionStorage.getItem(`draft-recipient-${draft.id}`) ?? recipient); }}>Restore recipient</Button></Alert>}
       {handoff && <Alert tone={handoff.mode === "fallback" ? "warning" : "info"}>{handoff.message} <a className="font-medium underline" href={handoff.url} target="_blank" rel="noreferrer">{handoff.mode === "fallback" ? "Open Gmail compose" : "Open Gmail Drafts"}</a>{handoff.mode === "fallback" && <> · <button type="button" className="underline" onClick={() => void pdfFile("resume", "download")}>Download resume PDF</button></>}</Alert>}
 

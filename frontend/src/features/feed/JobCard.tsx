@@ -117,7 +117,7 @@ export function JobCard({ job }: { job: FeedCard }) {
 
         <div className="mt-3 space-y-2">
           <MatchReason match={job.match} matched_keywords={job.matched_keywords} />
-          <SkillGaps gaps={job.skill_gaps} matches={job.skill_matches} />
+          <SkillGaps compact gaps={job.skill_gaps} matches={job.skill_matches} />
         </div>
       </div>
 
@@ -127,7 +127,7 @@ export function JobCard({ job }: { job: FeedCard }) {
         {job.application_status && <Badge>{statusLabel(job.application_status)}</Badge>}
       </div>
       <div className="pt-3">
-        <SourceBadges sources={job.sources} />
+        <SourceBadges compact sources={job.sources} />
       </div>
       <div className="pt-3">
         <CreateDraftButton jobId={job.job_id} draftId={job.draft_id} />

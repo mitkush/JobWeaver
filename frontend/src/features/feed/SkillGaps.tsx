@@ -3,7 +3,8 @@ import { CheckCircle2, CircleDashed, TriangleAlert } from "lucide-react";
 /** How the Job's required skills compare with the Fact Bank: matched and not found,
  * never a match score (ADR-0010). null means the advert is not analysed yet. A skill
  * not found is labelled as such: an absent Fact does not mean the User lacks it. */
-export function SkillGaps({ gaps, matches }: { gaps: string[] | null | undefined; matches?: string[] | null }) {
+export function SkillGaps({ gaps, matches, compact = false }: { gaps: string[] | null | undefined; matches?: string[] | null; compact?: boolean }) {
+  if (compact && (gaps?.length ?? 0) + (matches?.length ?? 0) > 5) return <details className="text-sm"><summary className="cursor-pointer text-slate-600 dark:text-slate-300">Skills: {matches?.length ?? 0} matched · {gaps?.length ?? 0} not in Fact Bank</summary><div className="mt-2"><SkillGaps gaps={gaps} matches={matches} /></div></details>;
   if (gaps == null) {
     return (
       <p className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
