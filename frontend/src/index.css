@@ -216,11 +216,64 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
+/* Short feedback animations; content itself remains steady. */
+@keyframes border-travel {
+  0% { stroke-dashoffset: 20; opacity: 0; }
+  12%, 85% { opacity: 1; }
+  100% { stroke-dashoffset: -100; opacity: 0; }
+}
+/* A distinct name replays the same border pass when hover begins. */
+@keyframes border-travel-hover {
+  0% { stroke-dashoffset: 20; opacity: 0; }
+  12%, 85% { opacity: 1; }
+  100% { stroke-dashoffset: -100; opacity: 0; }
+}
+@keyframes loader-orbit { to { transform: rotate(360deg); } }
+@keyframes surface-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes feedback-pop { from { transform: scale(.8); } to { transform: scale(1); } }
+@keyframes skeleton-sweep { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+@layer components {
+  .border-glow {
+    position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px);
+    overflow: visible; pointer-events: none; color: var(--jw-600);
   }
+  .dark .border-glow { color: var(--jw-400); }
+  .border-glow rect {
+    width: calc(100% - 2px); height: calc(100% - 2px);
+    fill: none; stroke: currentColor; stroke-width: 2; stroke-dasharray: 18 82; opacity: 0;
+    filter: drop-shadow(0 0 3px currentColor);
+    animation: border-travel 1400ms ease-out 1 both;
+  }
+  .eyebrow-box:hover .border-glow rect { animation: border-travel-hover 1400ms ease-out 1 both; }
+  .eyebrow-box { transition: border-color 160ms ease-out; }
+  .eyebrow-box:hover { border-color: var(--jw-500); }
+  .loading-mark {
+    position: relative; display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
+    width: 3.5rem; height: 3.5rem; color: var(--jw-600);
+  }
+  .dark .loading-mark { color: var(--jw-400); }
+  .loading-mark::after {
+    content: ""; position: absolute; inset: 0; border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-top: 2px solid currentColor; border-radius: 50%; animation: loader-orbit 1200ms linear infinite;
+  }
+  .loading-mark-small { width: 1.25rem; height: 1.25rem; }
+  .skeleton-line {
+    border-radius: 3px;
+    background: linear-gradient(100deg, var(--color-slate-200) 30%, var(--color-slate-100) 50%, var(--color-slate-200) 70%);
+    background-size: 200% 100%; animation: skeleton-sweep 1800ms ease-in-out infinite;
+  }
+  .dark .skeleton-line { background-image: linear-gradient(100deg, var(--color-slate-800) 30%, var(--color-slate-700) 50%, var(--color-slate-800) 70%); }
+  .ui-button { transition-duration: 160ms; }
+  .ui-button:enabled:active { transform: translateY(1px); }
+  .bookmark-feedback > svg { animation: feedback-pop 180ms ease-out; }
+  dialog[open], .toast-enter { animation: surface-enter 180ms ease-out both; }
+  .success-mark { animation: feedback-pop 180ms ease-out both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .ui-button:enabled:active { transform: none; }
+  .border-glow { display: none; }
 }

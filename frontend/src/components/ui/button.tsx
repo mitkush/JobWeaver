@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { LoadingMark } from "./spinner";
 import type { ButtonHTMLAttributes } from "react";
 
 import { cn } from "@/lib/cn";
@@ -29,7 +29,7 @@ export function Button({
       className={cn(buttonClasses(variant, size), className)}
       {...props}
     >
-      {loading && <Loader2 className="size-4 animate-spin" aria-hidden />}
+      {loading && <LoadingMark compact />}
       {children}
     </button>
   );

@@ -23,7 +23,7 @@ export const sizes = {
 
 export function buttonClasses(variant: keyof typeof variants = "primary", size: keyof typeof sizes = "md") {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-sm text-center leading-tight font-mono font-bold tracking-[0.12em] uppercase transition-[color,background-color,border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60",
+    "ui-button inline-flex items-center justify-center gap-2 rounded-sm text-center leading-tight font-mono font-bold tracking-[0.12em] uppercase transition-[color,background-color,border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60",
     variants[variant],
     sizes[size],
   );
