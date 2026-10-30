@@ -150,3 +150,19 @@ If Bright Data's Free credits card shows the primary is exhausted but a trigger 
 Only successful fetches advance the query watermark. A safe quota retry uses the exact same window; it does not refetch earlier successful windows or reset the 14-day initial backfill. Historical spend is retained per fingerprint and old unlabelled spend is attributed to the primary credential.
 
 Deployment applies migration `0009` through the container's normal startup. If rolling back to an image that only contains migrations through `0008`, first stop fetching and use the newer image to downgrade to `0008`; older Alembic code cannot resolve revision `0009`. Downgrading removes credential attribution, so back up the database before doing so. The deployment script does not automatically downgrade the database.
+
+### Resuming asynchronous collections
+
+Bright Data's returned collection ID is checkpointed before polling, with the original
+query window and a credential fingerprint. A timeout, process restart or failed save
+retains this checkpoint. The next run polls/downloads that same collection with its
+original account, without another trigger or a new-collection budget check. The watermark
+advances only through the original window after saving; newer time is left for the next
+search. Repeated downloads after a failed save do not count the same estimated credits
+twice. A missing original credential blocks resumption rather than starting a duplicate.
+
+Only a provider-confirmed failed/canceled or expired (404) collection clears the checkpoint
+for a new search on the following run. A long-running collection is not automatically
+canceled, because it may still finish and have consumed provider credits. The admin can
+inspect or cancel it in Bright Data before retrying. The unavoidable trigger-response-to-
+checkpoint crash gap remains; the database and Bright Data do not share a transaction.

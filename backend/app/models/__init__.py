@@ -15,7 +15,7 @@ from app.models.draft import (
 )
 from app.models.extension import ExtensionCredential, ExtensionGrant
 from app.models.fact import DismissedFact, Fact, FactKind, FactOrigin
-from app.models.fetch import FetchRun, QueryWatermark, RunStatus
+from app.models.fetch import FetchRun, PendingCollection, QueryWatermark, RunStatus
 from app.models.job import Band, Job, MatchPair, PairStatus, RejectedPair, UserJob
 from app.models.oauth_credential import OAuthCredential
 from app.models.posting import AtsBoard, Company, Posting
@@ -47,6 +47,7 @@ __all__ = [
     "UserJob",
     "Company",
     "FetchRun",
+    "PendingCollection",
     "Posting",
     "QueryWatermark",
     "RawAdvert",

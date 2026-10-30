@@ -50,3 +50,24 @@ class QueryWatermark(Base):
     source: Mapped[str] = mapped_column(String(64))
     query_key: Mapped[str] = mapped_column(String(300))
     last_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PendingCollection(Base):
+    """One provider collection awaiting import, shared like Sources (ADR-0002).
+
+    Keep its original window and credential until the results and watermark commit.
+    Never persist the credential itself.
+    """
+
+    __tablename__ = "pending_collections"
+    __table_args__ = (
+        Index("idx_pending_collection_source_query", "source", "query_key", unique=True),
+    )
+
+    source: Mapped[str] = mapped_column(String(64))
+    query_key: Mapped[str] = mapped_column(String(300))
+    external_id: Mapped[str] = mapped_column(String(200))
+    credential_fingerprint: Mapped[str] = mapped_column(String(64))
+    window_since: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    credits_recorded: Mapped[int] = mapped_column(Integer, default=0)

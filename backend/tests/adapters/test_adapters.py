@@ -481,3 +481,60 @@ def test_a_placeless_preference_without_remote_adds_no_discovery_search():
     adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), DISCOVERY)
     onsite_anywhere = SourceQuery(keywords="Rails Developer", location=Location())
     assert adapter.search_queries([onsite_anywhere]) == []
+
+
+async def test_brightdata_checkpoints_before_polling_and_resumes_without_trigger():
+    saved = []
+    calls = []
+
+    async def checkpoint(value):
+        saved.append(value)
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path.endswith("/trigger"):
+            return httpx.Response(200, json={"snapshot_id": "sd_existing"})
+        if "/progress/" in request.url.path:
+            assert saved == ["sd_existing"]
+            return httpx.Response(200, json={"status": "running"})
+        raise AssertionError("Cannot download before ready")
+
+    async with http(handler) as client:
+        adapter = LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep)
+        adapter.poll_timeout = timedelta(seconds=0)
+        adapter.checkpoint_collection = checkpoint
+        with pytest.raises(SourceUnavailable, match="resumes the same collection"):
+            await adapter.fetch_window(QUERY, DAY)
+    assert calls.count("/datasets/v3/trigger") == 1
+
+    def ready(request):
+        assert not request.url.path.endswith("/trigger")
+        if "/progress/" in request.url.path:
+            return httpx.Response(200, json={"status": "ready"})
+        return httpx.Response(200, json=[TestLinkedIn.RECORD])
+
+    async with http(ready) as client:
+        resumed = LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep)
+        resumed.collection_id = saved[0]
+        result = await resumed.fetch_window(QUERY, DAY)
+        assert len(result.postings) == 1
+
+
+@pytest.mark.parametrize("status", ["failed", "canceled", "expired"])
+async def test_brightdata_only_clears_terminal_collections(status):
+    saved = []
+
+    async def checkpoint(value):
+        saved.append(value)
+
+    def handler(request):
+        assert "/progress/sd_existing" in request.url.path
+        return httpx.Response(404 if status == "expired" else 200, json={"status": status})
+
+    async with http(handler) as client:
+        adapter = LinkedInBrightDataAdapter(client, SETTINGS, sleep=no_sleep)
+        adapter.collection_id = "sd_existing"
+        adapter.checkpoint_collection = checkpoint
+        with pytest.raises(SourceUnavailable, match="next run starts a new search"):
+            await adapter.fetch_window(QUERY, DAY)
+    assert saved == [None]

@@ -218,6 +218,12 @@ class SourceAdapter(ABC):
 
 
 class WindowedSourceAdapter(SourceAdapter):
+    # Opt-in durable asynchronous collections. The fetcher owns persistence; adapters
+    # checkpoint the returned provider id before polling, without database access.
+    resumable_collections: bool = False
+    collection_id: str | None = None
+    checkpoint_collection: Callable[[str | None], Awaitable[None]] | None = None
+
     mode = FetchMode.WINDOWED
     # Opt-in fallbacks can preserve partial results without claiming the window is done.
     retry_incomplete_window: bool = False

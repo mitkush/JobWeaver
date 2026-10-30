@@ -48,7 +48,7 @@ from app.adapters.registry import (
 )
 from app.core.config import Settings, get_settings
 from app.core.db import among
-from app.models.fetch import FetchRun, QueryWatermark, RunStatus
+from app.models.fetch import FetchRun, PendingCollection, QueryWatermark, RunStatus
 from app.models.posting import AtsBoard, Company, Posting
 from app.models.preference import Preference
 from app.models.raw_advert import RawAdvert
@@ -711,6 +711,14 @@ class Fetcher:
         started = self.clock()
         for query in queries:
             key = query.key if query else "all"
+            checkpoint = None
+            if adapter.resumable_collections:
+                checkpoint = await session.scalar(
+                    select(PendingCollection).where(
+                        PendingCollection.source == adapter.name, PendingCollection.query_key == key
+                    )
+                )
+            adapter.collection_id = checkpoint.external_id if checkpoint else None
             now = self.clock()
             marks = list(
                 (
@@ -734,18 +742,69 @@ class Fetcher:
             else:
                 # Cron and catch-up runs never repeat a search already done today; only
                 # the admin's manual run deliberately does.
-                if trigger != MANUAL and now - last_until < ALREADY_FETCHED:
+                if checkpoint is None and trigger != MANUAL and now - last_until < ALREADY_FETCHED:
                     continue
                 since = last_until - timedelta(hours=self.settings.window_overlap_hours)
-            await self._check_budget(session, adapter)
             window = FetchWindow(since=since, until=started)
+            if checkpoint is not None:
+                # A collection belongs to the account that started it, even if another
+                # account now has more credit or a standby has advanced its watermark.
+                original = next(
+                    (
+                        c
+                        for c in credentials(type(adapter), self.settings)
+                        if c.fingerprint == checkpoint.credential_fingerprint
+                    ),
+                    None,
+                )
+                if original is None:
+                    raise SourceUnavailable(
+                        "Pending collection's credential is missing; restore it to resume safely"
+                    )
+                adapter.settings = original.settings
+                adapter.credential_fingerprint = original.fingerprint
+                window = FetchWindow(since=checkpoint.window_since, until=checkpoint.window_until)
+            else:
+                await self._check_budget(session, adapter)
             run = FetchRun(
                 source=adapter.name,
                 status=RunStatus.RUNNING,
                 trigger=trigger,
                 query_key=key,
-                window_since=since,
-                window_until=started,
+                window_since=window.since,
+                window_until=window.until,
+            )
+
+            async def persist_collection(
+                external_id: str | None,
+                *,
+                collection_key: str = key,
+                collection_window: FetchWindow = window,
+            ) -> None:
+                nonlocal checkpoint
+                if external_id is None:
+                    if checkpoint is not None:
+                        await session.delete(checkpoint)
+                        checkpoint = None
+                    adapter.collection_id = None
+                else:
+                    if checkpoint is None:
+                        checkpoint = PendingCollection(
+                            source=adapter.name,
+                            query_key=collection_key,
+                            external_id=external_id,
+                            credential_fingerprint=adapter.credential_fingerprint,
+                            window_since=collection_window.since,
+                            window_until=collection_window.until,
+                            credits_recorded=0,
+                        )
+                        session.add(checkpoint)
+                    adapter.collection_id = external_id
+                # Commit immediately before the first poll, releasing the connection.
+                await session.commit()
+
+            adapter.checkpoint_collection = (
+                persist_collection if adapter.resumable_collections else None
             )
             session.add(run)
             await session.flush()
@@ -776,6 +835,11 @@ class Fetcher:
                 run.credits_used = exc.credits_used
                 await session.commit()
                 raise
+            # A repeated download after a save failure must not count the collection twice.
+            if checkpoint is not None:
+                billed = result.credits_used
+                result.credits_used = max(0, billed - checkpoint.credits_recorded)
+                checkpoint.credits_recorded = max(checkpoint.credits_recorded, billed)
             # Record the spend before anything else can fail: it is already billed (FR-B5).
             run.credits_used = result.credits_used
             await session.commit()
@@ -821,9 +885,14 @@ class Fetcher:
                 await session.commit()
                 raise SourceUnavailable(run.error)
             if watermark is None:
-                session.add(QueryWatermark(source=adapter.name, query_key=key, last_until=started))
+                session.add(
+                    QueryWatermark(source=adapter.name, query_key=key, last_until=window.until)
+                )
             else:
-                watermark.last_until = started
+                watermark.last_until = max(watermark.last_until, window.until)
+            if checkpoint is not None:
+                await session.delete(checkpoint)
+            adapter.collection_id = None
             await session.commit()
             outcome.postings_new += new
             outcome.credits_used += result.credits_used
