@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route, Routes } from "react-router-dom";
+import { Link, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { JobDetail } from "@/api/client";
@@ -11,7 +11,7 @@ import { JobPage } from "@/pages/JobPage";
 
 import { json, makeCard, makeFeed, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 function feedRoutes() {
   return (
@@ -364,9 +364,12 @@ it("returns to the same Feed filters from a Job", async () => {
     "GET /api/feed": () => json(makeFeed([makeCard()])),
     "GET /api/jobs/job-1": () => json(makeJob()),
   });
-  renderWithApp(feedRoutes(), { route: "/feed?q=rails&section=email" });
+  renderWithApp(feedRoutes(), { route: "/feed?q=rails&section=email&page=2" });
   await userEvent.click(await screen.findByRole("link", { name: "Backend Engineer" }));
-  expect(await screen.findByRole("link", { name: "Back to feed" })).toHaveAttribute("href", "/feed?q=rails&section=email");
+  expect(await screen.findByRole("link", { name: "Back to feed" })).toHaveAttribute("href", "/feed?q=rails&section=email&page=2");
+  await userEvent.click(screen.getByRole("link", { name: "Back to feed" }));
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("rails");
 });
 
 it("lists archived Drafts on the Job, so an earlier package stays reachable", async () => {
@@ -377,4 +380,60 @@ it("lists archived Drafts on the Job, so an earlier package stays reachable", as
   renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
   await userEvent.click(await screen.findByText("Archived Drafts (1)"));
   expect(screen.getByRole("link", { name: /version 3/ })).toHaveAttribute("href", "/drafts/d-old");
+});
+
+
+it("restores filters, section, match and pagination through bare Feed navigation", async () => {
+  const calls = mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()], { total: 60 })) });
+  const selected = "/feed?q=acme&location=India&work_mode=remote&source=greenhouse&within=7&section=link&match=keywords&page=2";
+  renderWithApp(<Routes>
+    <Route path="/feed" element={<><Link to="/away">Leave Feed</Link><FeedPage userId="u1" /></>} />
+    <Route path="/away" element={<Link to="/feed">Main Feed</Link>} />
+  </Routes>, { route: selected });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("link", { name: "Leave Feed" }));
+  await userEvent.click(screen.getByRole("link", { name: "Main Feed" }));
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("acme");
+  expect(screen.getByLabelText("Location")).toHaveValue("India");
+  expect(screen.getByLabelText("Work mode")).toHaveValue("remote");
+  expect(screen.getByLabelText("Source")).toHaveValue("greenhouse");
+  expect(screen.getByLabelText("Posted within")).toHaveValue("7");
+  expect(screen.getByRole("tab", { name: /Apply link only/ })).toHaveAttribute("aria-selected", "true");
+  const request = queryOf(calls.filter(c => new URL(c.url).pathname === "/api/feed").at(-1)!);
+  expect(request.get("offset")).toBe("20");
+  expect(request.get("match")).toBe("keywords");
+});
+
+it("explicit Feed links override remembered filters and Clear stays cleared", async () => {
+  sessionStorage.setItem("jw-feed-view:u1", "?q=old&page=3");
+  mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()])) });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed?q=current" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("current");
+  await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+  await waitFor(() => expect(sessionStorage.getItem("jw-feed-view:u1")).toBe(""));
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("");
+});
+
+it("does not restore another User's Feed view", async () => {
+  sessionStorage.setItem("jw-feed-view:u1", "?q=private-search&page=3");
+  const calls = mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()])) });
+  renderWithApp(<FeedPage userId="u2" />, { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("");
+  expect(queryOf(calls.find(c => new URL(c.url).pathname === "/api/feed")!).get("offset")).toBe("0");
+});
+
+it("keeps search boxes in sync with browser Back without reapplying newer text", async () => {
+  function Back() { const navigate = useNavigate(); return <button onClick={() => navigate(-1)}>Browser Back</button>; }
+  const calls = mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()])) });
+  renderWithApp(<><Back /><FeedPage /></>, { initialEntries: ["/feed?q=first&location=India", "/feed?q=second&location=London"] });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("button", { name: "Browser Back" }));
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("first");
+  expect(screen.getByLabelText("Location")).toHaveValue("India");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  expect(queryOf(calls.at(-1)!).get("q")).toBe("first");
+  expect(queryOf(calls.at(-1)!).get("location")).toBe("India");
 });

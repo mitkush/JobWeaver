@@ -1,6 +1,6 @@
 import { Inbox, Mail, SearchX } from "lucide-react";
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
 
 import { useFeed } from "@/api/hooks";
 import { PageHeader } from "@/app/AppShell";
@@ -99,11 +99,38 @@ function MatchSwitch({
   );
 }
 
-export function FeedPage() {
+/** Bare Feed navigation restores this User's view in this browser tab. An explicit
+ * query always wins; replacing the bare entry also keeps browser Back predictable. */
+export function FeedPage({ userId }: { userId?: string }) {
+  const location = useLocation();
+  const storageKey = userId ? `jw-feed-view:${userId}` : null;
+  const [initial] = useState(() => {
+    try {
+      return { key: location.key, search: !location.search && storageKey ? sessionStorage.getItem(storageKey) ?? "" : "" };
+    } catch {
+      return { key: location.key, search: "" };
+    }
+  });
+  if (location.key === initial.key && initial.search && !location.search) {
+    return <Navigate to={{ pathname: "/feed", search: initial.search }} replace />;
+  }
+  return <FeedView storageKey={storageKey} />;
+}
+
+function FeedView({ storageKey }: { storageKey: string | null }) {
   // Clearing from the empty state also resets the filter boxes, whose typed text would
   // otherwise be applied again after the typing pause.
   const [filtersKey, setFiltersKey] = useState(0);
   const [params, setParams] = useSearchParams();
+  const search = params.toString();
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      sessionStorage.setItem(storageKey, search ? `?${search}` : "");
+    } catch {
+      // URL-based Back still works when browser storage is unavailable.
+    }
+  }, [storageKey, search]);
   const explicit = params.get("section");
   const requested: Section = explicit === "link" ? "link" : "email";
   const feed = useFeed(feedQuery(params, requested));
