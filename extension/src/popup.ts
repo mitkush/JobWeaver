@@ -88,6 +88,11 @@ function profileSection(state: PageState): HTMLElement {
 }
 
 /** Read before any Draft exists, then review before storing public advert text. */
+function guide(message: string) {
+  const hint = content.querySelector("[data-workflow-hint]");
+  if (hint) hint.textContent = message;
+}
+
 function captureSection(tabId: number, refresh: () => void): HTMLElement {
   const section = h("section", { class: "panel" }, h("p", { class: "label" }, "Careers-page job"));
   const body = h("div");
@@ -116,6 +121,7 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
   }).catch(() => undefined);
 
   function showReview(job: PageJob) {
+    guide("Next: review the extracted job title, company and description, then save the Job.");
     const title = h("input", { type: "text", value: job.title, maxlength: "500", id: "capture-title" }) as HTMLInputElement;
     const company = h("input", { type: "text", value: job.company, maxlength: "255", id: "capture-company" }) as HTMLInputElement;
     const description = h("textarea", { id: "capture-description", rows: "12", maxlength: "50000" }, job.description) as HTMLTextAreaElement;
@@ -145,6 +151,7 @@ function captureSection(tabId: number, refresh: () => void): HTMLElement {
   }
 
   function showSaved(saved: Captured) {
+    guide(saved.draft_id ? "Next: open and review your Draft, then choose Use this Draft." : "Next: create a Draft from the reviewed job description.");
     const error = h("p", { class: "warn-text", role: "status" });
     const create = button("Create Draft from this JD", async () => {
       create.disabled = true;
@@ -285,6 +292,7 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   function showPreview(result: ScanResult) {
+    guide("Next: review the proposed values and tick only the fields you want to fill.");
     scanButton.classList.add("ghost");
     scanButton.textContent = "Scan again";
     if (result.unavailableFrames) section.append(h("p", { class: "warn-text" }, `${result.unavailableFrames} embedded frame(s) need site access. Use Find embedded forms, or open the hosted application.`));
@@ -331,10 +339,11 @@ function fillSection(tabId: number): HTMLElement {
     }).catch(() => undefined);
     const questions = result.questions ?? [];
     const fillable = rows.length + questions.length;
+    if (!fillable) guide("Next: open the application form and scan again, or complete unsupported fields yourself.");
     body.replaceChildren(...parts(
       result.draft ? null : h("p", { class: "warn-text" }, "Choose a Draft above to attach its resume and cover letter."),
       result.profileReviewed ? null : h("p", { class: "warn-text" }, "Review your profile to fill your details."),
-      rows.length ? h("ul", { class: "fields" }, ...rows) : questions.length ? null : h("p", {}, "Nothing here JobWeaver can fill."),
+      rows.length ? h("ul", { class: "fields" }, ...rows) : questions.length ? null : h("p", {}, "No supported fields found. If this is the job advert, click its Apply button and scan the application form. If the form is embedded, try Find embedded forms. You can also complete unsupported fields yourself."),
       questions.length ? questionsBlock(tabId, questions, Boolean(result.draft)) : null,
       result.manual.length ? h("p", { class: "muted" }, `For you to fill: ${result.manual.slice(0, 8).join(", ")}${result.manual.length > 8 ? "…" : ""}`) : null,
       fillable ? h("p", { class: "muted" }, "Filling puts the ticked values into this site's form, which may save them before you submit. JobWeaver never submits.") : null,
@@ -343,6 +352,7 @@ function fillSection(tabId: number): HTMLElement {
   }
 
   function showReport(report: FillResult) {
+    guide("Next: check the filled values and attachments on the page. Complete anything missing, then submit yourself. Undo is available below.");
     scanButton.classList.add("ghost");
     scanButton.textContent = "Scan again";
     const label = (ref: string) => report.labels[ref] ?? "A field";
@@ -461,6 +471,10 @@ async function render() {
     ? await chrome.permissions.contains({ origins: [`${new URL(tab.url).origin}/*`] }).catch(() => false)
     : false;
   content.replaceChildren(...parts(
+    h("section", { class: "panel", "aria-label": "Application steps" },
+      h("p", { class: "label" }, "Read job → Prepare documents → Review fields → Fill"),
+      h("p", { "data-workflow-hint": "true", role: "status" }, state.needsConfirmation ? "Next: confirm the Job and document for this page." : state.selected ? "Next: open the employer’s application form, then scan its fields. Review your documents before attaching them." : state.matches.length ? "Next: choose and review the matching Draft, or read this page’s job description." : "Next: read and review the job description, then prepare your Draft."),
+      h("p", { class: "muted" }, "Reading captures the advert. Scanning finds form fields. You always submit the application yourself.")),
     siteAllowed ? null : tab.url && /^https?:/.test(tab.url) ? button(`Allow access to ${new URL(tab.url).hostname}`, async () => {
       const origin = new URL(tab.url!).origin;
       if (!await chrome.permissions.request({ origins: [`${origin}/*`] })) throw new Error("Site access was not granted. Use the toolbar on this tab for temporary access.");
