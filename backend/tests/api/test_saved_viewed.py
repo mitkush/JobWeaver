@@ -132,3 +132,25 @@ async def test_merging_jobs_keeps_saved_and_viewed_from_either_side(alice):
     detail = (await client.get(f"/api/jobs/{merged}")).json()
     assert detail["saved"] is True and detail["viewed"] is True
     assert [c["job_id"] for c in (await saved(client))["items"]] == [merged]
+
+
+async def test_viewed_history_survives_preferences_without_keeping_nonmatching_cards(alice):
+    _, client = alice
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    await seed()
+    job_id = await first_job(client)
+    await client.post(f"/api/jobs/{job_id}/viewed")
+    first_viewed = (await client.get(f"/api/jobs/{job_id}")).json()["viewed"]
+    assert first_viewed is True
+
+    await client.put("/api/preferences", json=DATA_PUNE)
+    for status in ("any", "viewed", "unviewed"):
+        cards = (await client.get("/api/feed", params={"viewed": status})).json()["items"]
+        assert job_id not in {card["job_id"] for card in cards}
+    assert (await saved(client))["total"] == 0
+
+    await client.put("/api/preferences", json=BACKEND_BLR)
+    cards = (await client.get("/api/feed", params={"viewed": "viewed"})).json()["items"]
+    assert next(card for card in cards if card["job_id"] == job_id)["viewed"] is True
+    unviewed = (await client.get("/api/feed", params={"viewed": "unviewed"})).json()["items"]
+    assert job_id not in {card["job_id"] for card in unviewed}

@@ -416,7 +416,8 @@ async def _apply_links(
     """Adds matching Jobs and refreshes why each is there; removes considered Jobs that no
     longer match, unless the User hid or saved them (their choice is kept if the Job comes
     back) or has a Draft or Application for them: those stay reachable from the tracker after the
-    Job closes or Preferences change, marked as no longer matching."""
+    Job closes or Preferences change, marked as no longer matching. Viewed-only links
+    retain history but are excluded from the Feed until they match again."""
     rows = [
         {"id": uuid.uuid4(), "user_id": user_id, "job_id": job_id, **match.columns()}
         for job_id, match in matching.items()
@@ -449,6 +450,7 @@ async def _apply_links(
             *gone,
             UserJob.hidden_at.is_(None),
             UserJob.saved_at.is_(None),
+            UserJob.viewed_at.is_(None),
             UserJob.captured_at.is_(None),
             ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
             ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
@@ -527,6 +529,21 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         stmt = stmt.where(
             Job.expired_at.is_(None),
             UserJob.hidden_at.is_not(None) if view == "hidden" else UserJob.hidden_at.is_(None),
+        )
+    if view == "all":
+        # Keep history-only links for future matches, without making viewing a Job
+        # an implicit bookmark when Preferences change.
+        stmt = stmt.where(
+            or_(
+                UserJob.match_kind.is_not(None),
+                UserJob.viewed_at.is_(None),
+                UserJob.saved_at.is_not(None),
+                UserJob.captured_at.is_not(None),
+                exists().where(Draft.user_id == user.id, Draft.job_id == UserJob.job_id),
+                exists().where(
+                    Application.user_id == user.id, Application.job_id == UserJob.job_id
+                ),
+            )
         )
     if query.viewed != "any":
         stmt = stmt.where(

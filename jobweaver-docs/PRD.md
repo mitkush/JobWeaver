@@ -226,7 +226,7 @@ Windowed Sources cannot see a job disappear, so the age limit is what keeps "gho
 - AC1: One View control switches between All jobs, Saved (with the number of bookmarks) and Hidden. Saved lists every saved Job, whatever its match category, email or link section, hidden or expired state; expired and hidden Jobs are labelled. Filters narrow it and the page says "Showing 5 of 12 saved jobs".
 - AC2: Entering a view shows that view's own last filters, not the ones of the view left; returning from a Job restores filters, page and the scroll position.
 - AC3: Saving never unhides a Job, and creating a Draft or applying keeps the bookmark. A saved Job stays when Preferences change or the Job is merged with another.
-- AC4: A Job is Viewed only after its page loads, never because its card was shown. The Feed can be filtered to Unviewed or Viewed Jobs, and viewed cards carry a small "Viewed" label.
+- AC4: A Job is Viewed only after its page loads, never because its card was shown. The Feed can be filtered to Unviewed or Viewed Jobs, and viewed cards carry a small "Viewed" label. Viewed history survives Feed rebuilds and Preferences changes; viewing alone does not keep a nonmatching Job in the Feed.
 
 **FR-D7 [V1] - Freshness label.** The Feed shows when it was last updated.
 
