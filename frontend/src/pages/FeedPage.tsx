@@ -327,7 +327,7 @@ function FeedList({ userId }: { userId: string | null }) {
               : "No apply-link-only jobs here."}
         </p>
       ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-2" aria-busy={shown.isFetching || undefined}>
+        <div className="grid gap-4 xl:grid-cols-2" aria-busy={shown.isFetching || undefined}>
           {data?.items.map((job) => <JobCard key={job.job_id} job={job} />)}
         </div>
       )}

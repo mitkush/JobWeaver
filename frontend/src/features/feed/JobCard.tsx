@@ -46,7 +46,9 @@ export function JobCard({ job }: { job: FeedCard }) {
   }
 
   return (
-    <Card className="p-5 transition-shadow hover:shadow-md">
+    // Full height of its grid row, so cards side by side end together and their
+    // sources and Create Draft line up at the bottom.
+    <Card className="flex h-full flex-col p-5 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-base font-semibold">
@@ -113,6 +115,9 @@ export function JobCard({ job }: { job: FeedCard }) {
       <div className="mt-3 space-y-2">
         <MatchReason match={job.match} matched_keywords={job.matched_keywords} />
         <SkillGaps gaps={job.skill_gaps} matches={job.skill_matches} />
+      </div>
+
+      <div className="mt-auto space-y-2 pt-3">
         <SourceBadges sources={job.sources} />
         {job.company_applied && <p className="text-xs text-amber-700 dark:text-amber-300">Already applied to this Company</p>}
         {job.application_status && <Badge>{statusLabel(job.application_status)}</Badge>}
