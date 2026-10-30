@@ -142,6 +142,33 @@ export function JobPage() {
     }
   }
 
+  const applicationCard = (
+    <Card>
+      <CardHeader title="Your application" />
+      <CardBody className="space-y-3">
+        <p className="text-sm">{data.application_status ? statusLabel(data.application_status) : data.draft_id ? "Draft started" : "Not started"}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-400">{data.draft_id ? "Review your documents, then continue on the employer’s site." : "Read the requirements, then prepare documents from your Fact Bank."}</p>
+        <div className="flex flex-wrap gap-2">
+          <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
+          <Button variant="secondary" onClick={toggleSaved} className={setSaved.isPending ? "bookmark-feedback" : undefined} loading={setSaved.isPending} aria-pressed={data.saved ?? false}>
+            {data.saved ? <BookmarkCheck className="size-4" aria-hidden /> : <Bookmark className="size-4" aria-hidden />}
+            {data.saved ? "Saved" : "Save"}
+          </Button>
+          <Button variant="ghost" onClick={toggleHidden} loading={setHidden.isPending}>
+            {data.hidden ? "Show in feed" : "Hide"}
+          </Button>
+          {advertUrl && (
+            <a href={advertUrl} target="_blank" rel="noreferrer noopener" className={buttonClasses("secondary")}>
+              Open job advert
+              <ExternalLink className="size-4" aria-hidden />
+            </a>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Creating a Draft does not apply. You review and submit yourself.</p>
+      </CardBody>
+    </Card>
+  );
+
   return (
     <>
       <BackToFeed />
@@ -182,12 +209,11 @@ export function JobPage() {
             </p>
           )}
         </div>
-
       </div>
 
-
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 space-y-6">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_1fr]">
+        <section aria-label="Your application" className="min-w-0 lg:col-start-2 lg:row-start-1">{applicationCard}</section>
+        <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1 lg:row-span-2">
           <Card>
             <CardHeader title="Job description" description={data.description_origin?.kind === "page" ? "From your reviewed careers-page description" : primary ? `From ${primary.source.label}` : undefined} />
             <CardBody>
@@ -261,32 +287,8 @@ export function JobPage() {
           </details>
 
         </div>
-        <aside className="contents lg:order-last lg:block lg:sticky lg:top-6 lg:space-y-4">
-          <Card className="order-first">
-            <CardHeader title="Your application" />
-            <CardBody className="space-y-3">
-              <p className="text-sm">{data.application_status ? statusLabel(data.application_status) : data.draft_id ? "Draft started" : "Not started"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">{data.draft_id ? "Review your documents, then continue on the employer’s site." : "Read the requirements, then prepare documents from your Fact Bank."}</p>
-        <div className="flex flex-wrap gap-2">
-          <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
-          <Button variant="secondary" onClick={toggleSaved} className={setSaved.isPending ? "bookmark-feedback" : undefined} loading={setSaved.isPending} aria-pressed={data.saved ?? false}>
-            {data.saved ? <BookmarkCheck className="size-4" aria-hidden /> : <Bookmark className="size-4" aria-hidden />}
-            {data.saved ? "Saved" : "Save"}
-          </Button>
-          <Button variant="ghost" onClick={toggleHidden} loading={setHidden.isPending}>
-            {data.hidden ? "Show in feed" : "Hide"}
-          </Button>
-          {advertUrl && (
-            <a href={advertUrl} target="_blank" rel="noreferrer noopener" className={buttonClasses("secondary")}>
-              Open job advert
-              <ExternalLink className="size-4" aria-hidden />
-            </a>
-          )}
-        </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Creating a Draft does not apply. You review and submit yourself.</p>
-            </CardBody>
-          </Card>
-          <Card className="order-last">
+        <aside aria-label="Skills comparison" className="min-w-0 lg:col-start-2 lg:row-start-2">
+          <Card>
             <CardHeader title="Skills" description="Required by the job, compared with your Fact Bank." />
             <CardBody className="space-y-3">
               <MatchReason match={data.match} matched_keywords={data.matched_keywords} />

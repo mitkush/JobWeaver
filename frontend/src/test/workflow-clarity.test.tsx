@@ -8,11 +8,17 @@ import { GenerationProgress } from "@/features/drafts/GenerationProgress";
 
 afterEach(() => vi.useRealTimers());
 
-it("keeps long skill lists available on demand without treating missing Facts as missing skills", async () => {
-  render(<SkillGaps compact gaps={["Go", "Rust", "C", "Java", "Ruby", "SQL"]} matches={["Python"]} />);
-  expect(screen.getByText("Go, Rust, C, Java, Ruby, SQL")).not.toBeVisible();
-  await userEvent.click(screen.getByText("Skills: 1 matched · 6 not in Fact Bank"));
-  expect(screen.getByText("Go, Rust, C, Java, Ruby, SQL")).toBeVisible();
+it("shows the first four matched and missing skills before expanding each remainder", async () => {
+  render(<SkillGaps compact gaps={["Go", "Rust", "C", "Java", "Ruby", "SQL"]} matches={["Python", "Rails", "Docker", "Redis", "Kafka"]} />);
+  expect(screen.getByText(/Go, Rust, C, Java/)).toBeVisible();
+  expect(screen.getByText(/Python, Rails, Docker, Redis/)).toBeVisible();
+  expect(screen.getByText("Ruby, SQL")).not.toBeVisible();
+  expect(screen.getByText("Kafka")).not.toBeVisible();
+  await userEvent.click(screen.getByLabelText("Show 2 more skills not in your Fact Bank"));
+  expect(screen.getByText("Ruby, SQL")).toBeVisible();
+  expect(screen.getByText("Kafka")).not.toBeVisible();
+  await userEvent.click(screen.getByLabelText("Show 1 more matched skills"));
+  expect(screen.getByText("Kafka")).toBeVisible();
 });
 
 it("lets readers expand every source", async () => {

@@ -104,7 +104,7 @@ def unavailable_message(reasons: list[str]) -> str:
     """Only fixed messages reach the UI; never return a provider response body."""
     usable = [reason for reason in reasons if reason != "not configured"]
     if not usable:
-        return "No AI provider is configured for this task. Check AI settings before retrying."
+        return "AI is not available for this task. Please contact the site owner."
     if all(reason == "timed out" for reason in usable):
         return (
             "The AI providers did not finish in time. Retry generation; your Facts are unchanged."
@@ -119,7 +119,7 @@ def unavailable_message(reasons: list[str]) -> str:
     if all(reason == TOO_LARGE for reason in usable):
         return (
             "This request is too large for the available AI providers. "
-            "Shorten the job description or configure a provider with more capacity."
+            "Shorten the job description or ask the site owner about provider capacity."
         )
     return (
         "The AI providers could not complete this Draft. "
