@@ -84,6 +84,14 @@ The stack of all Postings that make up one Job, across every Source, and the scr
 
 A User's personal list of Jobs that match their Preferences, in two sections: **With email** and **Apply link only**. Title matches and keyword matches are shown apart. A Feed entry is a link between the User and a shared Job (`user_jobs`), never a copy of it (ADR-0002).
 
+## Saved Job
+
+A Job the User bookmarked to come back to. Kept on their link to the Job, so it survives Preferences changes, merges, hiding and expiry until they remove it. Not a Draft or an Application: saving prepares or sends nothing.
+
+## Viewed
+
+A Job whose page the User has opened at least once. Recorded on their link to the Job; a card shown in the Feed does not count.
+
 ## Skill Gap
 
 Required skills in a Job's description that are not in the User's Fact Bank, shown on the card as "Missing: Kubernetes, Go". Required skills are extracted from the description by AI once per Job; the comparison is plain code (ADR-0010). There is no match score.

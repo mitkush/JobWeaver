@@ -1,7 +1,7 @@
 import type { FeedQuery } from "@/api/client";
 
 export const PAGE_SIZE = 20;
-const FILTERS = ["q", "location", "work_mode", "source", "within"] as const;
+const FILTERS = ["q", "location", "work_mode", "source", "within", "viewed"] as const;
 export type FilterKey = (typeof FILTERS)[number];
 
 /** The Feed's state lives in the URL, so Back and shared links keep it. */
@@ -9,6 +9,7 @@ export function feedQuery(params: URLSearchParams, section: "email" | "link"): F
   const page = Math.max(1, Number(params.get("page")) || 1);
   const within = Number(params.get("within")) || undefined;
   const mode = params.get("work_mode");
+  const viewed = params.get("viewed");
   return {
     section,
     match: feedMatch(params),
@@ -17,10 +18,21 @@ export function feedQuery(params: URLSearchParams, section: "email" | "link"): F
     work_mode: mode === "onsite" || mode === "hybrid" || mode === "remote" ? mode : undefined,
     source: params.get("source") || undefined,
     posted_within_days: within,
-    hidden: params.get("hidden") === "1",
+    view: feedView(params),
+    viewed: viewed === "unviewed" || viewed === "viewed" ? viewed : undefined,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   };
+}
+
+export type FeedView = "all" | "saved" | "hidden";
+
+/** Which list: the Feed, the User's bookmarks, or the Jobs they hid. `hidden=1` is the
+ * older link to the hidden list. */
+export function feedView(params: URLSearchParams): FeedView {
+  const view = params.get("view");
+  if (view === "saved" || view === "hidden") return view;
+  return params.get("hidden") === "1" ? "hidden" : "all";
 }
 
 export type FeedMatch = "title" | "keywords" | "review";

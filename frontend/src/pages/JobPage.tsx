@@ -1,9 +1,9 @@
-import { ArrowLeft, Building2, ExternalLink, Mail, MapPin, SearchX } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Bookmark, BookmarkCheck, Building2, ExternalLink, Mail, MapPin, SearchX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
-import { useConfirmDuplicate, useJob, useRejectDuplicate, useSetHidden, useSplitPosting } from "@/api/hooks";
+import { useConfirmDuplicate, useJob, useMarkViewed, useRejectDuplicate, useSetHidden, useSetSaved, useSplitPosting } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,17 @@ export function JobPage() {
   const reject = useRejectDuplicate();
   const split = useSplitPosting();
   const setHidden = useSetHidden();
+  const setSaved = useSetSaved();
+  const markViewed = useMarkViewed();
+  // Viewed once the page has actually loaded, once per Job.
+  const marked = useRef<string | null>(null);
+  const loaded = job.data?.job_id;
+  const alreadyViewed = job.data?.viewed;
+  useEffect(() => {
+    if (!loaded || alreadyViewed || marked.current === loaded) return;
+    marked.current = loaded;
+    markViewed.mutate(loaded);
+  }, [loaded, alreadyViewed, markViewed]);
   const [busyPair, setBusyPair] = useState<{ id: string; action: "confirm" | "reject" } | null>(null);
   const [splitCandidate, setSplitCandidate] = useState<string | null>(null);
   const [splitting, setSplitting] = useState<string | null>(null);
@@ -113,6 +124,15 @@ export function JobPage() {
     }
   }
 
+  async function toggleSaved() {
+    try {
+      await setSaved.mutateAsync({ jobId, saved: !data.saved });
+      toast("success", data.saved ? "Removed from Saved" : "Saved for later");
+    } catch (error) {
+      toast("error", (error as Error).message);
+    }
+  }
+
   async function toggleHidden() {
     try {
       await setHidden.mutateAsync({ jobId, hidden: !data.hidden });
@@ -164,6 +184,10 @@ export function JobPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
+          <Button variant="secondary" onClick={toggleSaved} loading={setSaved.isPending} aria-pressed={data.saved ?? false}>
+            {data.saved ? <BookmarkCheck className="size-4" aria-hidden /> : <Bookmark className="size-4" aria-hidden />}
+            {data.saved ? "Saved" : "Save"}
+          </Button>
           <Button variant="ghost" onClick={toggleHidden} loading={setHidden.isPending}>
             {data.hidden ? "Show in feed" : "Hide"}
           </Button>

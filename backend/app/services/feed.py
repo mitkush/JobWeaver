@@ -13,6 +13,7 @@ from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, te
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.adapters.normalize import normalize_city
 from app.adapters.posting_policy import BLOCKED_COMPANIES
@@ -407,6 +408,17 @@ async def _matches(
     return result
 
 
+def _kept_by_user(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Explicit reasons to retain a nonmatching Job; viewing only retains history."""
+    return or_(
+        UserJob.hidden_at.is_not(None),
+        UserJob.saved_at.is_not(None),
+        UserJob.captured_at.is_not(None),
+        exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
+        exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
+    )
+
+
 async def _apply_links(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -414,9 +426,10 @@ async def _apply_links(
     considered: set[uuid.UUID] | None,
 ) -> None:
     """Adds matching Jobs and refreshes why each is there; removes considered Jobs that no
-    longer match, unless the User hid them (their choice is kept if the Job comes back) or
-    has a Draft or Application for them: those stay reachable from the tracker after the
-    Job closes or Preferences change, marked as no longer matching."""
+    longer match, unless the User hid or saved them (their choice is kept if the Job comes
+    back) or has a Draft or Application for them: those stay reachable from the tracker after the
+    Job closes or Preferences change, marked as no longer matching. Viewed-only links
+    retain history but are excluded from the Feed until they match again."""
     rows = [
         {"id": uuid.uuid4(), "user_id": user_id, "job_id": job_id, **match.columns()}
         for job_id, match in matching.items()
@@ -447,10 +460,8 @@ async def _apply_links(
     await session.execute(
         delete(UserJob).where(
             *gone,
-            UserJob.hidden_at.is_(None),
-            UserJob.captured_at.is_(None),
-            ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
-            ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
+            ~_kept_by_user(user_id),
+            UserJob.viewed_at.is_(None),
         )
     )
     await session.execute(
@@ -516,11 +527,33 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
         select(Job, UserJob)
         .options(defer(UserJob.page_description))
         .join(UserJob, UserJob.job_id == Job.id)
-        .where(UserJob.user_id == user.id, Job.expired_at.is_(None), _allowed_company())
+        .where(UserJob.user_id == user.id, _allowed_company())
     )
-    stmt = stmt.where(
-        UserJob.hidden_at.is_not(None) if query.hidden else UserJob.hidden_at.is_(None)
-    )
+    view = _view(query)
+    if view == "saved":
+        # Every bookmark, hidden or expired included: the User chose to keep it.
+        stmt = stmt.where(UserJob.saved_at.is_not(None))
+    else:
+        stmt = stmt.where(
+            Job.expired_at.is_(None),
+            UserJob.hidden_at.is_not(None) if view == "hidden" else UserJob.hidden_at.is_(None),
+        )
+    if view == "all":
+        # Keep history-only links for future matches, without making viewing a Job
+        # an implicit bookmark when Preferences change.
+        stmt = stmt.where(
+            or_(
+                UserJob.match_kind.is_not(None),
+                UserJob.viewed_at.is_(None),
+                _kept_by_user(user.id),
+            )
+        )
+    if query.viewed != "any":
+        stmt = stmt.where(
+            UserJob.viewed_at.is_not(None)
+            if query.viewed == "viewed"
+            else UserJob.viewed_at.is_(None)
+        )
     if query.q:
         pattern = f"%{_like_literal(query.q.strip())}%"
         stmt = stmt.where(
@@ -548,6 +581,22 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
             ).bindparams(city=_like_literal(query.location.strip()), loc=query.location.strip())
         )
     return stmt
+
+
+def _view(query: FeedQuery) -> str:
+    return "hidden" if query.hidden and query.view == "all" else query.view
+
+
+async def saved_count(session: AsyncSession, user: User) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(UserJob)
+            .join(Job, Job.id == UserJob.job_id)
+            .where(UserJob.user_id == user.id, UserJob.saved_at.is_not(None), _allowed_company())
+        )
+        or 0
+    )
 
 
 def _like_literal(value: str) -> str:
@@ -646,20 +695,34 @@ async def list_feed(
 ) -> FeedOut:
     now = now or datetime.now(UTC)
     filtered = _filtered(user, query, now)
-    base = _match(filtered, query.match)
-    counts = FeedCounts(
-        with_email=await _count(session, _section(base, True)),
-        apply_link_only=await _count(session, _section(base, False)),
-        title_matches=await _count(session, _match(filtered, "title")),
-        keyword_matches=await _count(session, _match(filtered, "keywords")),
-        review_matches=await _count(session, _match(filtered, "review")),
-    )
-    stmt = (
-        _section(base, query.section == "email")
-        .order_by(Job.posted_at.desc().nulls_last(), Job.id)
-        .limit(query.limit)
-        .offset(query.offset)
-    )
+    saved = await saved_count(session, user)
+    if _view(query) == "saved":
+        # The shortlist ignores match category and email/link section, so no bookmark
+        # can look missing; most recently saved first.
+        total = await _count(session, filtered)
+        counts = FeedCounts(with_email=0, apply_link_only=0, saved=saved)
+        stmt = (
+            filtered.order_by(UserJob.saved_at.desc(), Job.id)
+            .limit(query.limit)
+            .offset(query.offset)
+        )
+    else:
+        base = _match(filtered, query.match)
+        counts = FeedCounts(
+            with_email=await _count(session, _section(base, True)),
+            apply_link_only=await _count(session, _section(base, False)),
+            title_matches=await _count(session, _match(filtered, "title")),
+            keyword_matches=await _count(session, _match(filtered, "keywords")),
+            review_matches=await _count(session, _match(filtered, "review")),
+            saved=saved,
+        )
+        total = counts.with_email if query.section == "email" else counts.apply_link_only
+        stmt = (
+            _section(base, query.section == "email")
+            .order_by(Job.posted_at.desc().nulls_last(), Job.id)
+            .limit(query.limit)
+            .offset(query.offset)
+        )
     rows = (await session.execute(stmt)).all()
     skills = await load_user_skills(session, user)
     duplicates = await _possible_duplicates(session, [job.id for job, _ in rows])
@@ -694,6 +757,9 @@ async def list_feed(
             else skill_matches(_requirements(job, link) or [], skills),
             possible_duplicate=job.id in duplicates,
             hidden=link.hidden_at is not None,
+            saved=link.saved_at is not None,
+            viewed=link.viewed_at is not None,
+            expired=job.expired_at is not None,
             draft_id=draft_ids.get(job.id),
             application_status=application_states.get(job.id),
             company_applied=job.id in applied_companies,
@@ -702,7 +768,6 @@ async def list_feed(
         )
         for job, link in rows
     ]
-    total = counts.with_email if query.section == "email" else counts.apply_link_only
     return FeedOut(
         items=items,
         total=total,
@@ -729,6 +794,24 @@ async def set_hidden(session: AsyncSession, user: User, job_id: uuid.UUID, hidde
     link = await _link(session, user, job_id)
     link.hidden_at = datetime.now(UTC) if hidden else None
     await session.flush()
+
+
+async def set_saved(session: AsyncSession, user: User, job_id: uuid.UUID, saved: bool) -> None:
+    """Saving is personal and separate from hiding: saving never unhides a Job."""
+    link = await _link(session, user, job_id)
+    if saved and link.saved_at is None:
+        link.saved_at = datetime.now(UTC)
+    elif not saved:
+        link.saved_at = None
+    await session.flush()
+
+
+async def mark_viewed(session: AsyncSession, user: User, job_id: uuid.UUID) -> None:
+    """Records the first time the User opened the Job page."""
+    link = await _link(session, user, job_id)
+    if link.viewed_at is None:
+        link.viewed_at = datetime.now(UTC)
+        await session.flush()
 
 
 # --- Correspondence view (FR-C6) ----------------------------------------------------------------
@@ -863,6 +946,8 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         else skill_matches(_requirements(job, link) or [], skills),
         hidden=link.hidden_at is not None,
         expired=job.expired_at is not None,
+        saved=link.saved_at is not None,
+        viewed=link.viewed_at is not None,
         postings=[_posting_out(p, labels, job.primary_posting_id) for p in postings],
         possible_duplicates=duplicates,
         draft_id=draft_ids.get(job.id),

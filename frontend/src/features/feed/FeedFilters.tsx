@@ -69,7 +69,7 @@ export function FeedFilters({
   }, []);
 
   return (
-    <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_auto]">
+    <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_1fr_auto]">
       <label className="relative block">
         <span className="sr-only">Search title or company</span>
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
@@ -110,6 +110,14 @@ export function FeedFilters({
               {option.label}
             </option>
           ))}
+        </Select>
+      </label>
+      <label className="block">
+        <span className="sr-only">Viewing status</span>
+        <Select value={params.get("viewed") ?? ""} onChange={(e) => onChange(withParam(params, "viewed", e.target.value || null))}>
+          <option value="">Viewed or not</option>
+          <option value="unviewed">Unviewed</option>
+          <option value="viewed">Viewed</option>
         </Select>
       </label>
       {hasFilters(params) && (

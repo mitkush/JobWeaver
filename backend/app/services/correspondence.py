@@ -259,14 +259,17 @@ async def merge_jobs(
         .execution_options(synchronize_session=False)
     )
     # A User keeps the Job in their Feed, with their hidden state, whichever side they had.
+    # Saved and Viewed count when either side had them.
     await session.execute(
         text(
-            "INSERT INTO user_jobs (id, user_id, job_id, hidden_at, captured_at, "
-            "page_description, page_required_skills, created_at, updated_at) "
-            "SELECT gen_random_uuid(), user_id, :survivor, hidden_at, captured_at, "
-            "page_description, page_required_skills, now(), now() "
+            "INSERT INTO user_jobs (id, user_id, job_id, hidden_at, saved_at, viewed_at, "
+            "captured_at, page_description, page_required_skills, created_at, updated_at) "
+            "SELECT gen_random_uuid(), user_id, :survivor, hidden_at, saved_at, viewed_at, "
+            "captured_at, page_description, page_required_skills, now(), now() "
             "FROM user_jobs WHERE job_id = :gone "
             "ON CONFLICT (user_id, job_id) DO UPDATE SET "
+            "saved_at = LEAST(user_jobs.saved_at, excluded.saved_at), "
+            "viewed_at = LEAST(user_jobs.viewed_at, excluded.viewed_at), "
             "captured_at = COALESCE(user_jobs.captured_at, excluded.captured_at), "
             "page_required_skills = CASE WHEN user_jobs.page_description IS NULL "
             "THEN excluded.page_required_skills ELSE user_jobs.page_required_skills END, "

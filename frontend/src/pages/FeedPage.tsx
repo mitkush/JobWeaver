@@ -1,5 +1,5 @@
-import { Inbox, Mail, SearchX } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Bookmark, Inbox, Mail, SearchX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
 
 import { useFeed } from "@/api/hooks";
@@ -10,7 +10,8 @@ import { buttonClasses } from "@/components/ui/button-classes";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
 import { FeedFilters } from "@/features/feed/FeedFilters";
-import { clearFilters, feedMatch, feedQuery, hasFilters, PAGE_SIZE, withParam, type FeedMatch } from "@/features/feed/feed-params";
+import { lastFeedKey, read, takeScroll, viewKey, write } from "@/features/feed/feed-memory";
+import { clearFilters, feedMatch, feedQuery, feedView, hasFilters, PAGE_SIZE, withParam, type FeedMatch, type FeedView } from "@/features/feed/feed-params";
 import { Reminders } from "@/features/applications/Reminders";
 import { JobCard } from "@/features/feed/JobCard";
 import { cn } from "@/lib/cn";
@@ -99,38 +100,66 @@ function MatchSwitch({
   );
 }
 
+/** Which list to show. Replaces the old Hidden jobs button; one control, no extra row. */
+function ViewSwitch({ view, saved, onSelect }: { view: FeedView; saved: number | undefined; onSelect: (view: FeedView) => void }) {
+  const options: { id: FeedView; label: string }[] = [
+    { id: "all", label: "All jobs" },
+    { id: "saved", label: saved === undefined ? "Saved" : `Saved (${saved})` },
+    { id: "hidden", label: "Hidden" },
+  ];
+  return (
+    <div role="group" aria-label="View" className="flex flex-wrap gap-1">
+      {options.map((option) => (
+        <Button
+          key={option.id}
+          size="sm"
+          variant={view === option.id ? "primary" : "secondary"}
+          aria-pressed={view === option.id}
+          onClick={() => onSelect(option.id)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 /** Bare Feed navigation restores this User's view in this browser tab. An explicit
  * query always wins; replacing the bare entry also keeps browser Back predictable. */
 export function FeedPage({ userId }: { userId?: string }) {
   const location = useLocation();
-  const storageKey = userId ? `jw-feed-view:${userId}` : null;
-  const [initial] = useState(() => {
-    try {
-      return { key: location.key, search: !location.search && storageKey ? sessionStorage.getItem(storageKey) ?? "" : "" };
-    } catch {
-      return { key: location.key, search: "" };
-    }
-  });
+  const [initial] = useState(() => ({
+    key: location.key,
+    search: !location.search && userId ? read(lastFeedKey(userId)) ?? "" : "",
+  }));
   if (location.key === initial.key && initial.search && !location.search) {
     return <Navigate to={{ pathname: "/feed", search: initial.search }} replace />;
   }
-  return <FeedView storageKey={storageKey} />;
+  return <FeedList userId={userId ?? null} />;
 }
 
-function FeedView({ storageKey }: { storageKey: string | null }) {
+function FeedList({ userId }: { userId: string | null }) {
   // Clearing from the empty state also resets the filter boxes, whose typed text would
   // otherwise be applied again after the typing pause.
   const [filtersKey, setFiltersKey] = useState(0);
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const search = params.toString();
+  const view = feedView(params);
   useEffect(() => {
-    if (!storageKey) return;
-    try {
-      sessionStorage.setItem(storageKey, search ? `?${search}` : "");
-    } catch {
-      // URL-based Back still works when browser storage is unavailable.
-    }
-  }, [storageKey, search]);
+    if (!userId) return;
+    // The last Feed URL for bare navigation, and this view's own filters for the switch.
+    write(lastFeedKey(userId), search ? `?${search}` : "");
+    write(viewKey(userId, view), search ? `?${search}` : "");
+  }, [userId, view, search]);
+  // Entering a view shows that view's own last filters, never the ones of the view left.
+  const selectView = (next: FeedView) => {
+    if (next === view) return;
+    const remembered = userId ? read(viewKey(userId, next)) : null;
+    const fallback = next === "all" ? "" : `view=${next}`;
+    setParams(new URLSearchParams(remembered ?? fallback));
+    setFiltersKey((k) => k + 1);
+  };
   const explicit = params.get("section");
   const requested: Section = explicit === "link" ? "link" : "email";
   const feed = useFeed(feedQuery(params, requested));
@@ -140,7 +169,8 @@ function FeedView({ storageKey }: { storageKey: string | null }) {
     !explicit && counts && counts.with_email === 0 && counts.apply_link_only > 0 ? "link" : requested;
   const shown = useFeed(feedQuery(params, section));
   const data = section === requested ? feed.data : shown.data;
-  const hidden = params.get("hidden") === "1";
+  const hidden = view === "hidden";
+  const savedView = view === "saved";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const currentResult = section === requested ? feed : shown;
@@ -149,24 +179,34 @@ function FeedView({ storageKey }: { storageKey: string | null }) {
     if (!data || currentResult.isPlaceholderData || currentResult.isFetching || currentResult.isError || page <= pages) return;
     setParams(withParam(params, "page", pages > 1 ? String(pages) : null), { replace: true });
   }, [data, currentResult.isPlaceholderData, currentResult.isFetching, currentResult.isError, page, pages, params, setParams]);
+  // Back from a Job: return to the card that was opened, once this page's results are in.
+  const restored = useRef(false);
+  const settled = Boolean(data) && !currentResult.isPlaceholderData && !currentResult.isFetching;
+  useEffect(() => {
+    if (restored.current || !settled) return;
+    restored.current = true;
+    const y = takeScroll(location.search);
+    if (y !== null) window.scrollTo(0, y);
+  }, [settled, location.search]);
   const match = feedMatch(params);
+  // The shortlist has no match categories; its empty states are its own.
   const nothingAtAll =
-    counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) + (counts.review_matches ?? 0) === 0;
+    !savedView && counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) + (counts.review_matches ?? 0) === 0;
 
   return (
     <>
       <PageHeader
-        title={hidden ? "Hidden jobs" : "Feed"}
+        title={hidden ? "Hidden jobs" : savedView ? "Saved jobs" : "Feed"}
         description={
-          data?.last_updated_at
-            ? `Jobs that match your preferences, one card per real opening. Updated ${fromNow(data.last_updated_at)}.`
-            : "Jobs that match your preferences, one card per real opening."
+          savedView
+            ? "Jobs you saved to come back to. They stay here until you remove them."
+            : hidden
+              ? "Jobs you hid from your feed. Show one again to bring it back."
+              : data?.last_updated_at
+                ? `Jobs that match your preferences, one card per real opening. Updated ${fromNow(data.last_updated_at)}.`
+                : "Jobs that match your preferences, one card per real opening."
         }
-        action={
-          <Button variant="secondary" size="sm" onClick={() => setParams(withParam(params, "hidden", hidden ? null : "1"))}>
-            {hidden ? "Back to feed" : "Hidden jobs"}
-          </Button>
-        }
+        action={<ViewSwitch view={view} saved={counts?.saved} onSelect={selectView} />}
       />
       <Reminders />
       {feed.isError && (
@@ -175,15 +215,60 @@ function FeedView({ storageKey }: { storageKey: string | null }) {
         </Alert>
       )}
       <FeedFilters key={filtersKey} params={params} onChange={setParams} sources={data?.sources ?? []} />
-      <MatchSwitch
-        match={match}
-        counts={counts}
-        onSelect={(next) => setParams(withParam(params, "match", next === "title" ? null : next))}
-      />
-      <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
+      {savedView ? (
+        data && (
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-400" role="status">
+            {hasFilters(params)
+              ? `Showing ${data.total} of ${data.counts.saved ?? 0} saved ${data.counts.saved === 1 ? "job" : "jobs"}.`
+              : `${data.counts.saved ?? 0} saved ${data.counts.saved === 1 ? "job" : "jobs"}, most recently saved first.`}
+          </p>
+        )
+      ) : (
+        <>
+          <MatchSwitch
+            match={match}
+            counts={counts}
+            onSelect={(next) => setParams(withParam(params, "match", next === "title" ? null : next))}
+          />
+          <SectionTabs section={section} counts={counts} onSelect={(next) => setParams(withParam(params, "section", next))} />
+        </>
+      )}
 
       {feed.isPending ? (
         <PageSpinner label="Loading your feed" />
+      ) : savedView && data && data.items.length === 0 ? (
+        hasFilters(params) && (data.counts.saved ?? 0) > 0 ? (
+          <EmptyState
+            icon={SearchX}
+            title="No saved jobs match these filters"
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setParams(clearFilters(params));
+                  setFiltersKey((k) => k + 1);
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          >
+            Your saved jobs are still here. Clear the filters to see all of them.
+          </EmptyState>
+        ) : (
+          <EmptyState
+            icon={Bookmark}
+            title="No saved jobs yet"
+            action={
+              <Button variant="secondary" onClick={() => selectView("all")}>
+                Back to all jobs
+              </Button>
+            }
+          >
+            Save a job with its bookmark to keep a shortlist. Saved jobs stay here after you hide them, change your
+            preferences or the listing closes.
+          </EmptyState>
+        )
       ) : nothingAtAll && hasFilters(params) ? (
         <EmptyState
           icon={SearchX}
@@ -208,8 +293,8 @@ function FeedView({ storageKey }: { storageKey: string | null }) {
             icon={Inbox}
             title="No hidden jobs"
             action={
-              <Button variant="secondary" onClick={() => setParams(withParam(params, "hidden", null))}>
-                Back to feed
+              <Button variant="secondary" onClick={() => selectView("all")}>
+                Back to all jobs
               </Button>
             }
           >

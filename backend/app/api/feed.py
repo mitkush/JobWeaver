@@ -31,6 +31,28 @@ async def unhide_job(db: DbSession, user: CurrentUser, job_id: uuid.UUID) -> Res
     return Response(status_code=204)
 
 
+@router.post("/feed/{job_id}/save", status_code=204)
+async def save_job(db: DbSession, user: CurrentUser, job_id: uuid.UUID) -> Response:
+    await feed.set_saved(db, user, job_id, True)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/feed/{job_id}/save", status_code=204)
+async def unsave_job(db: DbSession, user: CurrentUser, job_id: uuid.UUID) -> Response:
+    await feed.set_saved(db, user, job_id, False)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/jobs/{job_id}/viewed", status_code=204)
+async def job_viewed(db: DbSession, user: CurrentUser, job_id: uuid.UUID) -> Response:
+    """Sent by the Job page once it has loaded, never by a Feed card appearing."""
+    await feed.mark_viewed(db, user, job_id)
+    await db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(db: DbSession, user: CurrentUser, job_id: uuid.UUID) -> JobDetailOut:
     return await feed.job_detail(db, user, job_id)
