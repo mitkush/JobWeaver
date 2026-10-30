@@ -143,6 +143,12 @@ function FeedView({ storageKey }: { storageKey: string | null }) {
   const hidden = params.get("hidden") === "1";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const currentResult = section === requested ? feed : shown;
+  useEffect(() => {
+    // Previous-query placeholder data cannot tell us how many pages this view has.
+    if (!data || currentResult.isPlaceholderData || currentResult.isFetching || currentResult.isError || page <= pages) return;
+    setParams(withParam(params, "page", pages > 1 ? String(pages) : null), { replace: true });
+  }, [data, currentResult.isPlaceholderData, currentResult.isFetching, currentResult.isError, page, pages, params, setParams]);
   const match = feedMatch(params);
   const nothingAtAll =
     counts && (counts.title_matches ?? 0) + (counts.keyword_matches ?? 0) + (counts.review_matches ?? 0) === 0;

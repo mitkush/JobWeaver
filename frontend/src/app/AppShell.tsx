@@ -79,6 +79,7 @@ function GmailBanner({ me }: { me: Me }) {
 }
 
 export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
+  const location = useLocation();
   const signOut = useSignOut();
   const navigate = useNavigate();
   const onboarding = me.onboarding.next_step !== "done";
@@ -95,7 +96,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
               {nav.map((item) => (
                 <NavLink
                   key={item.to}
-                  to={item.to}
+                  to={item.to === "/feed" && location.pathname === "/feed" ? location.pathname + location.search : item.to}
                   className={({ isActive }) =>
                     cn(
                       "py-1.5 font-mono text-[11px] font-bold tracking-[0.24em] whitespace-nowrap uppercase transition-colors",
@@ -129,7 +130,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
         {!onboarding && (
           <nav aria-label="Main mobile" className="flex gap-4 overflow-x-auto px-4 pb-2 md:hidden">
             {nav.map((item) => (
-              <NavLink key={item.to} to={item.to} className="py-1 font-mono text-[11px] font-bold tracking-[0.18em] whitespace-nowrap text-slate-600 uppercase aria-[current=page]:text-accent-700 dark:text-slate-400 dark:aria-[current=page]:text-accent-300">
+              <NavLink key={item.to} to={item.to === "/feed" && location.pathname === "/feed" ? location.pathname + location.search : item.to} className="py-1 font-mono text-[11px] font-bold tracking-[0.18em] whitespace-nowrap text-slate-600 uppercase aria-[current=page]:text-accent-700 dark:text-slate-400 dark:aria-[current=page]:text-accent-300">
                 {({ isActive }) => <NavLabel label={item.label} active={isActive} />}
               </NavLink>
             ))}

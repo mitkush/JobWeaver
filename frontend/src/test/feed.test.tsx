@@ -3,13 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { Link, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { AppShell } from "@/app/AppShell";
 import type { JobDetail } from "@/api/client";
 import { formatLocation } from "@/features/feed/format";
 import { feedQuery } from "@/features/feed/feed-params";
 import { FeedPage } from "@/pages/FeedPage";
 import { JobPage } from "@/pages/JobPage";
 
-import { json, makeCard, makeFeed, mockFetch, renderWithApp, expectAccessible } from "./utils";
+import { json, makeCard, makeFeed, makeMe, mockFetch, renderWithApp, expectAccessible } from "./utils";
 
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
@@ -361,7 +362,7 @@ it("puts the description first and names where it came from", async () => {
 
 it("returns to the same Feed filters from a Job", async () => {
   mockFetch({
-    "GET /api/feed": () => json(makeFeed([makeCard()])),
+    "GET /api/feed": () => json(makeFeed([makeCard()], { total: 60 })),
     "GET /api/jobs/job-1": () => json(makeJob()),
   });
   renderWithApp(feedRoutes(), { route: "/feed?q=rails&section=email&page=2" });
@@ -436,4 +437,42 @@ it("keeps search boxes in sync with browser Back without reapplying newer text",
   await new Promise(resolve => setTimeout(resolve, 400));
   expect(queryOf(calls.at(-1)!).get("q")).toBe("first");
   expect(queryOf(calls.at(-1)!).get("location")).toBe("India");
+});
+
+
+it("recovers a remembered page after results shrink to one page", async () => {
+  sessionStorage.setItem("jw-feed-view:u1", "?q=rails&section=link&page=3");
+  const calls = mockFetch({ "GET /api/feed": request => json(makeFeed(
+    queryOf(request).get("offset") === "0" ? [makeCard()] : [], { total: 5 },
+  )) });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("rails");
+  expect(screen.getByRole("tab", { name: /Apply link only/ })).toHaveAttribute("aria-selected", "true");
+  await waitFor(() => expect(sessionStorage.getItem("jw-feed-view:u1")).toBe("?q=rails&section=link"));
+  const offsets = calls.filter(c => new URL(c.url).pathname === "/api/feed").map(c => queryOf(c).get("offset"));
+  expect(offsets).toEqual(["40", "0"]);
+});
+
+it("caps an out-of-range page at the last available page", async () => {
+  mockFetch({ "GET /api/feed": request => json(makeFeed(
+    queryOf(request).get("offset") === "20" ? [makeCard()] : [], { total: 25 },
+  )) });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed?page=8&work_mode=remote" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  expect(screen.getByLabelText("Work mode")).toHaveValue("remote");
+});
+
+it("keeps the current view when Feed is clicked in either navigation", async () => {
+  mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()], { total: 60 })) });
+  renderWithApp(<AppShell me={makeMe()}><FeedPage userId="u1" /></AppShell>, { route: "/feed?q=rails&page=2&section=link" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  for (const name of ["Main", "Main mobile"]) {
+    const link = within(screen.getByRole("navigation", { name })).getByRole("link", { name: "Feed" });
+    expect(link).toHaveAttribute("href", "/feed?q=rails&page=2&section=link");
+    await userEvent.click(link);
+    expect(screen.getByLabelText("Search title or company")).toHaveValue("rails");
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+  }
 });
