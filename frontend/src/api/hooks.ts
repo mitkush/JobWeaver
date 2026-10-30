@@ -427,6 +427,26 @@ export function useSetHidden() {
   });
 }
 
+export function useSetSaved() {
+  const invalidate = useInvalidateJobs();
+  return useMutation({
+    mutationFn: ({ jobId, saved }: { jobId: string; saved: boolean }) => {
+      const params = { params: { path: { job_id: jobId } } };
+      return unwrap(saved ? api.POST("/api/feed/{job_id}/save", params) : api.DELETE("/api/feed/{job_id}/save", params));
+    },
+    onSettled: invalidate,
+  });
+}
+
+/** Sent once the Job page has loaded; cards appearing in the Feed never mark a Job viewed. */
+export function useMarkViewed() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => unwrap(api.POST("/api/jobs/{job_id}/viewed", { params: { path: { job_id: jobId } } })),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.feed }),
+  });
+}
+
 export function useConfirmDuplicate() {
   const client = useQueryClient();
   return useMutation({

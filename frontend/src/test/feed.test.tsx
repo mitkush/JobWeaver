@@ -125,7 +125,9 @@ it("marks possible duplicates on the card", async () => {
 
 it("keeps the feed state in the URL", () => {
   const query = feedQuery(new URLSearchParams("q=go&within=3&work_mode=bogus&page=2&hidden=1"), "link");
-  expect(query).toMatchObject({ section: "link", q: "go", posted_within_days: 3, hidden: true, offset: 20 });
+  expect(query).toMatchObject({ section: "link", q: "go", posted_within_days: 3, view: "hidden", offset: 20 });
+  expect(feedQuery(new URLSearchParams("view=saved&viewed=unviewed"), "email")).toMatchObject({ view: "saved", viewed: "unviewed" });
+  expect(feedQuery(new URLSearchParams("viewed=bogus"), "email").viewed).toBeUndefined();
   expect(query.work_mode).toBeUndefined();
 });
 
@@ -475,4 +477,128 @@ it("keeps the current view when Feed is clicked in either navigation", async () 
     expect(screen.getByLabelText("Search title or company")).toHaveValue("rails");
     expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
   }
+});
+
+const feedPath = (c: Request) => new URL(c.url).pathname === "/api/feed";
+
+it("saves a job from its card with a pressed bookmark and shows Viewed", async () => {
+  document.cookie = "jw_csrf=t";
+  let saved = false;
+  const calls = mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard({ saved, viewed: true })], { counts: { with_email: 1, apply_link_only: 0, title_matches: 1, saved: saved ? 1 : 0 } })),
+    "POST /api/feed/job-1/save": () => { saved = true; return new Response(null, { status: 204 }); },
+  });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed" });
+  const bookmark = await screen.findByRole("button", { name: "Save Backend Engineer" });
+  expect(bookmark).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getAllByText("Viewed").some((el) => el.tagName === "SPAN")).toBe(true);
+  await userEvent.click(bookmark);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save Backend Engineer" })).toHaveAttribute("aria-pressed", "true"));
+  expect(calls.some((c) => c.method === "POST" && new URL(c.url).pathname === "/api/feed/job-1/save")).toBe(true);
+  expect(screen.getByRole("button", { name: "Saved (1)" })).toBeInTheDocument();
+});
+
+it("enters Saved without the Feed's filters, lists every bookmark and returns to the Feed's own view", async () => {
+  const calls = mockFetch({
+    "GET /api/feed": (request) => {
+      const view = new URL(request.url).searchParams.get("view");
+      return view === "saved"
+        ? json(makeFeed([makeCard({ saved: true, hidden: true, expired: true, contact_email: null })], { total: 1, counts: { with_email: 0, apply_link_only: 0, saved: 3 } }))
+        : json(makeFeed([makeCard()], { counts: { with_email: 1, apply_link_only: 0, title_matches: 1, saved: 3 } }));
+    },
+  });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed?q=rails&section=link" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("button", { name: "Saved (3)" }));
+  await screen.findByRole("heading", { name: "Saved jobs" });
+  expect(screen.getByRole("button", { name: "Saved (3)" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "All jobs" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText(/Jobs you saved to come back to/)).toBeInTheDocument();
+  const savedRequest = new URL(calls.filter(feedPath).at(-1)!.url).searchParams;
+  expect(savedRequest.get("view")).toBe("saved");
+  expect(savedRequest.get("q")).toBeNull();
+  expect(screen.getByLabelText("Search title or company")).toHaveValue("");
+  // No category or email/link tabs: nothing saved can look missing.
+  expect(screen.queryByRole("tablist", { name: "Feed sections" })).toBeNull();
+  expect(await screen.findByText("3 saved jobs, most recently saved first.")).toBeInTheDocument();
+  expect(screen.getByText("Expired")).toBeInTheDocument();
+  // The card says it is hidden; the view switch's Hidden button is the other match.
+  expect(screen.getAllByText("Hidden").some((el) => el.tagName === "SPAN")).toBe(true);
+
+  await userEvent.click(screen.getByRole("button", { name: "All jobs" }));
+  await screen.findByRole("heading", { name: "Feed" });
+  await waitFor(() => expect(screen.getByLabelText("Search title or company")).toHaveValue("rails"));
+  const back = new URL(calls.filter(feedPath).at(-1)!.url).searchParams;
+  expect(back.get("q")).toBe("rails");
+  expect(back.get("view")).toBe("all");
+});
+
+it("counts a filtered shortlist against every bookmark", async () => {
+  mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard({ saved: true })], { total: 1, counts: { with_email: 0, apply_link_only: 0, saved: 12 } })),
+  });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed?view=saved&q=acme" });
+  expect(await screen.findByText("Showing 1 of 12 saved jobs.")).toBeInTheDocument();
+});
+
+it("explains an empty shortlist, and a filtered one that hides bookmarks", async () => {
+  mockFetch({
+    "GET /api/feed": (request) =>
+      json(makeFeed([], { total: 0, counts: { with_email: 0, apply_link_only: 0, saved: new URL(request.url).searchParams.get("q") ? 2 : 0 } })),
+  });
+  const { unmount } = renderWithApp(<FeedPage userId="u1" />, { route: "/feed?view=saved" });
+  expect(await screen.findByText("No saved jobs yet")).toBeInTheDocument();
+  unmount();
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed?view=saved&q=zzz" });
+  expect(await screen.findByText("No saved jobs match these filters")).toBeInTheDocument();
+  await expectAccessible();
+});
+
+it("filters by viewing status", async () => {
+  const calls = mockFetch({ "GET /api/feed": () => json(makeFeed([makeCard()])) });
+  renderWithApp(<FeedPage userId="u1" />, { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.selectOptions(screen.getByLabelText("Viewing status"), "unviewed");
+  await waitFor(() => expect(new URL(calls.filter(feedPath).at(-1)!.url).searchParams.get("viewed")).toBe("unviewed"));
+  expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument();
+});
+
+it("marks a Job viewed once its page has loaded, and saves it from the page", async () => {
+  document.cookie = "jw_csrf=t";
+  let saved = false;
+  const calls = mockFetch({
+    "GET /api/jobs/job-1": () => json(makeJob({ saved, viewed: false })),
+    "POST /api/jobs/job-1/viewed": () => new Response(null, { status: 204 }),
+    "POST /api/feed/job-1/save": () => { saved = true; return new Response(null, { status: 204 }); },
+  });
+  renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
+  const save = await screen.findByRole("button", { name: "Save" });
+  await waitFor(() => expect(calls.filter((c) => c.method === "POST" && new URL(c.url).pathname === "/api/jobs/job-1/viewed")).toHaveLength(1));
+  expect(save).toHaveAttribute("aria-pressed", "false");
+  await userEvent.click(save);
+  expect(await screen.findByRole("button", { name: "Saved" })).toHaveAttribute("aria-pressed", "true");
+  expect(calls.filter((c) => c.method === "POST" && new URL(c.url).pathname === "/api/jobs/job-1/viewed")).toHaveLength(1);
+});
+
+it("does not report a Job viewed again", async () => {
+  const calls = mockFetch({ "GET /api/jobs/job-1": () => json(makeJob({ viewed: true })) });
+  renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
+  await screen.findByRole("button", { name: "Save" });
+  expect(calls.some((c) => c.method === "POST")).toBe(false);
+});
+
+it("returns to the card that was opened", async () => {
+  const scrollTo = vi.fn();
+  vi.stubGlobal("scrollTo", scrollTo);
+  mockFetch({
+    "GET /api/feed": () => json(makeFeed([makeCard()])),
+    "GET /api/jobs/job-1": () => json(makeJob()),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed?q=rails" });
+  Object.defineProperty(window, "scrollY", { value: 640, configurable: true });
+  await userEvent.click(await screen.findByRole("link", { name: "Backend Engineer" }));
+  await userEvent.click(await screen.findByRole("link", { name: "Back to feed" }));
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await waitFor(() => expect(scrollTo).toHaveBeenCalledWith(0, 640));
+  Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
 });

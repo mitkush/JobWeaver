@@ -20,7 +20,11 @@ class FeedQuery(BaseModel):
     work_mode: WorkMode | None = None
     source: str | None = Field(default=None, max_length=64)
     posted_within_days: int | None = Field(default=None, ge=1, le=90)
+    # "all": the Feed; "saved": every bookmark, whatever its match, section, hidden or
+    # expired state; "hidden": Jobs the User hid. `hidden=true` is the older spelling.
+    view: Literal["all", "saved", "hidden"] = "all"
     hidden: bool = False
+    viewed: Literal["any", "unviewed", "viewed"] = "any"
     limit: int = Field(default=30, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
@@ -63,6 +67,9 @@ class FeedCard(BaseModel):
     skill_matches: list[str] | None = None
     possible_duplicate: bool
     hidden: bool
+    saved: bool = False
+    viewed: bool = False
+    expired: bool = False
     draft_id: uuid.UUID | None = None
     application_status: str | None = None
     company_applied: bool = False
@@ -78,6 +85,8 @@ class FeedCounts(BaseModel):
     title_matches: int = 0
     keyword_matches: int = 0
     review_matches: int = 0
+    # Every bookmark, without filters: the number on the Saved view switch.
+    saved: int = 0
 
 
 class FeedOut(BaseModel):
@@ -144,6 +153,8 @@ class JobDetailOut(BaseModel):
     skill_matches: list[str] | None = None
     hidden: bool
     expired: bool
+    saved: bool = False
+    viewed: bool = False
     postings: list[PostingOut]
     possible_duplicates: list[PossibleDuplicateOut]
     draft_id: uuid.UUID | None = None

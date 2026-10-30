@@ -162,6 +162,7 @@ async def test_saving_preferences_fills_the_feed_at_once(alice, db):
         "title_matches": 2,
         "keyword_matches": 0,
         "review_matches": 0,
+        "saved": 0,
     }
     [card] = body["items"]
     assert card["title"] == "Backend Engineer"

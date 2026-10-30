@@ -104,12 +104,17 @@ class UserJob(Base):
     __table_args__ = (
         Index("idx_user_jobs_user_job", "user_id", "job_id", unique=True),
         Index("idx_user_jobs_user_hidden", "user_id", "hidden_at"),
+        Index("idx_user_jobs_user_saved", "user_id", "saved_at"),
         Index("idx_user_jobs_job", "job_id"),
     )
 
     user_id: Mapped[uuid.UUID] = user_fk()
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Saved for later: kept through Feed rebuilds, shown even after the Job expires.
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the User opens the Job page.
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Explicitly saved Jobs survive Preferences and automatic Feed rebuilds.
     captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Reviewed page text belongs to this User, never overwrites a shared Posting.

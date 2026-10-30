@@ -616,6 +616,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/feed/{job_id}/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Job */
+        post: operations["save_job_api_feed__job_id__save_post"];
+        /** Unsave Job */
+        delete: operations["unsave_job_api_feed__job_id__save_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/viewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Job Viewed
+         * @description Sent by the Job page once it has loaded, never by a Feed card appearing.
+         */
+        post: operations["job_viewed_api_jobs__job_id__viewed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2265,6 +2303,21 @@ export interface components {
             possible_duplicate: boolean;
             /** Hidden */
             hidden: boolean;
+            /**
+             * Saved
+             * @default false
+             */
+            saved?: boolean;
+            /**
+             * Viewed
+             * @default false
+             */
+            viewed?: boolean;
+            /**
+             * Expired
+             * @default false
+             */
+            expired?: boolean;
             /** Draft Id */
             draft_id?: string | null;
             /** Application Status */
@@ -2303,6 +2356,11 @@ export interface components {
              * @default 0
              */
             review_matches?: number;
+            /**
+             * Saved
+             * @default 0
+             */
+            saved?: number;
         };
         /** FeedOut */
         FeedOut: {
@@ -2496,6 +2554,16 @@ export interface components {
             hidden: boolean;
             /** Expired */
             expired: boolean;
+            /**
+             * Saved
+             * @default false
+             */
+            saved?: boolean;
+            /**
+             * Viewed
+             * @default false
+             */
+            viewed?: boolean;
             /** Postings */
             postings: components["schemas"]["PostingOut"][];
             /** Possible Duplicates */
@@ -4417,7 +4485,9 @@ export interface operations {
                 work_mode?: components["schemas"]["WorkMode"] | null;
                 source?: string | null;
                 posted_within_days?: number | null;
+                view?: "all" | "saved" | "hidden";
                 hidden?: boolean;
+                viewed?: "any" | "unviewed" | "viewed";
                 limit?: number;
                 offset?: number;
             };
@@ -4481,6 +4551,99 @@ export interface operations {
         };
     };
     unhide_job_api_feed__job_id__hide_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_job_api_feed__job_id__save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsave_job_api_feed__job_id__save_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: {
+                jw_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_viewed_api_jobs__job_id__viewed_post: {
         parameters: {
             query?: never;
             header?: never;
