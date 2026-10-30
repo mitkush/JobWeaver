@@ -5,8 +5,33 @@ on:
   push:
     branches: [main]
 
+# Cancel superseded PR work, but retain full validation for every main commit.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.scope.outputs.backend }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      extension: ${{ steps.scope.outputs.extension }}
+      docker: ${{ steps.scope.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 -m unittest discover -s scripts -p 'test_ci_scope.py'
+      - id: scope
+        run: python3 scripts/ci_scope.py
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,6 +68,8 @@ jobs:
         run: pytest --cov=app --cov-report=term-missing
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,6 +97,8 @@ jobs:
       - run: npm run build
 
   extension:
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,6 +116,8 @@ jobs:
       - run: npm run build
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
