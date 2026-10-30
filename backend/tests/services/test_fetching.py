@@ -1524,3 +1524,191 @@ async def test_a_new_broad_search_backfills_when_a_replaced_search_never_ran(db,
     assert (await fetcher.run_source(Broadening.name)).status == "succeeded"
     [(_, window)] = Broadening.windows
     assert window.until - window.since == timedelta(days=fetcher.settings.backfill_days)
+
+
+@pytest.mark.parametrize("save_fails", [False, True])
+async def test_resumable_collection_survives_restart_and_uses_original_account(
+    db, clock, monkeypatch, save_fails
+):
+    from app.models import PendingCollection, QueryWatermark
+    from app.services import fetching
+    from app.services.provider_credentials import credentials
+
+    class AsyncSearch(FakeSearch):
+        name = "fake-async"
+        per_query = False
+        resumable_collections = True
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+        starts = 0
+        seen = []
+
+        async def fetch_window(self, query, window):
+            type(self).seen.append((self.collection_id, self.settings.brightdata_api_key, window))
+            if self.collection_id is None:
+                type(self).starts += 1
+                await self.checkpoint_collection("snapshot-one")
+                # The checkpoint is committed before polling and visible in another session.
+                async with get_sessionmaker()() as check:
+                    assert (
+                        await check.scalar(select(PendingCollection.external_id)) == "snapshot-one"
+                    )
+                if not save_fails:
+                    raise SourceUnavailable("Still running")
+            return FetchResult(postings=[posting("async-one")], credits_used=4)
+
+    registry.register_adapter(AsyncSearch)
+    settings = Settings(brightdata_api_key="account-a,account-b")
+    original_save = fetching.save_postings
+    if save_fails:
+
+        async def fail_save(*args, **kwargs):
+            if args[1] == AsyncSearch.name:
+                raise RuntimeError("database save failed")
+            return await original_save(*args, **kwargs)
+
+        monkeypatch.setattr(fetching, "save_postings", fail_save)
+    first = Fetcher(get_sessionmaker(), settings=settings, clock=clock)
+    outcomes = await first.run_all()
+    assert next(o for o in outcomes if o.source == AsyncSearch.name).status == "failed"
+    async with get_sessionmaker()() as check:
+        pending = await check.scalar(select(PendingCollection))
+        assert pending is not None
+        original_window = FetchWindow(since=pending.window_since, until=pending.window_until)
+        assert pending.credits_recorded == (4 if save_fails else 0)
+        assert (
+            await check.scalar(
+                select(QueryWatermark).where(QueryWatermark.source == AsyncSearch.name)
+            )
+            is None
+        )
+    monkeypatch.setattr(fetching, "save_postings", original_save)
+    clock.now += timedelta(days=1)
+    # Even a newer watermark must not skip a pending import or move backwards.
+    if not save_fails:
+        async with get_sessionmaker()() as check:
+            check.add(
+                QueryWatermark(source=AsyncSearch.name, query_key="all", last_until=clock.now)
+            )
+            await check.commit()
+    # Simulate a new process and a re-ordered key pool. Resume with account-a.
+    second = Fetcher(
+        get_sessionmaker(), settings=Settings(brightdata_api_key="account-b,account-a"), clock=clock
+    )
+    await second.run_all()
+    assert AsyncSearch.starts == 1
+    assert AsyncSearch.seen[-1] == ("snapshot-one", "account-a", original_window)
+    async with get_sessionmaker()() as check:
+        assert await check.scalar(select(PendingCollection)) is None
+        mark = await check.scalar(
+            select(QueryWatermark).where(QueryWatermark.source == AsyncSearch.name)
+        )
+        assert mark.last_until == (original_window.until if save_fails else clock.now)
+        assert await check.scalar(select(Posting).where(Posting.source_job_id == "async-one"))
+        runs = list(
+            (await check.scalars(select(FetchRun).where(FetchRun.source == AsyncSearch.name))).all()
+        )
+        assert sum(r.credits_used for r in runs) == 4
+        assert runs[-1].window_until == original_window.until
+        expected = credentials(AsyncSearch, settings)[0].fingerprint
+        assert all(r.credential_fingerprint == expected for r in runs)
+
+
+async def test_pending_collection_with_removed_key_does_not_start_a_duplicate(
+    db, clock, monkeypatch
+):
+    from app.models import PendingCollection
+
+    monkeypatch.setattr(FakeSearch, "resumable_collections", True)
+    monkeypatch.setattr(FakeSearch, "per_query", False)
+    monkeypatch.setattr(
+        FakeSearch, "credential_settings", ("brightdata_api_key", "brightdata_api_keys")
+    )
+    db.add(
+        PendingCollection(
+            source=FakeSearch.name,
+            query_key="all",
+            external_id="existing",
+            credential_fingerprint="removed-key-fingerprint",
+            window_since=START - timedelta(days=1),
+            window_until=START,
+            credits_recorded=0,
+        )
+    )
+    await db.commit()
+    fetcher = Fetcher(
+        get_sessionmaker(), settings=Settings(brightdata_api_key="different-key"), clock=clock
+    )
+    outcomes = await fetcher.run_all()
+    outcome = next(o for o in outcomes if o.source == FakeSearch.name)
+    assert outcome.status == "failed" and "credential is missing" in outcome.message
+    assert FakeSearch.windows == []
+    async with get_sessionmaker()() as check:
+        assert await check.scalar(select(PendingCollection.external_id)) == "existing"
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+@pytest.mark.parametrize("failure", ["quota", "credential"])
+async def test_inflight_collection_never_rotates_on_misclassified_rejection(
+    db, clock, resumed, failure
+):
+    from app.adapters.errors import SourceCredentialRejected, SourceQuotaRejected
+    from app.models import PendingCollection
+    from app.services.provider_credentials import credentials
+
+    class AsyncSearch(FakeSearch):
+        name = "fake-async-rejected"
+        per_query = False
+        resumable_collections = True
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+        starts = 0
+        attempts = []
+
+        async def fetch_window(self, query, window):
+            type(self).attempts.append(self.settings.brightdata_api_key)
+            if self.collection_id is None:
+                type(self).starts += 1
+                await self.checkpoint_collection("account-a-snapshot")
+            error = SourceQuotaRejected if failure == "quota" else SourceCredentialRejected
+            raise error("Account rejected after the collection started")
+
+    registry.register_adapter(AsyncSearch)
+    settings = Settings(brightdata_api_key="account-a,account-b")
+    fingerprint = credentials(AsyncSearch, settings)[0].fingerprint
+    if resumed:
+        db.add(
+            PendingCollection(
+                source=AsyncSearch.name,
+                query_key="all",
+                external_id="account-a-snapshot",
+                credential_fingerprint=fingerprint,
+                window_since=START - timedelta(days=1),
+                window_until=START,
+                credits_recorded=0,
+            )
+        )
+        await db.commit()
+    outcome = await Fetcher(get_sessionmaker(), settings=settings, clock=clock).run_source(
+        AsyncSearch.name
+    )
+    assert outcome.status == "failed"
+    assert outcome.message == "Account rejected after the collection started"
+    assert AsyncSearch.attempts == ["account-a"]
+    assert AsyncSearch.starts == (0 if resumed else 1)
+    async with get_sessionmaker()() as check:
+        pending = await check.scalar(
+            select(PendingCollection).where(PendingCollection.source == AsyncSearch.name)
+        )
+        assert pending.external_id == "account-a-snapshot"
+        assert pending.credential_fingerprint == fingerprint
+        run = await check.scalar(select(FetchRun).where(FetchRun.source == AsyncSearch.name))
+        assert run.status == RunStatus.FAILED
+        assert run.credential_fingerprint == fingerprint
+
+
+async def test_resumable_adapters_cannot_loop_on_an_incomplete_snapshot(db, clock, monkeypatch):
+    monkeypatch.setattr(FakeSearch, "resumable_collections", True)
+    monkeypatch.setattr(FakeSearch, "retry_incomplete_window", True)
+    outcome = await Fetcher(get_sessionmaker(), clock=clock).run_source(FakeSearch.name)
+    assert outcome.status == "failed"
+    assert "pagination-aware checkpoints" in outcome.message
+    assert FakeSearch.windows == []

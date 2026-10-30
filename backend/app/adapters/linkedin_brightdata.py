@@ -82,6 +82,7 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     monthly_allowance = 5000
     allowance_unit = "credits"
     renewal_day = 1
+    resumable_collections = True
     poll_interval_seconds = 10.0
     poll_timeout = timedelta(minutes=15)
 
@@ -168,7 +169,11 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult:
         self.ensure_configured()
         assert query is not None
-        snapshot_id = await self._trigger(query, window)
+        snapshot_id = self.collection_id
+        if snapshot_id is None:
+            snapshot_id = await self._trigger(query, window)
+            if self.checkpoint_collection is not None:
+                await self.checkpoint_collection(snapshot_id)
         records = await self._wait_and_download(snapshot_id)
         postings = [p for r in records if (p := self._to_posting(r)) is not None]
         cap = self.settings.brightdata_limit_per_search
@@ -235,16 +240,32 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         waited = 0.0
         while waited <= self.poll_timeout.total_seconds():
             progress = await self.http.get(f"{API}/progress/{snapshot_id}", headers=self._headers)
+            if progress.status_code == 404:
+                # The fetcher pins the original credential and forbids rotation once
+                # a collection starts. Treat 404 as unavailable/expired only under that
+                # invariant; a wrong-account 404 must never discard another account's id.
+                if self.checkpoint_collection is not None:
+                    await self.checkpoint_collection(None)
+                raise SourceUnavailable(
+                    "Bright Data collection expired; the next run starts a new search"
+                )
             self.check_response(self.label, progress)
             status = str(progress.json().get("status", "")).lower()
             if status == "ready":
                 break
-            if status == "failed":
-                raise SourceUnavailable("Bright Data could not finish the LinkedIn search")
+            if status in ("failed", "canceled", "cancelled"):
+                if self.checkpoint_collection is not None:
+                    await self.checkpoint_collection(None)
+                raise SourceUnavailable(
+                    "Bright Data collection failed or was canceled; "
+                    "the next run starts a new search"
+                )
             await self.sleep(self.poll_interval_seconds)
             waited += self.poll_interval_seconds
         else:
-            raise SourceUnavailable("Bright Data took too long; the search is retried next run")
+            raise SourceUnavailable(
+                "Bright Data is still collecting; the next run resumes the same collection"
+            )
 
         response = await self.http.get(
             f"{API}/snapshot/{snapshot_id}", params={"format": "json"}, headers=self._headers
