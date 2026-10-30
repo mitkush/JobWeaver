@@ -13,6 +13,7 @@ from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, te
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.adapters.normalize import normalize_city
 from app.adapters.posting_policy import BLOCKED_COMPANIES
@@ -407,6 +408,17 @@ async def _matches(
     return result
 
 
+def _kept_by_user(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Explicit reasons to retain a nonmatching Job; viewing only retains history."""
+    return or_(
+        UserJob.hidden_at.is_not(None),
+        UserJob.saved_at.is_not(None),
+        UserJob.captured_at.is_not(None),
+        exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
+        exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
+    )
+
+
 async def _apply_links(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -448,12 +460,8 @@ async def _apply_links(
     await session.execute(
         delete(UserJob).where(
             *gone,
-            UserJob.hidden_at.is_(None),
-            UserJob.saved_at.is_(None),
+            ~_kept_by_user(user_id),
             UserJob.viewed_at.is_(None),
-            UserJob.captured_at.is_(None),
-            ~exists().where(Draft.user_id == user_id, Draft.job_id == UserJob.job_id),
-            ~exists().where(Application.user_id == user_id, Application.job_id == UserJob.job_id),
         )
     )
     await session.execute(
@@ -537,12 +545,7 @@ def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, 
             or_(
                 UserJob.match_kind.is_not(None),
                 UserJob.viewed_at.is_(None),
-                UserJob.saved_at.is_not(None),
-                UserJob.captured_at.is_not(None),
-                exists().where(Draft.user_id == user.id, Draft.job_id == UserJob.job_id),
-                exists().where(
-                    Application.user_id == user.id, Application.job_id == UserJob.job_id
-                ),
+                _kept_by_user(user.id),
             )
         )
     if query.viewed != "any":
