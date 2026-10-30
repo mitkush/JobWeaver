@@ -509,6 +509,11 @@ class _Raises:
     [
         (RuntimeError("bug"), "Something went wrong while writing"),
         (GatewayError("all providers down"), "AI services are busy"),
+        (
+            GatewayError("private provider diagnostic", user_message="Usage limit reached."),
+            "Usage limit reached.",
+        ),
+        (TimeoutError(), "Draft generation reached its time limit"),
     ],
 )
 async def test_generation_failures_never_leave_a_draft_spinning(prepared, error, message):

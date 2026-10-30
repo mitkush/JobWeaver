@@ -576,14 +576,24 @@ async def generate(draft_id: uuid.UUID, user_id: uuid.UUID, gateway: BaseAIGatew
         except _Unverified:
             await _fail(session, draft_id, user_id, NOTHING_VERIFIED)
         except (GatewayError, TimeoutError) as exc:
-            # The User sees "busy"; the log keeps every provider's own reason.
+            # Provider bodies stay in logs; only gateway-owned recovery text reaches the UI.
             reason = (
                 exc.message
                 if isinstance(exc, GatewayError)
                 else "Draft AI phase exceeded its deadline"
             )
             logger.warning("Draft %s generation failed: %s", draft_id, reason)
-            await _fail(session, draft_id, user_id, AI_BUSY)
+            await _fail(
+                session,
+                draft_id,
+                user_id,
+                (exc.user_message or AI_BUSY)
+                if isinstance(exc, GatewayError)
+                else (
+                    "Draft generation reached its time limit. "
+                    "Retry generation; your Facts are unchanged."
+                ),
+            )
         except JobWeaverError as exc:
             # Notice, region or Fact Bank preconditions: their message says what to do.
             await _fail(session, draft_id, user_id, exc.message)
