@@ -55,7 +55,7 @@ export function App() {
       <Route path="/privacy/extension" element={<ExtensionPrivacyPage />} />
       <Route path="/" element={<Navigate to="/feed" replace />} />
       <Route path="/onboarding/:step?" element={<Authenticated>{(me) => <OnboardingPage me={me} />}</Authenticated>} />
-      <Route path="/feed" element={<Authenticated>{() => <FeedPage />}</Authenticated>} />
+      <Route path="/feed" element={<Authenticated>{(me) => <FeedPage userId={me.id} />}</Authenticated>} />
       <Route path="/jobs/:jobId" element={<Authenticated>{() => <JobPage />}</Authenticated>} />
       <Route path="/drafts/:draftId" element={<Authenticated>{() => <DraftPage />}</Authenticated>} />
       <Route path="/applications" element={<Authenticated>{() => <ApplicationsPage />}</Authenticated>} />

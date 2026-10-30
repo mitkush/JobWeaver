@@ -25,8 +25,18 @@ export function FeedFilters({
   onChange: (next: URLSearchParams) => void;
   sources: Schemas["SourceBadge"][];
 }) {
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const [location, setLocation] = useState(params.get("location") ?? "");
+  const urlQ = params.get("q") ?? "";
+  const urlLocation = params.get("location") ?? "";
+  const [q, setQ] = useState(urlQ);
+  const [location, setLocation] = useState(urlLocation);
+  const [previousUrl, setPreviousUrl] = useState({ q: urlQ, location: urlLocation });
+  // Back/Forward may change the URL while these boxes remain mounted. Update before
+  // effects run, so a pending typing timer cannot reapply the previous URL's text.
+  if (previousUrl.q !== urlQ || previousUrl.location !== urlLocation) {
+    setPreviousUrl({ q: urlQ, location: urlLocation });
+    if (previousUrl.q !== urlQ) setQ(urlQ);
+    if (previousUrl.location !== urlLocation) setLocation(urlLocation);
+  }
   // The latest URL state, so a delayed search never undoes a filter chosen meanwhile.
   const latest = useRef(params);
   useEffect(() => {
