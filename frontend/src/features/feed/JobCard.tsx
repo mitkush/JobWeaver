@@ -66,6 +66,7 @@ export function JobCard({ job }: { job: FeedCard }) {
               variant="ghost"
               size="sm"
               onClick={toggleSaved}
+              className={setSaved.isPending ? "bookmark-feedback" : undefined}
               loading={setSaved.isPending}
               aria-pressed={job.saved ?? false}
               aria-label={`Save ${job.title}`}

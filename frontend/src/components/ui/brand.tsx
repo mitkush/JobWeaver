@@ -7,5 +7,5 @@ export function BrandMark({ className }: { className?: string }) {
 
 /** The label remains steady while the decorative border moves once. */
 export function BorderGlow() {
-  return <svg className="border-glow" aria-hidden="true" focusable="false" width="100%" height="100%"><rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" pathLength="100" /></svg>;
+  return <svg className="border-glow" aria-hidden="true" focusable="false" width="100%" height="100%"><rect x="1" y="1" pathLength="100" /></svg>;
 }

@@ -184,7 +184,7 @@ export function JobPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <CreateDraftButton jobId={data.job_id} draftId={data.draft_id} disabled={data.expired && !data.draft_id} />
-          <Button variant="secondary" onClick={toggleSaved} loading={setSaved.isPending} aria-pressed={data.saved ?? false}>
+          <Button variant="secondary" onClick={toggleSaved} className={setSaved.isPending ? "bookmark-feedback" : undefined} loading={setSaved.isPending} aria-pressed={data.saved ?? false}>
             {data.saved ? <BookmarkCheck className="size-4" aria-hidden /> : <Bookmark className="size-4" aria-hidden />}
             {data.saved ? "Saved" : "Save"}
           </Button>

@@ -216,21 +216,13 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-  }
-}
-
 /* Short feedback animations; content itself remains steady. */
 @keyframes border-travel {
   0% { stroke-dashoffset: 20; opacity: 0; }
   12%, 85% { opacity: 1; }
   100% { stroke-dashoffset: -100; opacity: 0; }
 }
+/* A distinct name replays the same border pass when hover begins. */
 @keyframes border-travel-hover {
   0% { stroke-dashoffset: 20; opacity: 0; }
   12%, 85% { opacity: 1; }
@@ -250,6 +242,7 @@
   }
   .dark .border-glow { color: var(--jw-400); }
   .border-glow rect {
+    width: calc(100% - 2px); height: calc(100% - 2px);
     fill: none; stroke: currentColor; stroke-width: 2; stroke-dasharray: 18 82; opacity: 0;
     filter: drop-shadow(0 0 3px currentColor);
     animation: border-travel 1400ms ease-out 1 both;
@@ -275,7 +268,7 @@
   .dark .skeleton-line { background-image: linear-gradient(100deg, var(--color-slate-800) 30%, var(--color-slate-700) 50%, var(--color-slate-800) 70%); }
   .ui-button { transition-duration: 160ms; }
   .ui-button:enabled:active { transform: translateY(1px); }
-  .ui-button[aria-pressed="true"] > svg { animation: feedback-pop 180ms ease-out; }
+  .bookmark-feedback > svg { animation: feedback-pop 180ms ease-out; }
   dialog[open], .toast-enter { animation: surface-enter 180ms ease-out both; }
   .success-mark { animation: feedback-pop 180ms ease-out both; }
 }

@@ -18,3 +18,17 @@ A local Brave walkthrough used mocked API responses against the production build
 light and dark Feed, loading skeletons, 375px layout without horizontal overflow,
 valid border dimensions and hover replay, zero running animations under Reduce Motion,
 and no page JavaScript errors. No production data or services were used.
+
+Review follow-up: SVG rectangle dimensions are CSS geometry properties rather than
+`calc()` presentation attributes. Bookmark feedback is applied only while the user's
+save mutation is pending, so already saved cards do not animate on mount. Reduced
+Motion rules live in one block. The duplicate border keyframe names are intentional
+and documented: changing the animation name replays it on hover.
+
+The follow-up passes the same 145 frontend tests, lint, typecheck and build. Brave
+and Playwright WebKit both passed border sizing/hover replay, no bookmark animation
+on mount, feedback during a save request, mobile width and reduced-motion checks.
+The Safari application itself was not tested. An initial WebKit reload interrupted
+a mocked request; the completed walkthrough without that interruption had no page
+errors. GitHub's CI annotation reports that jobs did not start because of account
+billing or spending limits; these local results do not constitute a CI pass.
