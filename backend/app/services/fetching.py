@@ -677,6 +677,11 @@ class Fetcher:
         trigger: str,
         outcome: SourceOutcome,
     ) -> None:
+        if adapter.resumable_collections and adapter.retry_incomplete_window:
+            raise SourceBadResponse(
+                "Resumable collections cannot retry incomplete windows without "
+                "pagination-aware checkpoints"
+            )
         preference_queries: list[SourceQuery] = []
         if adapter.per_query:
             preferences = list((await session.execute(select(Preference))).scalars())
@@ -818,7 +823,14 @@ class Fetcher:
                         result = await _guarded(adapter, adapter.fetch_window(query, window))
                         break
                     except (SourceQuotaRejected, SourceCredentialRejected) as exc:
-                        if exc.credits_used or adapter.credential_fingerprint is None:
+                        # Even a misclassified provider error cannot move an in-flight
+                        # collection to another account and erase it on a resulting 404.
+                        if (
+                            checkpoint is not None
+                            or adapter.collection_id is not None
+                            or exc.credits_used
+                            or adapter.credential_fingerprint is None
+                        ):
                             raise
                         adapter.exhausted_credentials.add(adapter.credential_fingerprint)
                         try:

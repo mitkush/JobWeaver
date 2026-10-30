@@ -1644,3 +1644,71 @@ async def test_pending_collection_with_removed_key_does_not_start_a_duplicate(
     assert FakeSearch.windows == []
     async with get_sessionmaker()() as check:
         assert await check.scalar(select(PendingCollection.external_id)) == "existing"
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+@pytest.mark.parametrize("failure", ["quota", "credential"])
+async def test_inflight_collection_never_rotates_on_misclassified_rejection(
+    db, clock, resumed, failure
+):
+    from app.adapters.errors import SourceCredentialRejected, SourceQuotaRejected
+    from app.models import PendingCollection
+    from app.services.provider_credentials import credentials
+
+    class AsyncSearch(FakeSearch):
+        name = "fake-async-rejected"
+        per_query = False
+        resumable_collections = True
+        credential_settings = ("brightdata_api_key", "brightdata_api_keys")
+        starts = 0
+        attempts = []
+
+        async def fetch_window(self, query, window):
+            type(self).attempts.append(self.settings.brightdata_api_key)
+            if self.collection_id is None:
+                type(self).starts += 1
+                await self.checkpoint_collection("account-a-snapshot")
+            error = SourceQuotaRejected if failure == "quota" else SourceCredentialRejected
+            raise error("Account rejected after the collection started")
+
+    registry.register_adapter(AsyncSearch)
+    settings = Settings(brightdata_api_key="account-a,account-b")
+    fingerprint = credentials(AsyncSearch, settings)[0].fingerprint
+    if resumed:
+        db.add(
+            PendingCollection(
+                source=AsyncSearch.name,
+                query_key="all",
+                external_id="account-a-snapshot",
+                credential_fingerprint=fingerprint,
+                window_since=START - timedelta(days=1),
+                window_until=START,
+                credits_recorded=0,
+            )
+        )
+        await db.commit()
+    outcome = await Fetcher(get_sessionmaker(), settings=settings, clock=clock).run_source(
+        AsyncSearch.name
+    )
+    assert outcome.status == "failed"
+    assert outcome.message == "Account rejected after the collection started"
+    assert AsyncSearch.attempts == ["account-a"]
+    assert AsyncSearch.starts == (0 if resumed else 1)
+    async with get_sessionmaker()() as check:
+        pending = await check.scalar(
+            select(PendingCollection).where(PendingCollection.source == AsyncSearch.name)
+        )
+        assert pending.external_id == "account-a-snapshot"
+        assert pending.credential_fingerprint == fingerprint
+        run = await check.scalar(select(FetchRun).where(FetchRun.source == AsyncSearch.name))
+        assert run.status == RunStatus.FAILED
+        assert run.credential_fingerprint == fingerprint
+
+
+async def test_resumable_adapters_cannot_loop_on_an_incomplete_snapshot(db, clock, monkeypatch):
+    monkeypatch.setattr(FakeSearch, "resumable_collections", True)
+    monkeypatch.setattr(FakeSearch, "retry_incomplete_window", True)
+    outcome = await Fetcher(get_sessionmaker(), clock=clock).run_source(FakeSearch.name)
+    assert outcome.status == "failed"
+    assert "pagination-aware checkpoints" in outcome.message
+    assert FakeSearch.windows == []

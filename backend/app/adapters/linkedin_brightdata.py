@@ -241,6 +241,9 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
         while waited <= self.poll_timeout.total_seconds():
             progress = await self.http.get(f"{API}/progress/{snapshot_id}", headers=self._headers)
             if progress.status_code == 404:
+                # The fetcher pins the original credential and forbids rotation once
+                # a collection starts. Treat 404 as unavailable/expired only under that
+                # invariant; a wrong-account 404 must never discard another account's id.
                 if self.checkpoint_collection is not None:
                     await self.checkpoint_collection(None)
                 raise SourceUnavailable(

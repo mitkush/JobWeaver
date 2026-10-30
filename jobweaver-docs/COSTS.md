@@ -166,3 +166,14 @@ for a new search on the following run. A long-running collection is not automati
 canceled, because it may still finish and have consumed provider credits. The admin can
 inspect or cancel it in Bright Data before retrying. The unavoidable trigger-response-to-
 checkpoint crash gap remains; the database and Bright Data do not share a transaction.
+
+The fetcher also refuses account rotation whenever a checkpoint or collection ID exists,
+even if an adapter misclassifies a polling/download error as a pre-trigger rejection.
+Resumable collections cannot opt into `retry_incomplete_window` without pagination-aware
+checkpoints: repeatedly downloading one capped snapshot cannot advance that search.
+
+If the original key is permanently lost, resumption stays blocked. After confirming the
+collection is canceled or inaccessible in the provider account, an operator must clear its
+pending checkpoint before a replacement can be started. There is no admin discard action
+or automatic retention-based expiry yet; neither a missing key nor an arbitrary timeout
+silently discards a potentially billable running collection.
