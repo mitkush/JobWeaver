@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
+import { registerInstallPrompt } from "@/features/pwa/install";
 import { App } from "@/app/App";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -17,6 +18,8 @@ import "@fontsource/chakra-petch/700-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "./index.css";
+
+registerInstallPrompt();
 
 const router = createBrowserRouter([{ path: "*", element: <ToastProvider><App /></ToastProvider> }]);
 
