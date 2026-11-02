@@ -18,3 +18,19 @@ async def test_spa_serves_files_and_falls_back_but_not_for_api(tmp_path):
         missing = await client.get("/api/does-not-exist")
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "not_found"
+
+
+async def test_install_manifest_has_correct_type_and_no_spa_fallback(tmp_path):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<html>app</html>")
+    app = create_app(frontend_dist=tmp_path)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        assert (await client.get("/manifest.webmanifest")).status_code == 404
+        (tmp_path / "manifest.webmanifest").write_text('{"name":"JobWeaver"}')
+        response = await client.get("/manifest.webmanifest")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/manifest+json"
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.json()["name"] == "JobWeaver"

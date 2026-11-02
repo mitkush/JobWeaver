@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "JobWeaver",
+  "short_name": "JobWeaver",
+  "description": "Find jobs and prepare applications from your Fact Bank.",
+  "start_url": "/feed",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#050507",
+  "icons": [
+    { "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

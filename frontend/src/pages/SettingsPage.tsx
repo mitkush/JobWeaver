@@ -1,3 +1,4 @@
+import { InstallCard } from "@/features/pwa/InstallCard";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -34,6 +35,7 @@ export function SettingsPage({ me }: { me: Me }) {
     <>
       <PageHeader title="Settings" />
       <div className="space-y-6">
+        <InstallCard />
         {params.get("gmail") === "connected" && <Alert tone="success">Gmail is connected.</Alert>}
         {params.get("google_error") && <Alert tone="warning">{googleErrorMessage(params.get("google_error"))}</Alert>}
         <Card>

@@ -91,6 +91,15 @@ def mount_frontend(app: FastAPI, dist: Path) -> None:
     def spa(path: str) -> FileResponse:  # sync: file checks run in the threadpool
         if path == "api" or path.startswith("api/"):
             raise NotFoundError("Not found")
+        if path == "manifest.webmanifest":
+            manifest = root / path
+            if not manifest.is_file():
+                raise NotFoundError("Not found")
+            return FileResponse(
+                manifest,
+                media_type="application/manifest+json",
+                headers={"Cache-Control": "no-cache"},
+            )
         candidate = (root / path).resolve()
         if path and candidate.is_file() and root in candidate.parents:
             return FileResponse(candidate)
