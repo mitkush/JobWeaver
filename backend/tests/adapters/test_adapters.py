@@ -538,3 +538,21 @@ async def test_brightdata_only_clears_terminal_collections(status):
         with pytest.raises(SourceUnavailable, match="next run starts a new search"):
             await adapter.fetch_window(QUERY, DAY)
     assert saved == [None]
+
+
+def test_explicit_india_discovery_keeps_global_remote_and_deduplicates():
+    settings = Settings(
+        brightdata_api_key="key",
+        brightdata_discovery_keywords="Software,Developer",
+        brightdata_discovery_countries=" in,IN ",
+    )
+    adapter = LinkedInBrightDataAdapter(httpx.AsyncClient(), settings)
+    remote = SourceQuery(keywords="Developer", location=Location(remote=True))
+    india = SourceQuery(keywords="Developer", location=Location(country="IN", remote=True))
+    for preferences in ([remote], [remote, india]):
+        queries = adapter.search_queries(preferences)
+        assert {(q.location.country, q.location.remote) for q in queries} == {
+            ("IN", False),
+            (None, True),
+        }
+        assert len(queries) == 2

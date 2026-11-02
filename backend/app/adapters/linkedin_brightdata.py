@@ -157,6 +157,10 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 continue
             search = SourceQuery(keywords=keyword, location=place)
             queries.setdefault(search, search)
+        for country in self.settings.brightdata_discovery_countries.split(","):
+            if country:
+                search = SourceQuery(keywords=keyword, location=Location(country=country))
+                queries.setdefault(search, search)
         return sorted(queries.values(), key=lambda q: q.key)
 
     def is_configured(self) -> bool:
