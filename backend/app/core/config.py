@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     # Broad role keywords searched once per Preference country, joined with OR, instead of
     # one search per title and city. Empty keeps the per-title searches.
     brightdata_discovery_keywords: str = ""
+    # Extra country-wide discovery searches, independent of Feed Preferences.
+    brightdata_discovery_countries: str = ""
     # Records one Bright Data search may return (limit_per_input); 0 means no cap.
     brightdata_limit_per_search: int = 1000
     rapidapi_key: str = ""
@@ -131,6 +133,14 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = True
     max_upload_bytes: int = 5 * 1024 * 1024
+
+    @field_validator("brightdata_discovery_countries")
+    @classmethod
+    def discovery_countries(cls, value: str) -> str:
+        countries = list(dict.fromkeys(c.strip().upper() for c in value.split(",") if c.strip()))
+        if any(len(c) != 2 or not c.isascii() or not c.isalpha() for c in countries):
+            raise ValueError("Discovery countries must be comma-separated two-letter country codes")
+        return ",".join(countries)
 
     @field_validator("brightdata_primary_paused_until")
     @classmethod
