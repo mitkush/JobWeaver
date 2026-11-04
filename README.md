@@ -24,11 +24,12 @@ JobWeaver brings job discovery, your experience and application preparation into
 ## A focused feed. A clearer next step.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="jobweaver-docs/assets/readme/feed-dark.png">
-  <img src="jobweaver-docs/assets/readme/feed-light.png" width="1440" alt="JobWeaver Feed with two illustrative engineering roles, matching Preference keywords, matched and missing skills, Saved and Viewed marks, source badges and Draft actions.">
+  <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="jobweaver-docs/assets/readme/feed-dark.png">
+  <source media="(prefers-reduced-motion: reduce)" srcset="jobweaver-docs/assets/readme/feed-light.png">
+  <img src="jobweaver-docs/assets/readme/feed-demo.webp" width="1280" alt="JobWeaver Feed in use: saving a job to the shortlist, opening other titles that match the User's keywords while the Feed shows Updating jobs, then the Saved view listing both bookmarks.">
 </picture>
 
-<sub>Actual interface, captured locally with fictional jobs and a sample profile. Switch GitHub's theme to see the matching preview. Click an image to inspect it at full size.</sub>
+<sub>Actual interface with fictional jobs and a sample profile: save a job, open keyword matches, then check Saved. With reduced motion turned on, a still screenshot is shown instead. Click an image to inspect it at full size.</sub>
 
 ## From discovery to a deliberate application
 
