@@ -164,6 +164,8 @@ class JobDetailOut(BaseModel):
     # None when the Job is not in the User's Feed or no longer matches their Preferences.
     match: Literal["title", "keywords", "review"] | None = None
     matched_keywords: list[MatchedKeyword] = Field(default_factory=list)
+    # Literal source excerpts for detail only; Feed cards never load description text.
+    keyword_evidence: dict[str, str] = Field(default_factory=dict)
 
 
 class JobRef(BaseModel):

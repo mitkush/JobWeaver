@@ -19,7 +19,7 @@ export function MatchReason({ match, matched_keywords: keywords = [] }: Props) {
     return (
       <p className="flex items-center gap-1.5 text-sm text-amber-800 dark:text-amber-300">
         <Info className="size-4" aria-hidden />
-        Needs review: the advert has no job description to confirm your Core skills. Check it before drafting.
+        Needs review: the description or skill context is not confirmed yet. Check the advert before drafting.
       </p>
     );
   }

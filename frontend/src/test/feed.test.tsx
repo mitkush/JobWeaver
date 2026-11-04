@@ -330,7 +330,7 @@ it("lists jobs without a description under Needs review", async () => {
   expect(screen.queryByRole("button", { name: /Other titles matching your keywords/ })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: /Needs review/ }));
   await screen.findByRole("link", { name: "Ruby on Rails Developer" });
-  expect(screen.getByText(/the advert has no job description to confirm your Core skills/)).toBeInTheDocument();
+  expect(screen.getByText(/the description or skill context is not confirmed yet/)).toBeInTheDocument();
   expect(calls.some((c) => queryOf(c).get("match") === "review")).toBe(true);
 });
 
@@ -601,4 +601,20 @@ it("returns to the card that was opened", async () => {
   await screen.findByRole("link", { name: "Backend Engineer" });
   await waitFor(() => expect(scrollTo).toHaveBeenCalledWith(0, 640));
   Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+});
+
+
+it("shows literal keyword evidence on the Job page without interpreting markup", async () => {
+  mockFetch({
+    "GET /api/jobs/job-1": () => json(makeJob({
+      keyword_evidence: { Rails: "Build rails APIs. <script>not executable</script>" },
+    })),
+  });
+  renderWithApp(feedRoutes(), { route: "/jobs/job-1" });
+  await screen.findByRole("heading", { name: "Backend Engineer" });
+  const summary = screen.getByText("Why these keywords matched");
+  expect(summary.closest("details")).not.toHaveAttribute("open");
+  await userEvent.click(summary);
+  expect(screen.getByText("Build rails APIs. <script>not executable</script>")).toBeVisible();
+  expect(document.querySelector("script")).toBeNull();
 });

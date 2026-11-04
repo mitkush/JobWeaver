@@ -130,3 +130,13 @@ async def test_live_embeddings_never_fall_back_to_another_provider(db):
         await LiveAIGateway({"gemini": FakeEmbedder()}, ledger).embed_texts(
             EmbedRequest(texts=["a"])
         )
+
+
+def test_skill_prompt_keeps_late_requirements_within_existing_budget():
+    description = "About our company. " + "x" * 9000 + "Requirements: Ruby and Rails."
+    text = prompts.extract_skills_user(
+        ExtractSkillsRequest(jobs=[JobAdvert(ref="1", title="Engineer", description=description)])
+    )
+    assert "About our company." in text
+    assert "Requirements: Ruby and Rails." in text
+    assert len(text) < prompts.ADVERT_CHARS + 200

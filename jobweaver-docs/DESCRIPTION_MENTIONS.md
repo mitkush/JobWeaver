@@ -1,6 +1,6 @@
 # Cached description mentions
 
-Feed matching stores deterministic vocabulary mentions on each Posting when save_postings already has the description in memory. This is separate from Job.required_skills, which is AI-extracted and may include title text. A title alone still cannot confirm a Core keyword.
+Feed matching stores deterministic vocabulary mentions on each Posting when save_postings already has the description in memory. This is separate from Job.required_skills, which is AI-extracted separately to confirm skill/domain context. A title alone still cannot confirm a Core keyword.
 
 The nullable fields are description_mentions (canonical TEXT[]), description_usable (the existing has_description rule) and description_mentions_version. A current empty array means no vocabulary mentions; null means not cached. There is no new index: Feed rebuilds already look up at most 1,000 primary Posting IDs per chunk, and compare the small arrays in Python.
 
@@ -8,7 +8,7 @@ The nullable fields are description_mentions (canonical TEXT[]), description_usa
 
 - Use the existing keywords.mentioned function, including aliases, word boundaries and capitalization rules for Go, REST and other prose words.
 - Only use a cache whose version matches and whose array and usability flag are both present. Stale or missing rows retain the existing description SQL prefilter and Python matcher.
-- Unknown preference keywords keep a description fallback, including non-Core keywords used by keyword_min_matches. Current known vocabulary terms are not re-scanned in that fallback. This preserves custom phrases such as Sidekiq or Rails developer without restricting Preferences to the vocabulary.
+- Unknown preference keywords keep a description fallback, including non-Core keywords used by keyword_min_matches. Current known vocabulary terms are not re-scanned in that fallback. Custom Preferences are not restricted to the vocabulary. Clear literal mentions count without AI; unresolved ambiguous candidates stay in Needs review.
 - Current caches supply Needs review usability without reading text. Rebuilds read metadata; they do not update caches or call AI for this cache. Separate required-skills extraction can still read descriptions.
 - Changed descriptions and stale caches are recomputed by save_postings. Other writers of description must also refresh or invalidate its cache.
 - The version hashes the vocabulary, aliases, prose words and minimum usable length. Bump MATCHER_REVISION in tailoring/description_mentions.py whenever the matching or usability algorithm changes. Old rows then fall back until re-fetched or explicitly backfilled.
@@ -39,3 +39,16 @@ Increase max-batches deliberately to process more rows. The command prints count
 Tests cover equivalent cached/stale/missing matches, unknown Core and non-Core keywords, description edits, cache-version refresh, resumable batches and concurrent locks. A query-capture regression asserts that a known-vocabulary Feed rebuild issues neither a Posting description SELECT nor ILIKE. Existing tests cover aliases, keyword thresholds, Needs review, merges, splits and cross-user isolation.
 
 A local synthetic comparison used 1,000 Postings with roughly 4,522-character descriptions, one Preference (Rails Core plus PostgreSQL), 200 matches and the actual _matches function. Three legacy runs took 111/104/104 ms; cached runs took 16/30/16 ms and returned identical match dictionaries. Building 1,000 caches in batches of 100 took 5.46 seconds locally. These are developer-machine measurements on synthetic text, not production latency or a deployment-time guarantee. No production schema or cache data was changed for this PR. Unknown keywords and unbackfilled rows retain the description-check cost; matching loops and Feed link writes also remain.
+
+
+## Context confirmation
+
+Preference matching is case insensitive and preserves word boundaries. Ruby on Rails searches additionally accept whole-word Ruby (ruby, Ruby and RUBY), without changing Fact Bank skill equivalence. Clear literal evidence counts without an AI result, including when the skill was omitted from the extraction prompt's middle or from its limited output.
+
+Ambiguous skill names, including bare Rails in any capitalisation, may use cached skill/domain context for confirmation. A Python/Django advert saying Payment Rails is not automatically a confirmed Rails match. If the analysis is pending, empty or does not support the term, keep the literal candidate in Needs review. The model never silently deletes literal candidates. There are no business/technical phrase allowlists.
+
+A changed primary description keeps old skills provisionally and marks them for refresh using a null skills_extracted_at; the extraction queue selects pending and refresh-needed Jobs. Title-only and whitespace-only edits do not spend another extraction. A different primary Posting clears the cache. An in-flight result cannot commit against a changed primary description. The Job page shows original literal excerpts; Feed cards never fetch descriptions to build evidence.
+
+AI quotas can delay confirmation or refresh of ambiguous matches. Clear literal matches remain available without AI, and unresolved candidates remain under Needs review. Model omissions and the 4,000-character prompt budget still affect Skill Gaps and ambiguous confirmation, not visibility of clear literal matches. Rebuilds and page views make no AI call.
+
+MATCHER_REVISION is bumped for the Ruby search expansion. Existing lexical caches use exact fallback until the scheduler refills them automatically; no manual migration or backfill is required.

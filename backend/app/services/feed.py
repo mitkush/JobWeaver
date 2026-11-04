@@ -45,10 +45,14 @@ from app.tailoring.keywords import (
     MIN_DESCRIPTION_CHARS,
     KeywordMatch,
     KeywordRule,
+    confirmed_matches,
     has_core,
     has_description,
+    keyword_excerpt,
     keyword_matches,
     keyword_rule,
+    keyword_spellings,
+    literal_matches,
     mentioned,
     qualifies,
 )
@@ -57,7 +61,6 @@ from app.tailoring.skills import (
     canonical_skill,
     skill_gaps,
     skill_matches,
-    spellings,
     user_skills,
 )
 
@@ -254,13 +257,12 @@ async def _matches(
 
     Every Job must be in a wanted place and work mode. Then:
     - no Core keyword: a title match is enough;
-    - with Core keywords (must-have skills), only the job description's own text counts
-      (never the title, nor skills extracted from it alone, which may come from the title):
-      - a title match whose description names a Core keyword: "title";
-      - a title match without a usable description: "review", shown apart, never as a
-        confirmed match;
-      - a differently titled Job whose description names a Core keyword and
-        keyword_min_matches keywords in total: "keywords".
+    - with Core keywords, clear literal evidence counts without AI; ambiguous names
+      can be confirmed by cached skill/domain context:
+      - a title match with confirmed Core evidence: "title";
+      - unresolved candidates, or a title without usable description: "review";
+      - a differently titled Job with enough confirmed keywords: "keywords".
+    A title or extracted skill alone never confirms a candidate.
     Current cached vocabulary mentions need no description reads. Unknown keywords and
     missing/stale caches retain exact description matching as a fallback."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
@@ -281,6 +283,9 @@ async def _matches(
     if not pending:
         return result
     terms = frozenset().union(*(r.terms for r in rules.values() if r is not None))
+    if any(canonical_skill(term) == "ruby on rails" for term in terms):
+        # The fallback must retain the same clear Ruby evidence as vocabulary caches.
+        terms |= {"ruby"}
     # A Core mention is required for every confirmed match. Check the literal spellings
     # in PostgreSQL first so unrelated multi-KB descriptions never cross the network.
     # ILIKE is deliberately a broad filter; Python's whole-word and capitalization
@@ -291,7 +296,7 @@ async def _matches(
         if rule is not None
         for keyword in rule.keywords
         if keyword.core
-        for spelling in spellings(keyword.canonical)
+        for spelling in keyword_spellings(keyword.canonical)
         if spelling
     }
     mentions_core = or_(
@@ -370,7 +375,7 @@ async def _matches(
                 *(
                     Posting.description.ilike(f"%{_like_literal(spelling)}%", escape="\\")
                     for term in unknown
-                    for spelling in spellings(canonical_skill(term))
+                    for spelling in keyword_spellings(canonical_skill(term))
                 )
             )
             unknown_descriptions = dict(
@@ -398,13 +403,24 @@ async def _matches(
                 canonical_skill(s) for s in required
             }
             for user_id, rule, titled in pending[job.id]:
-                found = keyword_matches(rule, in_requirements, in_description)
+                candidates = keyword_matches(rule, in_requirements, in_description)
                 if titled and not described:
                     result[user_id][job.id] = REVIEW_MATCH
-                elif titled and has_core(found):
-                    result[user_id][job.id] = FeedMatch("title", tuple(found))
-                elif not titled and described and qualifies(rule, found):
-                    result[user_id][job.id] = FeedMatch("keywords", tuple(found))
+                elif described and (
+                    (titled and has_core(candidates))
+                    or (not titled and qualifies(rule, candidates))
+                ):
+                    clear = literal_matches(candidates, in_description)
+                    contextual = confirmed_matches(candidates, required)
+                    found = [match for match in candidates if match in clear or match in contextual]
+                    if titled and has_core(found):
+                        result[user_id][job.id] = FeedMatch("title", tuple(found))
+                    elif not titled and qualifies(rule, found):
+                        result[user_id][job.id] = FeedMatch("keywords", tuple(found))
+                    else:
+                        # A limited model output must never silently erase literal evidence.
+                        # Unresolved candidates remain reachable even after an empty analysis.
+                        result[user_id][job.id] = REVIEW_MATCH
     return result
 
 
@@ -963,6 +979,12 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         company_applied=job.id in applied_companies,
         match=link.match_kind,
         matched_keywords=link.matched_keywords or [],
+        keyword_evidence={
+            str(match["keyword"]): excerpt
+            for match in link.matched_keywords or []
+            if primary is not None
+            and (excerpt := keyword_excerpt(primary.description, str(match["keyword"])))
+        },
     )
 
 

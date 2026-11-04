@@ -4,7 +4,7 @@ A differently titled Job reaches the Feed's keyword section only through the key
 User chose in Preferences; the Fact Bank plays no part. Spellings of one skill count once
 ("Rails" = "Ruby on Rails"), and only whole skill phrases count ("Rails" never matches
 inside "guardrails"). Case does not matter, except for the few skill names that are also
-common English words ("Go", "REST"), which count only when written with a capital.
+common English words ("Go", "REST"), whose context may need review.
 
 Each keyword is matched on its own: a longer phrase another User chose ("Rails developer")
 never hides a shorter one ("Rails"), so one User's keywords cannot change another's Feed."""
@@ -71,9 +71,18 @@ def keyword_rule(
     return KeywordRule(tuple(merged.values()), max(1, min_matches))
 
 
+def keyword_spellings(canonical: str) -> tuple[str, ...]:
+    """Search expansion belongs to Preferences, not Fact Bank skill equivalence.
+
+    A Rails-focused search includes Ruby roles, without claiming a Ruby Fact proves Rails.
+    """
+    variants = tuple(spellings(canonical))
+    return variants + ("ruby",) if canonical == "ruby on rails" else variants
+
+
 @lru_cache(maxsize=1024)
 def _pattern(canonical: str) -> re.Pattern[str]:
-    terms = sorted(set(spellings(canonical)), key=len, reverse=True)
+    terms = sorted(set(keyword_spellings(canonical)), key=len, reverse=True)
     alternation = "|".join(re.escape(term) for term in terms)
     return re.compile(rf"(?<![\w+#.])(?:{alternation})(?![\w+#])", re.IGNORECASE)
 
@@ -99,8 +108,8 @@ def keyword_matches(
 ) -> list[KeywordMatch]:
     """The rule's keywords the job description's own text names, each skill once. The
     title never counts: a title can help find an advert, but only the description shows
-    the skill is wanted. Extracted skills are read from the title too, so they never
-    count alone; they only mark a described skill as a stated requirement."""
+    the skill is wanted. Extracted skills never count alone; they mark a described
+    skill as a stated requirement. The caller confirms their skill/domain context."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
         if keyword.canonical not in in_description:
@@ -127,3 +136,59 @@ def has_core(found: Sequence[KeywordMatch]) -> bool:
 def qualifies(rule: KeywordRule, found: Sequence[KeywordMatch]) -> bool:
     """At least one core keyword, and at least min_matches distinct keywords in total."""
     return has_core(found) and len(found) >= rule.min_matches
+
+
+# Ambiguous skill names already recognised by the vocabulary, plus Rails' prose sense.
+# No preceding/following word lists decide whether a description is technical.
+CONTEXT_SENSITIVE = {canonical_skill(word) for word in PROSE_WORDS | {"rails"}}
+
+
+def literal_matches(found: Sequence[KeywordMatch], in_description: set[str]) -> list[KeywordMatch]:
+    """Clear literal evidence never waits for AI or a limited extracted skill list.
+
+    Ruby also confirms a Rails-focused Preference search, including a full Ruby on Rails
+    mention, regardless of case. Bare Rails remains ambiguous even when capitalised.
+    """
+    return [
+        match
+        for match in found
+        if canonical_skill(match.keyword) not in CONTEXT_SENSITIVE
+        or (canonical_skill(match.keyword) == "ruby on rails" and "ruby" in in_description)
+    ]
+
+
+def confirmed_matches(
+    found: Sequence[KeywordMatch],
+    context: Iterable[str],
+) -> list[KeywordMatch]:
+    """Preferences name the keywords; the Job's cached skill extraction confirms context.
+
+    Literal description evidence is still mandatory (the caller's candidate matches).
+    A model-generated skill alone, or a title mention, never adds a Feed keyword.
+    """
+    names = list(context)
+    supported = mentioned(", ".join(names), [match.keyword for match in found])
+    supported.update(canonical_skill(skill) for skill in names)
+    return [match for match in found if canonical_skill(match.keyword) in supported]
+
+
+def keyword_excerpt(text: str, keyword: str) -> str | None:
+    """Short original-source context for the Job page, never read for Feed cards."""
+    match = _pattern(canonical_skill(keyword)).search(text)
+    if match is None:
+        return None
+    sentence = text.rfind(". ", 0, match.start())
+    start = max(text.rfind("\n", 0, match.start()) + 1, sentence + 2 if sentence >= 0 else 0)
+    end = len(text)
+    for marker in ("\n", ". "):
+        stop = text.find(marker, match.end())
+        if stop >= 0:
+            end = min(end, stop + (1 if marker == ". " else 0))
+    clipped_start = start < match.start() - 120
+    start = max(start, match.start() - 120)
+    end = min(end, match.end() + 180)
+    return (
+        ("…" if clipped_start else "")
+        + text[start:end].strip()
+        + ("…" if end < len(text) and text[end - 1] != "." else "")
+    )

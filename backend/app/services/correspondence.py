@@ -171,6 +171,9 @@ def _derive(
     )
     primary = postings[0]
     open_postings = [p for p in postings if p.closed_at is None]
+    if job.primary_posting_id != primary.id:
+        job.required_skills = None
+        job.skills_extracted_at = None
     job.primary_posting_id = primary.id
     job.company_id = primary.company_id
     job.company_name = company_names.get(primary.company_id, "")[:255]
@@ -277,9 +280,6 @@ async def merge_jobs(
         ),
         {"survivor": survivor.id, "gone": gone.id},
     )
-    if survivor.required_skills is None and gone.required_skills is not None:
-        survivor.required_skills = gone.required_skills
-        survivor.skills_extracted_at = gone.skills_extracted_at
     survivor_owners = select(Draft.user_id).where(
         Draft.job_id == survivor.id, Draft.active.is_(True)
     )
@@ -686,7 +686,7 @@ class Correspondence:
                     await session.execute(
                         select(Job)
                         .where(
-                            Job.required_skills.is_(None),
+                            or_(Job.required_skills.is_(None), Job.skills_extracted_at.is_(None)),
                             Job.expired_at.is_(None),
                             exists().where(UserJob.job_id == Job.id),
                             Job.primary_posting_id.in_(
@@ -734,11 +734,28 @@ class Correspondence:
                     skills = found.get(str(i + 1))
                     if skills is None:
                         continue  # left out by the model: tried again next run
-                    job.required_skills = clean_skills(skills)
-                    job.skills_extracted_at = now
-                    report.skills_extracted += 1
-                    extracted.add(job.id)
+                    # A fetch can replace the primary JD while the model is running.
+                    # Commit the result only if it still describes that exact advert.
+                    result = await session.execute(
+                        update(Job)
+                        .where(
+                            Job.id == job.id,
+                            Job.primary_posting_id == job.primary_posting_id,
+                            or_(Job.required_skills.is_(None), Job.skills_extracted_at.is_(None)),
+                            exists().where(
+                                Posting.id == Job.primary_posting_id,
+                                Posting.description == descriptions.get(job.primary_posting_id),
+                            ),
+                        )
+                        .values(required_skills=clean_skills(skills), skills_extracted_at=now)
+                        .execution_options(synchronize_session=False)
+                    )
+                    if result.rowcount:
+                        report.skills_extracted += 1
+                        extracted.add(job.id)
                 await session.commit()
+            # Matching must load the committed cache rather than the old identity map.
+            session.expire_all()
             # Match reasons name stated requirements; refresh them now, not next run.
             await feed.sync_jobs_for_all(session, extracted)
             await session.commit()
