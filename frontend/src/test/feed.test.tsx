@@ -618,3 +618,73 @@ it("shows literal keyword evidence on the Job page without interpreting markup",
   expect(screen.getByText("Build rails APIs. <script>not executable</script>")).toBeVisible();
   expect(document.querySelector("script")).toBeNull();
 });
+
+
+it.each(["filter", "section", "category", "page", "saved", "hidden"])("shows refresh feedback during a delayed %s change", async (change) => {
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  mockFetch({
+    "GET /api/feed": () => {
+      calls += 1;
+      if (calls > 1) return new Promise<Response>((resolve) => { finish = resolve; });
+      return json(makeFeed([makeCard()], {
+        total: 41,
+        section: "email",
+        counts: { with_email: 41, apply_link_only: 2, title_matches: 43, keyword_matches: 2 },
+      }));
+    },
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument();
+  if (change === "filter") await userEvent.selectOptions(screen.getByLabelText("Work mode"), "remote");
+  if (change === "section") await userEvent.click(screen.getByRole("tab", { name: /Apply link only/ }));
+  if (change === "category") await userEvent.click(screen.getByRole("button", { name: /Other titles matching/ }));
+  if (change === "page") await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  if (change === "saved") await userEvent.click(screen.getByRole("button", { name: /Saved/ }));
+  if (change === "hidden") await userEvent.click(screen.getByRole("button", { name: "Hidden" }));
+  expect(await screen.findByText("Updating jobs…")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Backend Engineer" })).toBeInTheDocument();
+  expect(screen.queryByRole("status", { name: "Loading your feed" })).not.toBeInTheDocument();
+  finish(json(makeFeed([makeCard({ title: "Updated results" })], { total: 41 })));
+  await screen.findByRole("link", { name: "Updated results" });
+  await waitFor(() => expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument());
+});
+
+it("clears refresh feedback when a filter request fails", async () => {
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  mockFetch({
+    "GET /api/feed": () => ++calls === 1
+      ? json(makeFeed([makeCard()]))
+      : new Promise<Response>((resolve) => { finish = resolve; }),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.selectOptions(screen.getByLabelText("Work mode"), "remote");
+  await screen.findByText("Updating jobs…");
+  finish(json({ error: { code: "unavailable", message: "Try again" } }, 503));
+  await screen.findByText("The feed could not load");
+  expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument();
+});
+
+
+it("does not show view-change feedback when bookmarking refreshes the same view", async () => {
+  document.cookie = "jw_csrf=t";
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  mockFetch({
+    "GET /api/feed": () => ++calls === 1
+      ? json(makeFeed([makeCard()]))
+      : new Promise<Response>((resolve) => { finish = resolve; }),
+    "POST /api/feed/job-1/save": () => new Response(null, { status: 204 }),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("button", { name: "Save Backend Engineer" }));
+  await waitFor(() => expect(calls).toBe(2));
+  expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Backend Engineer" })).toBeInTheDocument();
+  finish(json(makeFeed([makeCard({ saved: true })])));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save Backend Engineer" })).toHaveAttribute("aria-pressed", "true"));
+});
