@@ -5,7 +5,10 @@ const FILTERS = ["q", "location", "work_mode", "source", "within", "viewed"] as 
 export type FilterKey = (typeof FILTERS)[number];
 
 /** The Feed's state lives in the URL, so Back and shared links keep it. */
-export function feedQuery(params: URLSearchParams, section: "email" | "link"): FeedQuery {
+export function feedQuery(params: URLSearchParams): FeedQuery {
+  // No section chosen: the server opens the one that has Jobs, in the same response.
+  const chosen = params.get("section");
+  const section = chosen === "email" || chosen === "link" ? chosen : undefined;
   const page = Math.max(1, Number(params.get("page")) || 1);
   const within = Number(params.get("within")) || undefined;
   const mode = params.get("work_mode");

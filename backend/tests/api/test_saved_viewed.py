@@ -8,6 +8,9 @@ from sqlalchemy import update
 from app.models import Job
 from tests.api.test_feed import BACKEND_BLR, DATA_PUNE, medium_pair, seed
 
+# The With email section, whichever section the server would open by itself.
+EMAIL = {"section": "email"}
+
 
 async def first_job(client) -> str:
     return (await client.get("/api/feed")).json()["items"][0]["job_id"]
@@ -77,7 +80,7 @@ async def test_saving_does_not_unhide_and_hidden_bookmarks_stay_saved(alice):
     job_id = await first_job(client)
     await client.post(f"/api/feed/{job_id}/hide")
     await client.post(f"/api/feed/{job_id}/save")
-    assert (await client.get("/api/feed")).json()["total"] == 0
+    assert (await client.get("/api/feed", params=EMAIL)).json()["total"] == 0
     [card] = (await saved(client))["items"]
     assert card["hidden"] is True and card["saved"] is True
     assert (await client.get("/api/feed", params={"view": "hidden"})).json()["total"] == 1
@@ -93,7 +96,7 @@ async def test_an_expired_bookmark_stays_in_saved_with_its_label(alice, db):
         update(Job).where(Job.id == uuid.UUID(job_id)).values(expired_at=datetime.now(UTC))
     )
     await db.commit()
-    assert (await client.get("/api/feed")).json()["total"] == 0
+    assert (await client.get("/api/feed", params=EMAIL)).json()["total"] == 0
     [card] = (await saved(client))["items"]
     assert card["expired"] is True
 
@@ -110,7 +113,7 @@ async def test_viewed_is_recorded_once_and_filters_the_feed(alice, bob):
     assert (await a.get("/api/feed", params={"viewed": "unviewed"})).json()["total"] == 1
     assert (await a.post(f"/api/jobs/{job_id}/viewed")).status_code == 204
     assert (await a.post(f"/api/jobs/{job_id}/viewed")).status_code == 204
-    assert (await a.get("/api/feed", params={"viewed": "unviewed"})).json()["total"] == 0
+    assert (await a.get("/api/feed", params=EMAIL | {"viewed": "unviewed"})).json()["total"] == 0
     viewed = (await a.get("/api/feed", params={"viewed": "viewed"})).json()
     assert viewed["items"][0]["viewed"] is True
     assert (await a.get(f"/api/jobs/{job_id}")).json()["viewed"] is True

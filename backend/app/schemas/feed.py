@@ -10,7 +10,8 @@ from app.adapters.base import WorkMode
 class FeedQuery(BaseModel):
     """Sort is always newest first (FR-D6)."""
 
-    section: Literal["email", "link"] = "email"
+    # None: the server opens With email, or Apply link only when With email is empty.
+    section: Literal["email", "link"] | None = None
     # "title": Jobs matching a wanted title (and kept Jobs that no longer match);
     # "keywords": differently titled Jobs matching the User's core keywords;
     # "review": title matches whose advert has no description to confirm a Core keyword.
@@ -92,6 +93,8 @@ class FeedCounts(BaseModel):
 class FeedOut(BaseModel):
     items: list[FeedCard]
     total: int
+    # The section these items belong to: the requested one, or the one the server chose.
+    section: Literal["email", "link"] = "email"
     counts: FeedCounts
     # When any Source last finished a successful Fetch Run (FR-D7).
     last_updated_at: datetime | None

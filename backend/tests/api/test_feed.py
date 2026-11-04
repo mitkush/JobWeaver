@@ -28,6 +28,9 @@ from app.services.feed import sync_all_feeds
 from app.tailoring.job_experience import experience_requirement
 from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, FailingSkills, add, posting
 
+# The With email section, whichever section the server would open by itself.
+EMAIL = {"section": "email"}
+
 
 @pytest.mark.parametrize(
     ("description", "expected"),
@@ -244,7 +247,7 @@ async def test_hiding_is_personal(alice, bob):
     await seed()
     job_id = (await a.get("/api/feed")).json()["items"][0]["job_id"]
     assert (await a.post(f"/api/feed/{job_id}/hide")).status_code == 204
-    assert (await a.get("/api/feed")).json()["total"] == 0
+    assert (await a.get("/api/feed", params=EMAIL)).json()["total"] == 0
     hidden = (await a.get("/api/feed", params={"hidden": True})).json()
     assert hidden["items"][0]["hidden"] is True
     assert (await b.get("/api/feed")).json()["total"] == 1
@@ -260,7 +263,7 @@ async def test_hidden_job_stays_hidden_after_preferences_change(alice):
     await client.post(f"/api/feed/{job_id}/hide")
     await client.put("/api/preferences", json=DATA_PUNE)
     await client.put("/api/preferences", json=BACKEND_BLR)
-    assert (await client.get("/api/feed")).json()["total"] == 0
+    assert (await client.get("/api/feed", params=EMAIL)).json()["total"] == 0
 
 
 async def test_one_users_preferences_never_reach_another_feed(alice, bob):

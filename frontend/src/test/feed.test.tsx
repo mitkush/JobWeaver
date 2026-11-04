@@ -40,19 +40,18 @@ it("shows cards with skill gaps, source badges and the email section first", asy
   await expectAccessible();
 });
 
-it("opens the apply-link section when no job has an email", async () => {
+it("opens the section the server chose, in one request", async () => {
   const calls = mockFetch({
-    "GET /api/feed": (request) => {
-      const linkOnly = makeCard({ contact_email: null, skill_gaps: null });
-      const page = makeFeed([linkOnly]);
-      return json(queryOf(request).get("section") === "link" ? page : { ...page, items: [], total: 0 });
-    },
+    // With no section asked for, the server answers with the one that has Jobs.
+    "GET /api/feed": () => json({ ...makeFeed([makeCard({ contact_email: null, skill_gaps: null })]), section: "link" }),
   });
   renderWithApp(feedRoutes(), { route: "/feed" });
   expect(await screen.findByRole("link", { name: "Backend Engineer" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: /Apply link only/ })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByText("Skills not analysed yet")).toBeInTheDocument();
-  expect(calls.some((c) => queryOf(c).get("section") === "link")).toBe(true);
+  const feedCalls = calls.filter((c) => new URL(c.url).pathname === "/api/feed");
+  expect(feedCalls).toHaveLength(1);
+  expect(queryOf(feedCalls[0]!).get("section")).toBeNull();
 });
 
 it("sends filters and search to the API", async () => {
@@ -124,10 +123,11 @@ it("marks possible duplicates on the card", async () => {
 });
 
 it("keeps the feed state in the URL", () => {
-  const query = feedQuery(new URLSearchParams("q=go&within=3&work_mode=bogus&page=2&hidden=1"), "link");
+  const query = feedQuery(new URLSearchParams("q=go&within=3&work_mode=bogus&page=2&hidden=1&section=link"));
   expect(query).toMatchObject({ section: "link", q: "go", posted_within_days: 3, view: "hidden", offset: 20 });
-  expect(feedQuery(new URLSearchParams("view=saved&viewed=unviewed"), "email")).toMatchObject({ view: "saved", viewed: "unviewed" });
-  expect(feedQuery(new URLSearchParams("viewed=bogus"), "email").viewed).toBeUndefined();
+  expect(feedQuery(new URLSearchParams("view=saved&viewed=unviewed"))).toMatchObject({ view: "saved", viewed: "unviewed" });
+  expect(feedQuery(new URLSearchParams("viewed=bogus")).viewed).toBeUndefined();
+  expect(feedQuery(new URLSearchParams("q=go")).section).toBeUndefined();
   expect(query.work_mode).toBeUndefined();
 });
 

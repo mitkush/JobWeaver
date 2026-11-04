@@ -90,6 +90,30 @@ asyncio.run(main())
 PY
 sudo -n docker tag "jobweaver:$commit" jobweaver:production
 trap - ERR
+# The reverse proxy's configuration is versioned in the repository. Install it only when
+# it changed and Caddy accepts it; a rejected file leaves the running proxy untouched.
+caddyfile=deployment/Caddyfile
+if [[ -f "$caddyfile" ]] && ! sudo -n cmp -s "$caddyfile" /etc/caddy/Caddyfile; then
+  if sudo -n caddy validate --config "$caddyfile" --adapter caddyfile >/dev/null 2>&1; then
+    sudo -n cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.previous
+    sudo -n install -m 0644 "$caddyfile" /etc/caddy/Caddyfile
+    if sudo -n systemctl reload caddy; then
+      echo 'Caddy configuration updated from deployment/Caddyfile.'
+    else
+      # Put the previous file back, so a later restart cannot load the rejected one.
+      sudo -n install -m 0644 /etc/caddy/Caddyfile.previous /etc/caddy/Caddyfile
+      if sudo -n systemctl reload caddy; then
+        echo 'Caddy rejected the new configuration on reload; the previous one is restored.'
+      else
+        echo 'Caddy reload failed and restoring the previous configuration also failed.'
+        echo 'Check: sudo systemctl status caddy; sudo journalctl -u caddy -n 50'
+      fi
+      exit 1
+    fi
+  else
+    echo 'deployment/Caddyfile was rejected by caddy validate; the proxy was not changed.'
+  fi
+fi
 # Keep the new, production and previous images; drop older commit tags and dangling layers.
 keep=$(sudo -n docker inspect --format '{{.Image}}' jobweaver-previous 2>/dev/null || true)
 for tag in $(sudo -n docker images --format '{{.Repository}}:{{.Tag}}' jobweaver); do
