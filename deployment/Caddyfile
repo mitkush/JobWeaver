@@ -1,3 +1,10 @@
+# Production reverse proxy for the Oracle VM. scripts/deploy-oracle.sh installs this file
+# at /etc/caddy/Caddyfile and reloads Caddy when it changes; edit it here, not on the VM.
 jobweaver.duckdns.org {
+    # Compress text responses (JavaScript, CSS, HTML, API JSON). The CSRF token endpoint
+    # is left uncompressed, so a secret never shares a compressed body with other data.
+    @compressible not path /api/auth/csrf
+    encode @compressible zstd gzip
+
     reverse_proxy 127.0.0.1:8000
 }

@@ -1,10 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from app import adapters  # noqa: F401  (registers Source Adapters)
 from app.api import (
@@ -25,6 +27,7 @@ from app.core.config import get_settings
 from app.core.db import dispose_engine, get_sessionmaker
 from app.core.errors import JobWeaverError, NotFoundError
 from app.core.monitoring import configure_logging, init_error_tracking
+from app.core.timing import ServerTimingMiddleware
 from app.gateway.factory import build_gateway
 from app.scheduler import start_scheduler, stop_scheduler
 from app.services.drafting import recover_queued, stop_tasks
@@ -53,6 +56,8 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
     init_error_tracking(get_settings())
     app = FastAPI(title="JobWeaver", version="0.1.0", lifespan=lifespan)
     app.add_middleware(CSRFMiddleware)
+    # Outermost, so the total includes the CSRF check.
+    app.add_middleware(ServerTimingMiddleware)
 
     @app.exception_handler(JobWeaverError)
     async def _handle(_: Request, exc: JobWeaverError) -> JSONResponse:
@@ -81,9 +86,23 @@ def create_app(frontend_dist: Path | None = FRONTEND_DIST) -> FastAPI:
     return app
 
 
+class HashedAssets(StaticFiles):
+    """Vite names every built asset after its content, so a file never changes in place:
+    browsers may keep it for a year without asking again. A deploy ships new names."""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+# The page that names the current assets: always revalidated, so a deploy shows at once.
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
 def mount_frontend(app: FastAPI, dist: Path) -> None:
     """One service serves the API and the built SPA: one URL, no CORS (ADR-0008)."""
-    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+    app.mount("/assets", HashedAssets(directory=dist / "assets"), name="assets")
     root = dist.resolve()
     index = root / "index.html"
 
@@ -103,7 +122,7 @@ def mount_frontend(app: FastAPI, dist: Path) -> None:
         candidate = (root / path).resolve()
         if path and candidate.is_file() and root in candidate.parents:
             return FileResponse(candidate)
-        return FileResponse(index)
+        return FileResponse(index, headers=REVALIDATE)
 
 
 app = create_app()
