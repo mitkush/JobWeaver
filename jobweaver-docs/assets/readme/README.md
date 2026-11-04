@@ -1,7 +1,9 @@
 # README artwork
 
-- `hero.svg` and `hero-mobile.svg`: original JobWeaver artwork, using the app's woven mark and pink/cyan palette. The desktop banner includes a decorative CSS animation with a reduced-motion fallback. No scripts, remote fonts or external image dependencies.
-- `workflow.svg` and `workflow-mobile.svg`: original three-stage product illustrations. The main README selects the vertical version on narrow screens.
+- `hero.svg` and `hero-mobile.svg`: original JobWeaver artwork, using the app's woven mark and pink/cyan palette. The threads flow, sparks travel along them, the cards float and the second headline line catches a light sweep. No scripts, remote fonts or external image dependencies.
+- `workflow.svg` and `workflow-mobile.svg`: original three-stage product illustrations. A thread weaves through the stages and lights each one in turn. The main README selects the vertical version on narrow screens.
+- Motion in every SVG uses CSS and SVG animation only, which GitHub plays inside images. Each file stops its motion under `prefers-reduced-motion: reduce`.
+- `feed-demo.webp`: an animated clip of the actual Feed (save a job, open keyword matches, check Saved), recorded by `feed-demo.mjs` against the production build with fictional API responses in the browser; no backend, database, AI provider or real account. The README falls back to the still Feed screenshots under reduced motion. To regenerate: build the frontend, then `OUT=frames node feed-demo.mjs` (Playwright; set `BROWSER` to a Chromium executable if needed) and assemble with `img2webp -loop 0 -lossy -q 85 -m 6`, giving each frame the duration in `frames/timings.txt`.
 - `feed-dark.png`, `feed-light.png`, `draft-dark.png`: the actual frontend at main commit `fdcb7bb`, captured in a temporary local Brave session. API responses were replaced with fictional jobs, companies, profile details and Draft content. No production database, live AI provider, real resume or user credential was used. The Feed was captured at 1440 × 860 and the Draft at 1440 × 1080.
 
 These are product illustrations, not measurements, customer endorsements or evidence of live provider results. Keep the captions and alt text in the main README when replacing an image. Update both Feed themes together.
