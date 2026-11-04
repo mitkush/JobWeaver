@@ -120,8 +120,9 @@ def mount_frontend(app: FastAPI, dist: Path) -> None:
                 headers={"Cache-Control": "no-cache"},
             )
         candidate = (root / path).resolve()
-        if path and candidate.is_file() and root in candidate.parents:
+        if path and candidate.is_file() and root in candidate.parents and candidate != index:
             return FileResponse(candidate)
+        # /index.html too: whichever way the page is reached, it names the current assets.
         return FileResponse(index, headers=REVALIDATE)
 
 

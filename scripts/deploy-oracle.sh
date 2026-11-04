@@ -97,8 +97,19 @@ if [[ -f "$caddyfile" ]] && ! sudo -n cmp -s "$caddyfile" /etc/caddy/Caddyfile; 
   if sudo -n caddy validate --config "$caddyfile" --adapter caddyfile >/dev/null 2>&1; then
     sudo -n cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.previous
     sudo -n install -m 0644 "$caddyfile" /etc/caddy/Caddyfile
-    sudo -n systemctl reload caddy
-    echo 'Caddy configuration updated from deployment/Caddyfile.'
+    if sudo -n systemctl reload caddy; then
+      echo 'Caddy configuration updated from deployment/Caddyfile.'
+    else
+      # Put the previous file back, so a later restart cannot load the rejected one.
+      sudo -n install -m 0644 /etc/caddy/Caddyfile.previous /etc/caddy/Caddyfile
+      if sudo -n systemctl reload caddy; then
+        echo 'Caddy rejected the new configuration on reload; the previous one is restored.'
+      else
+        echo 'Caddy reload failed and restoring the previous configuration also failed.'
+        echo 'Check: sudo systemctl status caddy; sudo journalctl -u caddy -n 50'
+      fi
+      exit 1
+    fi
   else
     echo 'deployment/Caddyfile was rejected by caddy validate; the proxy was not changed.'
   fi

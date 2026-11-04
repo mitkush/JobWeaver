@@ -76,7 +76,7 @@ async def test_hashed_assets_are_cached_for_a_year_and_the_page_is_revalidated(t
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as web:
         asset = await web.get("/assets/index-abc123.js")
         assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
-        for path in ("/", "/feed"):
+        for path in ("/", "/feed", "/index.html"):
             page = await web.get(path)
             assert page.headers["cache-control"] == "no-cache"
         # Timing is for the API only; static files and pages carry none.
