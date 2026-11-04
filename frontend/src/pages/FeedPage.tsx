@@ -231,7 +231,7 @@ function FeedList({ userId }: { userId: string | null }) {
       )}
 
       <div className="flex h-8 items-center">
-        {feed.isFetching && !feed.isPending && <Spinner label="Updating jobs…" />}
+        {feed.isFetching && feed.isPlaceholderData && <Spinner label="Updating jobs…" />}
       </div>
       {feed.isPending ? (
         <FeedSkeleton />

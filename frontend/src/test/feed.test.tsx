@@ -667,3 +667,24 @@ it("clears refresh feedback when a filter request fails", async () => {
   await screen.findByText("The feed could not load");
   expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument();
 });
+
+
+it("does not show view-change feedback when bookmarking refreshes the same view", async () => {
+  document.cookie = "jw_csrf=t";
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  mockFetch({
+    "GET /api/feed": () => ++calls === 1
+      ? json(makeFeed([makeCard()]))
+      : new Promise<Response>((resolve) => { finish = resolve; }),
+    "POST /api/feed/job-1/save": () => new Response(null, { status: 204 }),
+  });
+  renderWithApp(feedRoutes(), { route: "/feed" });
+  await screen.findByRole("link", { name: "Backend Engineer" });
+  await userEvent.click(screen.getByRole("button", { name: "Save Backend Engineer" }));
+  await waitFor(() => expect(calls).toBe(2));
+  expect(screen.queryByText("Updating jobs…")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Backend Engineer" })).toBeInTheDocument();
+  finish(json(makeFeed([makeCard({ saved: true })])));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save Backend Engineer" })).toHaveAttribute("aria-pressed", "true"));
+});
