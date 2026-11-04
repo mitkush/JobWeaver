@@ -124,7 +124,7 @@ GATEWAY_MODE=recorded
 docker compose up --build
 ```
 
-Open **[localhost:8000](http://localhost:8000)**. Compose starts PostgreSQL with pgvector, runs migrations and serves the built frontend and API together. Recorded AI makes no model calls; it uses fixed fixtures and does not seed a ready-made job Feed. Configure Sources to collect real jobs.
+Open **[localhost:8000](http://localhost:8000)**. Compose starts PostgreSQL with pgvector, runs migrations and serves the built frontend and API together. Compose mounts the recorded responses read-only from `backend/tests/fixtures/gateway`; they are not included in the production image. Recorded AI makes no model calls, uses fixed fixtures and does not seed a ready-made job Feed. Configure Sources to collect real jobs.
 
 <details>
 <summary><strong>Prefer running the backend and frontend separately?</strong></summary>

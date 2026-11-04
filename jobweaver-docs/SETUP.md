@@ -22,6 +22,8 @@ npm install
 npm run dev                    # http://localhost:5173
 ```
 
+The local Compose app mounts `backend/tests/fixtures/gateway` read-only at `/app/tests/fixtures/gateway`, matching the default recorded-gateway path. These fixtures are excluded from the production image.
+
 Without Google credentials, set `DEV_LOGIN_ENABLED=true` and `GATEWAY_MODE=recorded` in `backend/.env`: the sign-in page then shows a local dev sign-in, and documents are "parsed" from recorded fixtures with no AI calls.
 
 ## Drafts
