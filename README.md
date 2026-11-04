@@ -113,3 +113,5 @@ Backend tests need a Postgres database `jobweaver_test` (user/password `jobweave
 8. **Cron fallback (optional):** if the host ever sleeps through the daily run, add a free cron job (e.g. cron-job.org) that sends `POST https://<your-app>/api/internal/fetch` with header `X-Cron-Secret: <INTERNAL_CRON_SECRET>` once a day.
 
 Set `BRIGHTDATA_DISCOVERY_COUNTRIES=IN` to retain an India-wide LinkedIn discovery search across all work modes independently of Feed Preferences. Existing worldwide remote discovery stays enabled when requested by Preferences. Countries shared with Preferences are searched once. This applies only with `BRIGHTDATA_DISCOVERY_KEYWORDS`; each extra country consumes its own search credits.
+
+Daily fetching waits for a busy pipeline lock and retries every five minutes for up to 12 hours. Queue processing and fetching still share one lock. Only a lock refusal is retried; a completed fetch with provider failures follows the usual next-run recovery. If the lock never becomes available, the scheduler records an error rather than reporting a successful daily run.
