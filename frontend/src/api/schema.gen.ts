@@ -2583,6 +2583,10 @@ export interface components {
             match?: ("title" | "keywords" | "review") | null;
             /** Matched Keywords */
             matched_keywords?: components["schemas"]["MatchedKeyword"][];
+            /** Keyword Evidence */
+            keyword_evidence?: {
+                [key: string]: string;
+            };
         };
         /**
          * JobRef

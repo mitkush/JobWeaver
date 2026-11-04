@@ -10,7 +10,7 @@ from app.tailoring.skills import PROSE_WORDS, TECHNOLOGIES, canonical_skill, spe
 VOCABULARY = frozenset(canonical_skill(term) for term in TECHNOLOGIES)
 # Bump when keywords._pattern/_found/has_description semantics change. Vocabulary,
 # aliases, prose words and the minimum description length invalidate automatically.
-MATCHER_REVISION = 2
+MATCHER_REVISION = 1
 CACHE_VERSION = hashlib.sha256(
     json.dumps(
         [

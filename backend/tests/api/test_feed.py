@@ -26,7 +26,7 @@ from app.services import feed as feed_service
 from app.services.correspondence import Correspondence, merge_jobs, source_priorities
 from app.services.feed import sync_all_feeds
 from app.tailoring.job_experience import experience_requirement
-from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, add, posting
+from tests.services.test_correspondence import ADVERT, NOW, OTHER_ROLE, FailingSkills, add, posting
 
 
 @pytest.mark.parametrize(
@@ -468,6 +468,19 @@ RAILS_BLR = BACKEND_BLR | {
 }
 
 
+async def confirmed_context(skills=None) -> None:
+    """Explicit cached analysis for lexical/cache/isolation tests, without a model call."""
+    async with get_sessionmaker()() as session:
+        await session.execute(
+            update(Job).values(
+                required_skills=skills
+                if skills is not None
+                else ["Ruby on Rails", "PostgreSQL", "Sidekiq"]
+            )
+        )
+        await session.commit()
+
+
 async def seed_keywords() -> None:
     await add(
         "linkedin",
@@ -480,6 +493,7 @@ async def seed_keywords() -> None:
         ),
     )
     await process()
+    await confirmed_context()
 
 
 async def test_differently_titled_jobs_matching_core_keywords_get_their_own_section(alice):
@@ -496,7 +510,7 @@ async def test_differently_titled_jobs_matching_core_keywords_get_their_own_sect
     # "Rails" and "Ruby on Rails" are one skill; guardrails is not Rails. Skill extraction
     # ran after the sync and listed PostgreSQL, so that match now reads as a requirement.
     assert card["matched_keywords"] == [
-        {"keyword": "Rails", "where": "description", "core": True},
+        {"keyword": "Rails", "where": "requirements", "core": True},
         {"keyword": "PostgreSQL", "where": "requirements", "core": False},
     ]
     detail = (await client.get(f"/api/jobs/{card['job_id']}")).json()
@@ -583,6 +597,7 @@ async def test_another_users_keywords_never_change_my_keyword_matches(alice, bob
         ),
     )
     await process()
+    await confirmed_context()
     params = {"section": "link", "match": "keywords"}
     await a.put("/api/preferences", json=RAILS_BLR)
     before = (await a.get("/api/feed", params=params)).json()["items"]
@@ -632,6 +647,7 @@ async def test_core_keywords_are_must_haves_confirmed_by_the_job_description(ali
         ),
     )
     await process()
+    await confirmed_context()
     prefs = {
         "titles": ["Backend Developer", "Ruby on Rails Developer"],
         "keywords": ["Rails", "PostgreSQL"],
@@ -721,6 +737,7 @@ async def test_long_adverts_without_a_core_keyword_are_never_read(alice, monkeyp
         ),
     )
     await process()
+    await confirmed_context()
     read: list[str] = []
     real = feed_service.mentioned
 
@@ -856,6 +873,7 @@ async def test_cached_fallback_supports_unknown_core_and_non_core_keywords(alice
         ),
     )
     await process()
+    await confirmed_context()
     prefs = RAILS_BLR | {
         "keywords": ["Rails", "Sidekiq"],
         "core_keywords": ["Sidekiq"] if unknown_core else ["Rails"],
@@ -865,3 +883,66 @@ async def test_cached_fallback_supports_unknown_core_and_non_core_keywords(alice
     body = (await client.get("/api/feed", params={"section": "link", "match": "keywords"})).json()
     assert body["total"] == 1
     assert {k["keyword"] for k in body["items"][0]["matched_keywords"]} == {"Rails", "Sidekiq"}
+
+
+@pytest.mark.parametrize("skills", [[], ["Python", "Django"]])
+async def test_context_pending_is_reviewed_then_rejected_without_keyword_skill(alice, skills):
+    _, client = alice
+    app.dependency_overrides[get_gateway] = lambda: FailingSkills(
+        Path(get_settings().gateway_recorded_dir)
+    )
+    await add(
+        "linkedin",
+        posting(
+            "business-rails",
+            work_mode="hybrid",
+            title="Backend Developer",
+            description=(
+                "Build infrastructure with data, trust and rails to transact across borders. "
+                "Our backend uses Python and Django. Own its APIs and deployment in Bengaluru."
+            ),
+        ),
+    )
+    await process()
+    await client.put("/api/preferences", json=RAILS_CORE)
+
+    async def items(match):
+        return (await client.get("/api/feed", params={"section": "link", "match": match})).json()[
+            "items"
+        ]
+
+    assert len(await items("review")) == 1
+    assert await items("title") == []
+    await confirmed_context(skills)
+    await sync_all(client)
+    assert await items("review") == []
+    assert await items("title") == []
+
+
+async def test_pending_different_title_is_visible_then_promoted_with_evidence(alice):
+    _, client = alice
+    app.dependency_overrides[get_gateway] = lambda: FailingSkills(
+        Path(get_settings().gateway_recorded_dir)
+    )
+    await add(
+        "linkedin",
+        posting(
+            "technical-rails",
+            work_mode="hybrid",
+            title="Payments Engineer",
+            description=(
+                "Build our ruby/rails API with PostgreSQL and Sidekiq workers. "
+                "Own reliable deployments and production monitoring in Bengaluru."
+            ),
+        ),
+    )
+    await process()
+    await client.put("/api/preferences", json=RAILS_BLR)
+    params = {"section": "link", "match": "review"}
+    assert len((await client.get("/api/feed", params=params)).json()["items"]) == 1
+    await confirmed_context()
+    await sync_all(client)
+    [card] = (await client.get("/api/feed", params=params | {"match": "keywords"})).json()["items"]
+    detail = (await client.get(f"/api/jobs/{card['job_id']}")).json()
+    assert "ruby/rails API" in detail["keyword_evidence"]["Rails"]
+    assert "keyword_evidence" not in card

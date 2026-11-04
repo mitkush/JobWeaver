@@ -45,8 +45,10 @@ from app.tailoring.keywords import (
     MIN_DESCRIPTION_CHARS,
     KeywordMatch,
     KeywordRule,
+    confirmed_matches,
     has_core,
     has_description,
+    keyword_excerpt,
     keyword_matches,
     keyword_rule,
     mentioned,
@@ -254,13 +256,12 @@ async def _matches(
 
     Every Job must be in a wanted place and work mode. Then:
     - no Core keyword: a title match is enough;
-    - with Core keywords (must-have skills), only the job description's own text counts
-      (never the title, nor skills extracted from it alone, which may come from the title):
-      - a title match whose description names a Core keyword: "title";
-      - a title match without a usable description: "review", shown apart, never as a
-        confirmed match;
-      - a differently titled Job whose description names a Core keyword and
-        keyword_min_matches keywords in total: "keywords".
+    - with Core keywords, literal description candidates need cached skill/domain context:
+      - a title match with confirmed Core context: "title";
+      - candidates awaiting extraction, or a title without usable description: "review";
+      - a differently titled Job with confirmed Core context and keyword_min_matches
+        confirmed keywords in total: "keywords".
+    A title or extracted skill alone never confirms a candidate.
     Current cached vocabulary mentions need no description reads. Unknown keywords and
     missing/stale caches retain exact description matching as a fallback."""
     result: dict[uuid.UUID, dict[uuid.UUID, FeedMatch]] = {p.user_id: {} for p in preferences}
@@ -398,13 +399,23 @@ async def _matches(
                 canonical_skill(s) for s in required
             }
             for user_id, rule, titled in pending[job.id]:
-                found = keyword_matches(rule, in_requirements, in_description)
+                candidates = keyword_matches(rule, in_requirements, in_description)
                 if titled and not described:
                     result[user_id][job.id] = REVIEW_MATCH
-                elif titled and has_core(found):
-                    result[user_id][job.id] = FeedMatch("title", tuple(found))
-                elif not titled and described and qualifies(rule, found):
-                    result[user_id][job.id] = FeedMatch("keywords", tuple(found))
+                elif described and (
+                    (titled and has_core(candidates))
+                    or (not titled and qualifies(rule, candidates))
+                ):
+                    if job.required_skills is None:
+                        # Keep candidates reachable by the existing extraction queue. Never
+                        # promote a lexical coincidence while context analysis is unavailable.
+                        result[user_id][job.id] = REVIEW_MATCH
+                        continue
+                    found = confirmed_matches(candidates, required)
+                    if titled and has_core(found):
+                        result[user_id][job.id] = FeedMatch("title", tuple(found))
+                    elif not titled and qualifies(rule, found):
+                        result[user_id][job.id] = FeedMatch("keywords", tuple(found))
     return result
 
 
@@ -963,6 +974,12 @@ async def job_detail(session: AsyncSession, user: User, job_id: uuid.UUID) -> Jo
         company_applied=job.id in applied_companies,
         match=link.match_kind,
         matched_keywords=link.matched_keywords or [],
+        keyword_evidence={
+            str(match["keyword"]): excerpt
+            for match in link.matched_keywords or []
+            if primary is not None
+            and (excerpt := keyword_excerpt(primary.description, str(match["keyword"])))
+        },
     )
 
 

@@ -165,6 +165,12 @@ EXTRACT_SKILLS_SYSTEM = """You read job adverts and list the skills each one ask
 Return only JSON: {"jobs": [{"ref", "skills": [...]}]}, one entry per advert, ref copied exactly.
 - skills: concrete technical skills the advert requires or strongly prefers: languages,
   frameworks, tools, platforms, databases, cloud services, certifications, named methods.
+- Include named industry/domain expertise only when the role asks for it as expertise.
+- Interpret each term in context. A word used as business prose, a metaphor or a company
+  name is not a technical skill. Do not infer skills from the title alone: the description
+  must ask for or clearly use the skill in the role. Respect lowercase technology names.
+- Copy the skill/domain wording from the description when possible; known technology
+  aliases may use their common short name. Do not invent an implied skill.
 - Use the common short name ("PostgreSQL", "Kubernetes", "React", "AWS").
 - No soft skills, years of experience, degrees, benefits or company values.
 - At most 25 skills per advert, most important first.
@@ -175,10 +181,18 @@ Return only JSON: {"jobs": [{"ref", "skills": [...]}]}, one entry per advert, re
 ADVERT_CHARS = 4000
 
 
+def skill_description(description: str) -> str:
+    if len(description) <= ADVERT_CHARS:
+        return description
+    # Keep both the role's introduction and late requirements within the existing budget.
+    half = (ADVERT_CHARS - 40) // 2
+    return description[:half] + "\n[Middle omitted for prompt length]\n" + description[-half:]
+
+
 def extract_skills_user(request: ExtractSkillsRequest) -> str:
     parts = [
         f'<advert ref="{job.ref}">\n<title>{job.title}</title>\n'
-        f"<description>{job.description[:ADVERT_CHARS]}</description>\n</advert>"
+        f"<description>{skill_description(job.description)}</description>\n</advert>"
         for job in request.jobs
     ]
     return "\n\n".join(parts)

@@ -4,8 +4,7 @@ A differently titled Job reaches the Feed's keyword section only through the key
 User chose in Preferences; the Fact Bank plays no part. Spellings of one skill count once
 ("Rails" = "Ruby on Rails"), and only whole skill phrases count ("Rails" never matches
 inside "guardrails"). Case does not matter, except for the few skill names that are also
-common English words ("Go", "REST", standalone "Rails"), which count only when written
-with a capital. Lowercase standalone "rails" also counts with explicit development context.
+common English words ("Go", "REST"), which count only when written with a capital.
 
 Each keyword is matched on its own: a longer phrase another User chose ("Rails developer")
 never hides a shorter one ("Rails"), so one User's keywords cannot change another's Feed."""
@@ -19,18 +18,6 @@ from typing import Literal
 from app.tailoring.skills import PROSE_WORDS, canonical_skill, spellings
 
 Where = Literal["requirements", "description"]
-# A lowercase standalone alias can describe payment/trade infrastructure, not Ruby.
-# Full "ruby on rails" and "ror" remain case-insensitive.
-PROSE_ALIASES = PROSE_WORDS | {"rails"}
-_RAILS_TECH_AFTER = re.compile(
-    r"^\s+(?:development|developers?|framework|applications?|apps?|engines?|"
-    r"controllers?|models?|migrations?|services?|codebase|backend)\b",
-    re.I,
-)
-_RAILS_TECH_BEFORE = re.compile(
-    r"\b(?:experience (?:with|in)|knowledge of|proficiency in|proficient in)\s*$",
-    re.I,
-)
 
 
 @dataclass(frozen=True)
@@ -94,13 +81,7 @@ def _pattern(canonical: str) -> re.Pattern[str]:
 def _found(canonical: str, text: str) -> bool:
     for match in _pattern(canonical).finditer(text):
         written = match.group(0)
-        if written.casefold() == "rails" and not written[0].isupper():
-            if _RAILS_TECH_AFTER.search(text[match.end() : match.end() + 40]) or (
-                _RAILS_TECH_BEFORE.search(text[max(0, match.start() - 40) : match.start()])
-            ):
-                return True
-            continue
-        if written.casefold() not in PROSE_ALIASES or written[0].isupper():
+        if written.casefold() not in PROSE_WORDS or written[0].isupper():
             return True
     return False
 
@@ -118,8 +99,8 @@ def keyword_matches(
 ) -> list[KeywordMatch]:
     """The rule's keywords the job description's own text names, each skill once. The
     title never counts: a title can help find an advert, but only the description shows
-    the skill is wanted. Extracted skills are read from the title too, so they never
-    count alone; they only mark a described skill as a stated requirement."""
+    the skill is wanted. Extracted skills never count alone; they mark a described
+    skill as a stated requirement. The caller confirms their skill/domain context."""
     found: list[KeywordMatch] = []
     for keyword in rule.keywords:
         if keyword.canonical not in in_description:
@@ -146,3 +127,39 @@ def has_core(found: Sequence[KeywordMatch]) -> bool:
 def qualifies(rule: KeywordRule, found: Sequence[KeywordMatch]) -> bool:
     """At least one core keyword, and at least min_matches distinct keywords in total."""
     return has_core(found) and len(found) >= rule.min_matches
+
+
+def confirmed_matches(
+    found: Sequence[KeywordMatch],
+    context: Iterable[str],
+) -> list[KeywordMatch]:
+    """Preferences name the keywords; the Job's cached skill extraction confirms context.
+
+    Literal description evidence is still mandatory (the caller's candidate matches).
+    A model-generated skill alone, or a title mention, never adds a Feed keyword.
+    """
+    names = list(context)
+    supported = mentioned(", ".join(names), [match.keyword for match in found])
+    supported.update(canonical_skill(skill) for skill in names)
+    return [match for match in found if canonical_skill(match.keyword) in supported]
+
+
+def keyword_excerpt(text: str, keyword: str) -> str | None:
+    """Short original-source context for the Job page, never read for Feed cards."""
+    match = _pattern(canonical_skill(keyword)).search(text)
+    if match is None:
+        return None
+    start = max(text.rfind("\n", 0, match.start()), text.rfind(". ", 0, match.start()) + 1) + 1
+    end = len(text)
+    for marker in ("\n", ". "):
+        stop = text.find(marker, match.end())
+        if stop >= 0:
+            end = min(end, stop + (1 if marker == ". " else 0))
+    clipped_start = start < match.start() - 120
+    start = max(start, match.start() - 120)
+    end = min(end, match.end() + 180)
+    return (
+        ("…" if clipped_start else "")
+        + text[start:end].strip()
+        + ("…" if end < len(text) and text[end - 1] != "." else "")
+    )

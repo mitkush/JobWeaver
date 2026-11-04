@@ -293,6 +293,24 @@ export function JobPage() {
             <CardBody className="space-y-3">
               <MatchReason match={data.match} matched_keywords={data.matched_keywords} />
               <SkillGaps gaps={data.skill_gaps} matches={data.skill_matches} />
+              {Object.keys(data.keyword_evidence ?? {}).length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium">Why these keywords matched</summary>
+                  <ul className="mt-3 space-y-3 text-sm">
+                    {Object.entries(data.keyword_evidence ?? {}).map(([keyword, evidence]) => (
+                      <li key={keyword}>
+                        <p className="font-medium">{keyword}</p>
+                        <blockquote className="mt-1 border-l-2 border-brand-400 pl-3 text-slate-600 dark:text-slate-300">
+                          {evidence}
+                        </blockquote>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Original Source description. Skill context is checked once per Job description, not on each Feed view.
+                  </p>
+                </details>
+              )}
 
             </CardBody>
           </Card>

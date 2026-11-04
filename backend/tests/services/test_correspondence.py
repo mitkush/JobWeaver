@@ -457,3 +457,30 @@ async def test_a_split_rules_out_proposals_through_the_rest_of_either_group(db):
         select(func.count()).select_from(MatchPair).where(MatchPair.status == PairStatus.OPEN)
     )
     assert open_pairs == 0
+
+
+async def test_primary_description_edit_invalidates_skill_context(db):
+    await feed_user(db)
+    await add("linkedin", posting("edited"))
+    await build().process()
+    [job] = await jobs(db)
+    assert job.required_skills
+    await add("linkedin", posting("edited", description=OTHER_ROLE))
+    [job] = await jobs(db)
+    assert job.required_skills is None
+    assert job.skills_extracted_at is None
+
+
+async def test_changed_description_during_extraction_cannot_store_stale_context(db):
+    await feed_user(db)
+    await add("linkedin", posting("race"))
+
+    class ChangedSkills(RecordedAIGateway):
+        async def extract_skills(self, request):
+            await add("linkedin", posting("race", description=OTHER_ROLE))
+            return await super().extract_skills(request)
+
+    report = await build(gateway=ChangedSkills(Path(get_settings().gateway_recorded_dir))).process()
+    assert report.skills_extracted == 0
+    [job] = await jobs(db)
+    assert job.required_skills is None
