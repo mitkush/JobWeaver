@@ -127,3 +127,9 @@ async def test_queue_run_fills_caches_before_slow_ai_work(db, monkeypatch):
         await pipeline.process_queues()
     db.expire_all()
     assert await db.scalar(select(Posting.description_mentions_version)) == CACHE_VERSION
+
+
+def test_description_cache_does_not_promote_trade_rails_to_framework():
+    description = "Build data, trust and rails to transact across borders. Python and Django. " * 3
+    assert "ruby on rails" not in describe(description).skills
+    assert "ruby on rails" in describe("Ruby on Rails applications. " * 5).skills

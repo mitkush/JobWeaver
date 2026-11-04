@@ -4,7 +4,8 @@ A differently titled Job reaches the Feed's keyword section only through the key
 User chose in Preferences; the Fact Bank plays no part. Spellings of one skill count once
 ("Rails" = "Ruby on Rails"), and only whole skill phrases count ("Rails" never matches
 inside "guardrails"). Case does not matter, except for the few skill names that are also
-common English words ("Go", "REST"), which count only when written with a capital.
+common English words ("Go", "REST", standalone "Rails"), which count only when written
+with a capital. Lowercase standalone "rails" also counts with explicit development context.
 
 Each keyword is matched on its own: a longer phrase another User chose ("Rails developer")
 never hides a shorter one ("Rails"), so one User's keywords cannot change another's Feed."""
@@ -18,6 +19,18 @@ from typing import Literal
 from app.tailoring.skills import PROSE_WORDS, canonical_skill, spellings
 
 Where = Literal["requirements", "description"]
+# A lowercase standalone alias can describe payment/trade infrastructure, not Ruby.
+# Full "ruby on rails" and "ror" remain case-insensitive.
+PROSE_ALIASES = PROSE_WORDS | {"rails"}
+_RAILS_TECH_AFTER = re.compile(
+    r"^\s+(?:development|developers?|framework|applications?|apps?|engines?|"
+    r"controllers?|models?|migrations?|services?|codebase|backend)\b",
+    re.I,
+)
+_RAILS_TECH_BEFORE = re.compile(
+    r"\b(?:experience (?:with|in)|knowledge of|proficiency in|proficient in)\s*$",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -81,7 +94,13 @@ def _pattern(canonical: str) -> re.Pattern[str]:
 def _found(canonical: str, text: str) -> bool:
     for match in _pattern(canonical).finditer(text):
         written = match.group(0)
-        if written.casefold() not in PROSE_WORDS or written[0].isupper():
+        if written.casefold() == "rails" and not written[0].isupper():
+            if _RAILS_TECH_AFTER.search(text[match.end() : match.end() + 40]) or (
+                _RAILS_TECH_BEFORE.search(text[max(0, match.start() - 40) : match.start()])
+            ):
+                return True
+            continue
+        if written.casefold() not in PROSE_ALIASES or written[0].isupper():
             return True
     return False
 

@@ -123,3 +123,27 @@ def test_extracted_skills_never_confirm_a_keyword_alone():
         ("Rails", "requirements"),
         ("PostgreSQL", "requirements"),
     ]
+
+
+def test_trade_rails_do_not_satisfy_ruby_preferences():
+    rule = keyword_rule(["Ruby", "Ruby on rails", "ROR", "rails"], ["Ruby", "rails"], 1)
+    description = (
+        "Whoever builds the infrastructure those agents run on, with the data, trust "
+        "and rails to transact across borders, will define how the industry works. "
+        "Strong Python and Django experience required."
+    )
+    assert found(rule, description=description) == []
+    assert not qualifies(rule, found(rule, description=description))
+
+
+def test_unambiguous_rails_spellings_and_named_framework_still_match():
+    rule = keyword_rule(["rails"], ["rails"], 1)
+    for description in (
+        "Experience with Rails, PostgreSQL and Sidekiq.",
+        "experience with ruby on rails.",
+        "experience with ruby-on-rails.",
+        "experience with ror.",
+        "rails development experience required.",
+        "experience with rails.",
+    ):
+        assert qualifies(rule, found(rule, description=description))
