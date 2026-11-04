@@ -1,5 +1,6 @@
 """In-process scheduler (ADR-0008): the daily Fetch Run on the kept-warm instance."""
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -11,12 +12,27 @@ from app.core.db import get_sessionmaker
 
 logger = logging.getLogger(__name__)
 _scheduler: AsyncIOScheduler | None = None
+# Queue/Correspondence work shares the fetch lock and may run for tens of minutes.
+# Retry only a lock refusal, never a completed run with provider failures.
+LOCK_RETRY_SECONDS = 5 * 60
+LOCK_ATTEMPTS = 145  # Initial attempt plus up to 12 hours of waiting.
 
 
 async def daily_fetch() -> None:
     from app.services.pipeline import build_fetcher
 
-    await build_fetcher().run_all(trigger="schedule")
+    fetcher = build_fetcher()
+    for attempt in range(LOCK_ATTEMPTS):
+        outcomes = await fetcher.run_all(trigger="schedule")
+        if outcomes is not None:
+            return
+        if attempt + 1 < LOCK_ATTEMPTS:
+            logger.warning(
+                "Daily fetch waiting for another pipeline run; retrying in %s seconds",
+                LOCK_RETRY_SECONDS,
+            )
+            await asyncio.sleep(LOCK_RETRY_SECONDS)
+    raise RuntimeError("Daily fetch could not acquire the pipeline lock within 12 hours")
 
 
 async def process_queues() -> None:
