@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Select, and_, any_, delete, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
@@ -20,6 +20,7 @@ from app.adapters.posting_policy import BLOCKED_COMPANIES
 from app.adapters.registry import registered_adapters
 from app.core.db import among
 from app.core.errors import NotFoundError
+from app.core.timing import phase
 from app.dedup.scoring import clean_title
 from app.models.draft import Application, Draft
 from app.models.fact import Fact, FactKind
@@ -541,7 +542,6 @@ def _requirements(job: Job, link: UserJob) -> list[str] | None:
 def _filtered(user: User, query: FeedQuery, now: datetime) -> Select[tuple[Job, UserJob]]:
     stmt = (
         select(Job, UserJob)
-        .options(defer(UserJob.page_description))
         .join(UserJob, UserJob.job_id == Job.id)
         .where(UserJob.user_id == user.id, _allowed_company())
     )
@@ -620,15 +620,50 @@ def _like_literal(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _match(stmt: Select[tuple[Job, UserJob]], kind: str) -> Select[tuple[Job, UserJob]]:
+def _match_condition(kind: str) -> ColumnElement[bool]:
     """Jobs that no longer match stay with the title matches, where the User found them."""
     if kind in ("keywords", "review"):
-        return stmt.where(UserJob.match_kind == kind)
-    return stmt.where(or_(UserJob.match_kind.is_(None), UserJob.match_kind == "title"))
+        return UserJob.match_kind == kind
+    return or_(UserJob.match_kind.is_(None), UserJob.match_kind == "title")
+
+
+def _section_condition(with_email: bool) -> ColumnElement[bool]:
+    return Job.contact_email.is_not(None) if with_email else Job.contact_email.is_(None)
+
+
+def _match(stmt: Select[tuple[Job, UserJob]], kind: str) -> Select[tuple[Job, UserJob]]:
+    return stmt.where(_match_condition(kind))
 
 
 def _section(stmt: Select[tuple[Job, UserJob]], with_email: bool) -> Select[tuple[Job, UserJob]]:
-    return stmt.where(Job.contact_email.is_not(None) if with_email else Job.contact_email.is_(None))
+    return stmt.where(_section_condition(with_email))
+
+
+async def _feed_counts(
+    session: AsyncSession, filtered: Select[tuple[Job, UserJob]], match: str, saved: int
+) -> FeedCounts:
+    """Both sections of the chosen match category and every category's size, in one pass
+    over the filtered Feed. Saved is counted separately: it ignores the filters."""
+    chosen = _match_condition(match)
+    row = (
+        await session.execute(
+            filtered.with_only_columns(
+                func.count().filter(and_(chosen, _section_condition(True))),
+                func.count().filter(and_(chosen, _section_condition(False))),
+                func.count().filter(_match_condition("title")),
+                func.count().filter(_match_condition("keywords")),
+                func.count().filter(_match_condition("review")),
+            )
+        )
+    ).one()
+    return FeedCounts(
+        with_email=row[0],
+        apply_link_only=row[1],
+        title_matches=row[2],
+        keyword_matches=row[3],
+        review_matches=row[4],
+        saved=saved,
+    )
 
 
 async def _count(session: AsyncSession, stmt: Select[tuple[Job, UserJob]]) -> int:
@@ -711,41 +746,39 @@ async def list_feed(
 ) -> FeedOut:
     now = now or datetime.now(UTC)
     filtered = _filtered(user, query, now)
-    saved = await saved_count(session, user)
-    if _view(query) == "saved":
-        # The shortlist ignores match category and email/link section, so no bookmark
-        # can look missing; most recently saved first.
-        total = await _count(session, filtered)
-        counts = FeedCounts(with_email=0, apply_link_only=0, saved=saved)
+    section: Literal["email", "link"] = query.section or "email"
+    with phase("counts"):
+        saved = await saved_count(session, user)
+        if _view(query) == "saved":
+            # The shortlist ignores match category and email/link section, so no bookmark
+            # can look missing; most recently saved first.
+            total = await _count(session, filtered)
+            counts = FeedCounts(with_email=0, apply_link_only=0, saved=saved)
+            order = (UserJob.saved_at.desc(), Job.id)
+            page = filtered
+        else:
+            counts = await _feed_counts(session, filtered, query.match, saved)
+            if query.section is None and counts.with_email == 0 and counts.apply_link_only:
+                # No section chosen: open the one that has Jobs, in this same response.
+                section = "link"
+            total = counts.with_email if section == "email" else counts.apply_link_only
+            order = (Job.posted_at.desc().nulls_last(), Job.id)
+            page = _section(_match(filtered, query.match), section == "email")
+    with phase("page"):
         stmt = (
-            filtered.order_by(UserJob.saved_at.desc(), Job.id)
+            page.options(defer(UserJob.page_description))
+            .order_by(*order)
             .limit(query.limit)
             .offset(query.offset)
         )
-    else:
-        base = _match(filtered, query.match)
-        counts = FeedCounts(
-            with_email=await _count(session, _section(base, True)),
-            apply_link_only=await _count(session, _section(base, False)),
-            title_matches=await _count(session, _match(filtered, "title")),
-            keyword_matches=await _count(session, _match(filtered, "keywords")),
-            review_matches=await _count(session, _match(filtered, "review")),
-            saved=saved,
+        rows = (await session.execute(stmt)).all()
+    with phase("cards"):
+        skills = await load_user_skills(session, user)
+        duplicates = await _possible_duplicates(session, [job.id for job, _ in rows])
+        labels = _labels()
+        draft_ids, application_states, applied_companies = await package_states(
+            session, user, [job for job, _ in rows]
         )
-        total = counts.with_email if query.section == "email" else counts.apply_link_only
-        stmt = (
-            _section(base, query.section == "email")
-            .order_by(Job.posted_at.desc().nulls_last(), Job.id)
-            .limit(query.limit)
-            .offset(query.offset)
-        )
-    rows = (await session.execute(stmt)).all()
-    skills = await load_user_skills(session, user)
-    duplicates = await _possible_duplicates(session, [job.id for job, _ in rows])
-    labels = _labels()
-    draft_ids, application_states, applied_companies = await package_states(
-        session, user, [job for job, _ in rows]
-    )
     items = [
         FeedCard(
             job_id=job.id,
@@ -787,6 +820,7 @@ async def list_feed(
     return FeedOut(
         items=items,
         total=total,
+        section=section,
         counts=counts,
         last_updated_at=await last_updated(session),
         sources=[

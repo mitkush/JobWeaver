@@ -2368,6 +2368,12 @@ export interface components {
             items: components["schemas"]["FeedCard"][];
             /** Total */
             total: number;
+            /**
+             * Section
+             * @default email
+             * @enum {string}
+             */
+            section?: "email" | "link";
             counts: components["schemas"]["FeedCounts"];
             /** Last Updated At */
             last_updated_at: string | null;
@@ -4482,7 +4488,7 @@ export interface operations {
     get_feed_api_feed_get: {
         parameters: {
             query?: {
-                section?: "email" | "link";
+                section?: ("email" | "link") | null;
                 match?: "title" | "keywords" | "review";
                 q?: string | null;
                 location?: string | null;

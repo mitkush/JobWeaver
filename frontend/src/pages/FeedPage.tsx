@@ -160,20 +160,16 @@ function FeedList({ userId }: { userId: string | null }) {
     setParams(new URLSearchParams(remembered ?? fallback));
     setFiltersKey((k) => k + 1);
   };
-  const explicit = params.get("section");
-  const requested: Section = explicit === "link" ? "link" : "email";
-  const feed = useFeed(feedQuery(params, requested));
+  const feed = useFeed(feedQuery(params));
   const counts = feed.data?.counts;
-  // With no choice made, open the section that has jobs.
-  const section: Section =
-    !explicit && counts && counts.with_email === 0 && counts.apply_link_only > 0 ? "link" : requested;
-  const shown = useFeed(feedQuery(params, section));
-  const data = section === requested ? feed.data : shown.data;
+  const data = feed.data;
+  // The server reports which section it returned, including the one it chose.
+  const section: Section = data?.section ?? (params.get("section") === "link" ? "link" : "email");
   const hidden = view === "hidden";
   const savedView = view === "saved";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const currentResult = section === requested ? feed : shown;
+  const currentResult = feed;
   useEffect(() => {
     // Previous-query placeholder data cannot tell us how many pages this view has.
     if (!data || currentResult.isPlaceholderData || currentResult.isFetching || currentResult.isError || page <= pages) return;
@@ -327,7 +323,7 @@ function FeedList({ userId }: { userId: string | null }) {
               : "No apply-link-only jobs here."}
         </p>
       ) : (
-        <div className="grid gap-x-4 xl:grid-cols-2" aria-busy={shown.isFetching || undefined}>
+        <div className="grid gap-x-4 xl:grid-cols-2" aria-busy={feed.isFetching || undefined}>
           {data?.items.map((job) => <JobCard key={job.job_id} job={job} />)}
         </div>
       )}
