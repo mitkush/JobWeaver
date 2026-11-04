@@ -20,6 +20,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://jobweaver:jobweaver@postgres:5432/jobweaver
       PUBLIC_URL: http://localhost:8000
     ports: ["8000:8000"]
+    # Local recorded-AI responses only; fixtures stay out of the production image.
+    volumes:
+      - ./backend/tests/fixtures/gateway:/app/tests/fixtures/gateway:ro
     depends_on:
       postgres:
         condition: service_healthy
