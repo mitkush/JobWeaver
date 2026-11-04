@@ -51,6 +51,8 @@ from app.tailoring.keywords import (
     keyword_excerpt,
     keyword_matches,
     keyword_rule,
+    keyword_spellings,
+    literal_matches,
     mentioned,
     qualifies,
 )
@@ -59,7 +61,6 @@ from app.tailoring.skills import (
     canonical_skill,
     skill_gaps,
     skill_matches,
-    spellings,
     user_skills,
 )
 
@@ -256,11 +257,11 @@ async def _matches(
 
     Every Job must be in a wanted place and work mode. Then:
     - no Core keyword: a title match is enough;
-    - with Core keywords, literal description candidates need cached skill/domain context:
-      - a title match with confirmed Core context: "title";
-      - candidates awaiting extraction, or a title without usable description: "review";
-      - a differently titled Job with confirmed Core context and keyword_min_matches
-        confirmed keywords in total: "keywords".
+    - with Core keywords, clear literal evidence counts without AI; ambiguous names
+      can be confirmed by cached skill/domain context:
+      - a title match with confirmed Core evidence: "title";
+      - unresolved candidates, or a title without usable description: "review";
+      - a differently titled Job with enough confirmed keywords: "keywords".
     A title or extracted skill alone never confirms a candidate.
     Current cached vocabulary mentions need no description reads. Unknown keywords and
     missing/stale caches retain exact description matching as a fallback."""
@@ -282,6 +283,9 @@ async def _matches(
     if not pending:
         return result
     terms = frozenset().union(*(r.terms for r in rules.values() if r is not None))
+    if any(canonical_skill(term) == "ruby on rails" for term in terms):
+        # The fallback must retain the same clear Ruby evidence as vocabulary caches.
+        terms |= {"ruby"}
     # A Core mention is required for every confirmed match. Check the literal spellings
     # in PostgreSQL first so unrelated multi-KB descriptions never cross the network.
     # ILIKE is deliberately a broad filter; Python's whole-word and capitalization
@@ -292,7 +296,7 @@ async def _matches(
         if rule is not None
         for keyword in rule.keywords
         if keyword.core
-        for spelling in spellings(keyword.canonical)
+        for spelling in keyword_spellings(keyword.canonical)
         if spelling
     }
     mentions_core = or_(
@@ -371,7 +375,7 @@ async def _matches(
                 *(
                     Posting.description.ilike(f"%{_like_literal(spelling)}%", escape="\\")
                     for term in unknown
-                    for spelling in spellings(canonical_skill(term))
+                    for spelling in keyword_spellings(canonical_skill(term))
                 )
             )
             unknown_descriptions = dict(
@@ -406,16 +410,17 @@ async def _matches(
                     (titled and has_core(candidates))
                     or (not titled and qualifies(rule, candidates))
                 ):
-                    if job.required_skills is None:
-                        # Keep candidates reachable by the existing extraction queue. Never
-                        # promote a lexical coincidence while context analysis is unavailable.
-                        result[user_id][job.id] = REVIEW_MATCH
-                        continue
-                    found = confirmed_matches(candidates, required)
+                    clear = literal_matches(candidates, in_description)
+                    contextual = confirmed_matches(candidates, required)
+                    found = [match for match in candidates if match in clear or match in contextual]
                     if titled and has_core(found):
                         result[user_id][job.id] = FeedMatch("title", tuple(found))
                     elif not titled and qualifies(rule, found):
                         result[user_id][job.id] = FeedMatch("keywords", tuple(found))
+                    else:
+                        # A limited model output must never silently erase literal evidence.
+                        # Unresolved candidates remain reachable even after an empty analysis.
+                        result[user_id][job.id] = REVIEW_MATCH
     return result
 
 

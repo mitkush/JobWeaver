@@ -181,3 +181,30 @@ def test_ruby_keyword_is_supported_by_explicit_ruby_on_rails_context():
     rule = keyword_rule(["Ruby"], ["Ruby"], 1)
     candidates = found(rule, description="Build Ruby on Rails APIs")
     assert len(confirmed_matches(candidates, ["Ruby on Rails"])) == 1
+
+
+@pytest.mark.parametrize("text", ["ruby", "Ruby", "RUBY", "Ruby on Rails", "ruby on rails"])
+def test_rails_preference_has_clear_case_insensitive_ruby_evidence(text):
+    from app.tailoring.keywords import literal_matches
+
+    rule = keyword_rule(["Ruby on Rails"], ["Ruby on Rails"], 1)
+    candidates = found(rule, description=text)
+    assert literal_matches(candidates, mentioned(text, ["Ruby", "Ruby on Rails"])) == candidates
+    assert len(candidates) == 1
+
+
+def test_rails_preference_does_not_match_rubygems_or_title_only():
+    rule = keyword_rule(["Ruby on Rails"], ["Ruby on Rails"], 1)
+    assert found(rule, description="rubygems and guardrails") == []
+    assert found(rule, requirements="Ruby") == []
+
+
+def test_excerpt_keeps_the_first_character_of_a_paragraph():
+    from app.tailoring.keywords import keyword_excerpt
+
+    assert (
+        keyword_excerpt("Build our ruby/rails API. More text.", "Ruby on Rails")
+        == "Build our ruby/rails API."
+    )
+    assert keyword_excerpt("Ruby developer", "Ruby on Rails") == "Ruby developer"
+    assert keyword_excerpt("Heading\nRuby developer", "Ruby on Rails") == "Ruby developer"

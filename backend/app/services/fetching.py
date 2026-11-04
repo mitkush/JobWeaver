@@ -285,12 +285,15 @@ async def save_postings(
             posting.embedding = None
             posting.embedding_model = None
             posting.match_state = "pending"
-            # Skill context belongs to this exact primary advert, not an older JD.
-            await session.execute(
-                update(Job)
-                .where(Job.primary_posting_id == posting.id)
-                .values(required_skills=None, skills_extracted_at=None)
-            )
+            # Keep prior skills provisionally while changed text is reanalysed. A title
+            # or whitespace-only edit does not invalidate description-based context.
+            if " ".join(posting.description.split()) != " ".join(item.description.split()):
+                await session.execute(
+                    update(Job)
+                    .where(Job.primary_posting_id == posting.id)
+                    .values(skills_extracted_at=None)
+                )
+
         if (
             is_new
             or posting.description != item.description

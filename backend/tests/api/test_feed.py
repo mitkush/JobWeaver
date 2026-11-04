@@ -475,7 +475,8 @@ async def confirmed_context(skills=None) -> None:
             update(Job).values(
                 required_skills=skills
                 if skills is not None
-                else ["Ruby on Rails", "PostgreSQL", "Sidekiq"]
+                else ["Ruby on Rails", "PostgreSQL", "Sidekiq"],
+                skills_extracted_at=NOW,
             )
         )
         await session.commit()
@@ -915,7 +916,7 @@ async def test_context_pending_is_reviewed_then_rejected_without_keyword_skill(a
     assert await items("title") == []
     await confirmed_context(skills)
     await sync_all(client)
-    assert await items("review") == []
+    assert len(await items("review")) == 1
     assert await items("title") == []
 
 
@@ -931,7 +932,7 @@ async def test_pending_different_title_is_visible_then_promoted_with_evidence(al
             work_mode="hybrid",
             title="Payments Engineer",
             description=(
-                "Build our ruby/rails API with PostgreSQL and Sidekiq workers. "
+                "Build our rails API with PostgreSQL and Sidekiq workers. "
                 "Own reliable deployments and production monitoring in Bengaluru."
             ),
         ),
@@ -944,5 +945,62 @@ async def test_pending_different_title_is_visible_then_promoted_with_evidence(al
     await sync_all(client)
     [card] = (await client.get("/api/feed", params=params | {"match": "keywords"})).json()["items"]
     detail = (await client.get(f"/api/jobs/{card['job_id']}")).json()
-    assert "ruby/rails API" in detail["keyword_evidence"]["Rails"]
+    assert detail["keyword_evidence"]["Rails"] == (
+        "Build our rails API with PostgreSQL and Sidekiq workers."
+    )
     assert "keyword_evidence" not in card
+
+
+@pytest.mark.parametrize("spelling", ["ruby", "Ruby", "RUBY", "Ruby on Rails", "ruby on rails"])
+@pytest.mark.parametrize("cache", ["current", "stale", "missing"])
+async def test_rails_preference_matches_ruby_without_ai(alice, db, spelling, cache):
+    _, client = alice
+    app.dependency_overrides[get_gateway] = lambda: FailingSkills(
+        Path(get_settings().gateway_recorded_dir)
+    )
+    await add(
+        "linkedin",
+        posting(
+            "ruby-only",
+            title="Backend Developer",
+            work_mode="hybrid",
+            description=(
+                f"Build APIs using {spelling} and PostgreSQL. "
+                + "Own reliable production services in Bengaluru. " * 4
+            ),
+        ),
+    )
+    await process()
+    if cache != "current":
+        await db.execute(
+            update(Posting).values(description_mentions_version="old" if cache == "stale" else None)
+        )
+        await db.commit()
+    prefs = RAILS_CORE | {"keywords": ["Ruby on Rails"], "core_keywords": ["Ruby on Rails"]}
+    await client.put("/api/preferences", json=prefs)
+    body = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert body["total"] == 1
+    assert body["items"][0]["matched_keywords"][0]["keyword"] == "Ruby on Rails"
+    assert body["counts"]["review_matches"] == 0
+
+
+async def test_capitalised_business_rails_stays_reviewed_not_confirmed(alice):
+    _, client = alice
+    await add(
+        "linkedin",
+        posting(
+            "payment-rails",
+            title="Backend Developer",
+            work_mode="hybrid",
+            description=(
+                "Payment Rails connect our suppliers with customers across borders. "
+                "Build the Python and Django backend in Bengaluru and operate its APIs."
+            ),
+        ),
+    )
+    await process()
+    await confirmed_context(["Python", "Django"])
+    await client.put("/api/preferences", json=RAILS_CORE)
+    body = (await client.get("/api/feed", params={"section": "link"})).json()
+    assert body["items"] == []
+    assert body["counts"]["review_matches"] == 1

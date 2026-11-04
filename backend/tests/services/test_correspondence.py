@@ -459,16 +459,21 @@ async def test_a_split_rules_out_proposals_through_the_rest_of_either_group(db):
     assert open_pairs == 0
 
 
-async def test_primary_description_edit_invalidates_skill_context(db):
+async def test_primary_description_edit_keeps_provisional_context_and_reanalyses(db):
     await feed_user(db)
     await add("linkedin", posting("edited"))
     await build().process()
     [job] = await jobs(db)
-    assert job.required_skills
+    old_skills = job.required_skills
+    assert old_skills
     await add("linkedin", posting("edited", description=OTHER_ROLE))
     [job] = await jobs(db)
-    assert job.required_skills is None
+    assert job.required_skills == old_skills
     assert job.skills_extracted_at is None
+    report = await build().process()
+    assert report.skills_extracted == 1
+    [job] = await jobs(db)
+    assert job.skills_extracted_at == NOW
 
 
 async def test_changed_description_during_extraction_cannot_store_stale_context(db):
@@ -484,3 +489,22 @@ async def test_changed_description_during_extraction_cannot_store_stale_context(
     assert report.skills_extracted == 0
     [job] = await jobs(db)
     assert job.required_skills is None
+
+
+async def test_primary_title_or_whitespace_edit_keeps_current_skill_context(db):
+    await feed_user(db)
+    await add("linkedin", posting("cosmetic"))
+    await build().process()
+    [job] = await jobs(db)
+    skills, extracted = job.required_skills, job.skills_extracted_at
+    await add(
+        "linkedin",
+        posting(
+            "cosmetic",
+            title="Senior Backend Engineer",
+            description="  " + ADVERT.replace(" ", "  ") + "\n",
+        ),
+    )
+    [job] = await jobs(db)
+    assert job.required_skills == skills
+    assert job.skills_extracted_at == extracted

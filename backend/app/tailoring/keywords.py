@@ -4,7 +4,7 @@ A differently titled Job reaches the Feed's keyword section only through the key
 User chose in Preferences; the Fact Bank plays no part. Spellings of one skill count once
 ("Rails" = "Ruby on Rails"), and only whole skill phrases count ("Rails" never matches
 inside "guardrails"). Case does not matter, except for the few skill names that are also
-common English words ("Go", "REST"), which count only when written with a capital.
+common English words ("Go", "REST"), whose context may need review.
 
 Each keyword is matched on its own: a longer phrase another User chose ("Rails developer")
 never hides a shorter one ("Rails"), so one User's keywords cannot change another's Feed."""
@@ -71,9 +71,18 @@ def keyword_rule(
     return KeywordRule(tuple(merged.values()), max(1, min_matches))
 
 
+def keyword_spellings(canonical: str) -> tuple[str, ...]:
+    """Search expansion belongs to Preferences, not Fact Bank skill equivalence.
+
+    A Rails-focused search includes Ruby roles, without claiming a Ruby Fact proves Rails.
+    """
+    variants = tuple(spellings(canonical))
+    return variants + ("ruby",) if canonical == "ruby on rails" else variants
+
+
 @lru_cache(maxsize=1024)
 def _pattern(canonical: str) -> re.Pattern[str]:
-    terms = sorted(set(spellings(canonical)), key=len, reverse=True)
+    terms = sorted(set(keyword_spellings(canonical)), key=len, reverse=True)
     alternation = "|".join(re.escape(term) for term in terms)
     return re.compile(rf"(?<![\w+#.])(?:{alternation})(?![\w+#])", re.IGNORECASE)
 
@@ -129,6 +138,25 @@ def qualifies(rule: KeywordRule, found: Sequence[KeywordMatch]) -> bool:
     return has_core(found) and len(found) >= rule.min_matches
 
 
+# Ambiguous skill names already recognised by the vocabulary, plus Rails' prose sense.
+# No preceding/following word lists decide whether a description is technical.
+CONTEXT_SENSITIVE = {canonical_skill(word) for word in PROSE_WORDS | {"rails"}}
+
+
+def literal_matches(found: Sequence[KeywordMatch], in_description: set[str]) -> list[KeywordMatch]:
+    """Clear literal evidence never waits for AI or a limited extracted skill list.
+
+    Ruby also confirms a Rails-focused Preference search, including a full Ruby on Rails
+    mention, regardless of case. Bare Rails remains ambiguous even when capitalised.
+    """
+    return [
+        match
+        for match in found
+        if canonical_skill(match.keyword) not in CONTEXT_SENSITIVE
+        or (canonical_skill(match.keyword) == "ruby on rails" and "ruby" in in_description)
+    ]
+
+
 def confirmed_matches(
     found: Sequence[KeywordMatch],
     context: Iterable[str],
@@ -149,7 +177,8 @@ def keyword_excerpt(text: str, keyword: str) -> str | None:
     match = _pattern(canonical_skill(keyword)).search(text)
     if match is None:
         return None
-    start = max(text.rfind("\n", 0, match.start()), text.rfind(". ", 0, match.start()) + 1) + 1
+    sentence = text.rfind(". ", 0, match.start())
+    start = max(text.rfind("\n", 0, match.start()) + 1, sentence + 2 if sentence >= 0 else 0)
     end = len(text)
     for marker in ("\n", ". "):
         stop = text.find(marker, match.end())

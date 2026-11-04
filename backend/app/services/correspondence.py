@@ -686,7 +686,7 @@ class Correspondence:
                     await session.execute(
                         select(Job)
                         .where(
-                            Job.required_skills.is_(None),
+                            or_(Job.required_skills.is_(None), Job.skills_extracted_at.is_(None)),
                             Job.expired_at.is_(None),
                             exists().where(UserJob.job_id == Job.id),
                             Job.primary_posting_id.in_(
@@ -741,7 +741,7 @@ class Correspondence:
                         .where(
                             Job.id == job.id,
                             Job.primary_posting_id == job.primary_posting_id,
-                            Job.required_skills.is_(None),
+                            or_(Job.required_skills.is_(None), Job.skills_extracted_at.is_(None)),
                             exists().where(
                                 Posting.id == Job.primary_posting_id,
                                 Posting.description == descriptions.get(job.primary_posting_id),

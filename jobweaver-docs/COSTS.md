@@ -177,3 +177,8 @@ collection is canceled or inaccessible in the provider account, an operator must
 pending checkpoint before a replacement can be started. There is no admin discard action
 or automatic retention-based expiry yet; neither a missing key nor an arbitrary timeout
 silently discards a potentially billable running collection.
+
+
+### Preference context and AI availability
+
+Clear literal Core-keyword matches do not wait for AI. Ambiguous literal matches may use the existing shared skill extraction, with no per-User or per-Feed-view AI call. When Flash-Lite and its fallbacks have no quota, unresolved candidates stay in Needs review until confirmation is possible. They are not silently removed. Changed primary descriptions keep prior skills provisionally while awaiting refresh; title-only and whitespace-only edits do not trigger another extraction. A different primary Posting needs its own analysis. Long-advert truncation and the extraction's skill limit can omit evidence, so an unsupported literal candidate remains reviewable.
