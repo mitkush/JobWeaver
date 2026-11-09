@@ -72,6 +72,7 @@ def time_range_for(window: FetchWindow) -> str:
 
 @register_adapter
 class LinkedInBrightDataAdapter(WindowedSourceAdapter):
+    scheduled_window_hours = 24
     credential_settings = ("brightdata_api_key", "brightdata_api_keys")
     credential_limits_from_errors = True
     primary_credential_pause_setting = "brightdata_primary_paused_until"

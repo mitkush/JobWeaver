@@ -1527,8 +1527,9 @@ async def test_a_new_broad_search_backfills_when_a_replaced_search_never_ran(db,
 
 
 @pytest.mark.parametrize("save_fails", [False, True])
+@pytest.mark.parametrize("scheduled_hours", [None, 24])
 async def test_resumable_collection_survives_restart_and_uses_original_account(
-    db, clock, monkeypatch, save_fails
+    db, clock, monkeypatch, save_fails, scheduled_hours
 ):
     from app.models import PendingCollection, QueryWatermark
     from app.services import fetching
@@ -1536,6 +1537,7 @@ async def test_resumable_collection_survives_restart_and_uses_original_account(
 
     class AsyncSearch(FakeSearch):
         name = "fake-async"
+        scheduled_window_hours = scheduled_hours
         per_query = False
         resumable_collections = True
         credential_settings = ("brightdata_api_key", "brightdata_api_keys")
@@ -1712,3 +1714,48 @@ async def test_resumable_adapters_cannot_loop_on_an_incomplete_snapshot(db, cloc
     assert outcome.status == "failed"
     assert "pagination-aware checkpoints" in outcome.message
     assert FakeSearch.windows == []
+
+
+@pytest.mark.parametrize("last_hours_ago", [None, 1, 19.3, 30, 72])
+async def test_fixed_daily_search_ignores_history_and_overlap(
+    db, fetcher, clock, monkeypatch, last_hours_ago
+):
+    from app.adapters.linkedin_brightdata import LinkedInBrightDataAdapter, time_range_for
+    from app.models import QueryWatermark
+
+    monkeypatch.setattr(FakeSearch, "scheduled_window_hours", 24)
+    monkeypatch.setattr(FakeSearch, "per_query", False)
+    assert LinkedInBrightDataAdapter.scheduled_window_hours == 24
+    if last_hours_ago is not None:
+        db.add(
+            QueryWatermark(
+                source=FakeSearch.name,
+                query_key="all",
+                last_until=START - timedelta(hours=last_hours_ago),
+            )
+        )
+        await db.commit()
+    fetcher.settings.window_overlap_hours = 12
+    assert (await fetcher.run_source(FakeSearch.name)).status == "succeeded"
+    [(_, window)] = FakeSearch.windows
+    assert window == FetchWindow(since=START - timedelta(hours=24), until=START)
+    assert time_range_for(window) == "Past 24 hours"
+    FakeSearch.windows.clear()
+    clock.now += timedelta(days=1)
+    assert (await fetcher.run_source(FakeSearch.name)).status == "succeeded"
+    [(_, tomorrow)] = FakeSearch.windows
+    assert tomorrow == FetchWindow(since=START, until=clock.now)
+
+
+async def test_fixed_daily_search_keeps_manual_backfill_explicit(db, fetcher, monkeypatch):
+    from app.models import QueryWatermark
+
+    monkeypatch.setattr(FakeSearch, "scheduled_window_hours", 24)
+    monkeypatch.setattr(FakeSearch, "per_query", False)
+    previous = START - timedelta(days=4)
+    db.add(QueryWatermark(source=FakeSearch.name, query_key="all", last_until=previous))
+    await db.commit()
+    assert (await fetcher.manual_run(FakeSearch.name)).status == "succeeded"
+    [(_, window)] = FakeSearch.windows
+    assert window.since == previous - timedelta(hours=fetcher.settings.window_overlap_hours)
+    assert window.until == START
