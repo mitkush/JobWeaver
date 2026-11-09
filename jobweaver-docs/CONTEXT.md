@@ -34,7 +34,7 @@ One scheduled or manual execution of one Source Adapter. Records its window (sin
 
 ## Backfill
 
-The first Fetch Run of a windowed Source, or for a new set of Preferences: the last 14 days. Not capped; its cost shows in the Credit Budget (ADR-0009).
+The first Fetch Run of a windowed Source, or for a new set of Preferences: the last 14 days. Its cost shows in the Credit Budget (ADR-0009). Bright Data scheduled searches are an exception: even first or missed runs use the past 24 hours, and wider Backfills are manual only. Its configured per-search record cap still applies.
 
 ## Source Status
 

@@ -218,6 +218,9 @@ class SourceAdapter(ABC):
 
 
 class WindowedSourceAdapter(SourceAdapter):
+    # Opt-in fixed lookback for scheduled runs, independent of watermarks/overlap.
+    # Manual backfills keep watermark windows; pending collections keep their pin.
+    scheduled_window_hours: int | None = None
     # Opt-in durable asynchronous collections. The fetcher owns persistence; adapters
     # checkpoint the returned provider id before polling, without database access.
     # Incompatible with retry_incomplete_window: retrying a capped snapshot would

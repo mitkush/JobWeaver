@@ -182,3 +182,8 @@ silently discards a potentially billable running collection.
 ### Preference context and AI availability
 
 Clear literal Core-keyword matches do not wait for AI. Ambiguous literal matches may use the existing shared skill extraction, with no per-User or per-Feed-view AI call. When Flash-Lite and its fallbacks have no quota, unresolved candidates stay in Needs review until confirmation is possible. They are not silently removed. Changed primary descriptions keep prior skills provisionally while awaiting refresh; title-only and whitespace-only edits do not trigger another extraction. A different primary Posting needs its own analysis. Long-advert truncation and the extraction's skill limit can omit evidence, so an unsupported literal candidate remains reviewable.
+
+
+### Bright Data daily window (10 Nov 2026)
+
+New scheduled Bright Data searches always request Past 24 hours, independent of the previous watermark or overlap. Missed days and first runs no longer widen to Past week/month automatically; wider Backfills require an explicit manual run. Pending collections retain their original window until imported. The daily UTC cron time and configured per-search record cap are unchanged. A manual catch-up no longer skips the next scheduled search, so overlap may consume credits again (ADR-0009).

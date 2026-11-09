@@ -752,7 +752,11 @@ class Fetcher:
                 last_until = await self._inherited_until(
                     session, family, adapter.continues_from(query, preference_queries)
                 )
-            if last_until is None:
+            if trigger != MANUAL and adapter.scheduled_window_hours is not None:
+                # Fixed daily searches neither widen after missed days nor skip after
+                # a recent manual recovery. An existing collection overrides this below.
+                since = started - timedelta(hours=adapter.scheduled_window_hours)
+            elif last_until is None:
                 since = started - timedelta(days=self.settings.backfill_days)
             else:
                 # Cron and catch-up runs never repeat a search already done today; only
