@@ -25,3 +25,10 @@ Wider Backfills remain explicit manual actions using the existing watermark rule
 A pending asynchronous collection still resumes with its original credential and original window. It never triggers a replacement merely because the daily window moved. This exception preserves the duplicate-charge protection; a new collection can use the fixed daily window only after the pending collection is resolved. No cancellation or account rotation is introduced here.
 
 Consequences: missed periods older than 24 hours are deliberately not covered by the next new scheduled search. A previous manual catch-up does not suppress the next scheduled search, so overlapping records can be billed again. Existing configured keyword, country, work-mode and record-cap settings are unchanged.
+
+
+## Amendment: bounded network recovery (11 Nov 2026)
+
+Bright Data requests allow 30 seconds to establish a connection and 60 seconds for other network phases. Each request has at most three connection attempts, with one- and two-second pauses. Only connection establishment failures (HTTPX ConnectError/ConnectTimeout) may retry a trigger POST; read, write and pool timeouts do not replay a potentially accepted trigger. No account rotation is added for network failures. Read-only progress/download GET requests may also retry timeout failures against the same snapshot, with the same three-attempt bound.
+
+A snapshot download answering HTTP 202 after progress says ready is retried at most twice, two seconds apart. If still preparing, the collection checkpoint stays available for a later resume; it is not treated as malformed JSON and no new collection is triggered. This improves transient-network tolerance but cannot guarantee provider availability or recover an unknown snapshot ID after an uncertain trigger response timeout.

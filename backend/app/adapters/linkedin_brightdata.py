@@ -171,6 +171,24 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.settings.brightdata_api_key}"}
 
+    async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Retry before sending, or retry read-only calls. Never replay an uncertain trigger."""
+        for attempt in range(3):
+            try:
+                return await self.http.request(
+                    method, url, timeout=httpx.Timeout(60.0, connect=30.0), **kwargs
+                )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt == 2:
+                    raise
+            except httpx.TimeoutException:
+                # A trigger may have been accepted even when its response times out.
+                # Retrying that POST could create a second paid collection.
+                if method != "GET" or attempt == 2:
+                    raise
+            await self.sleep(float(attempt + 1))
+        raise AssertionError("request retry loop exhausted")
+
     async def fetch_window(self, query: SourceQuery | None, window: FetchWindow) -> FetchResult:
         self.ensure_configured()
         assert query is not None
@@ -217,7 +235,8 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
             # Caps the records (and credits) one search can return.
             params["limit_per_input"] = self.settings.brightdata_limit_per_search
         for attempt in range(2):
-            response = await self.http.post(
+            response = await self._request(
+                "POST",
                 f"{API}/trigger",
                 params=params,
                 headers=self._headers,
@@ -244,7 +263,9 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
     async def _wait_and_download(self, snapshot_id: str) -> list[dict[str, Any]]:
         waited = 0.0
         while waited <= self.poll_timeout.total_seconds():
-            progress = await self.http.get(f"{API}/progress/{snapshot_id}", headers=self._headers)
+            progress = await self._request(
+                "GET", f"{API}/progress/{snapshot_id}", headers=self._headers
+            )
             if progress.status_code == 404:
                 # The fetcher pins the original credential and forbids rotation once
                 # a collection starts. Treat 404 as unavailable/expired only under that
@@ -272,9 +293,23 @@ class LinkedInBrightDataAdapter(WindowedSourceAdapter):
                 "Bright Data is still collecting; the next run resumes the same collection"
             )
 
-        response = await self.http.get(
-            f"{API}/snapshot/{snapshot_id}", params={"format": "json"}, headers=self._headers
-        )
+        # Progress can say ready before the download endpoint finishes preparing JSON.
+        # HTTP 202 is not malformed data and must never start a replacement collection.
+        for attempt in range(3):
+            response = await self._request(
+                "GET",
+                f"{API}/snapshot/{snapshot_id}",
+                params={"format": "json"},
+                headers=self._headers,
+            )
+            if response.status_code != 202:
+                break
+            if attempt == 2:
+                raise SourceUnavailable(
+                    "Bright Data snapshot is still preparing; "
+                    "the next run resumes the same collection"
+                )
+            await self.sleep(2.0)
         self.check_response(self.label, response)
         try:
             data = response.json()
